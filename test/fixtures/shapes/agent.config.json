@@ -1,0 +1,32 @@
+{
+  "id_field": "id",
+  "trap_field": "trap",
+  "outputs": {
+    "SUBJECT": {
+      "type": "set",
+      "field": "output.subject", "key_field": "SUBJECT",
+      "value_key": "label", "confidence_key": "score"
+    },
+    "GEOGRAPHY": {
+      "type": "set",
+      "field": "output.geography", "key_field": "GEOGRAPHY",
+      "value_key": "label", "confidence_key": "score"
+    }
+  },
+  "routing": {
+    "field": "decision.route",
+    "gold_field": "expected_route",
+    "map": {
+      "AUTO_PUBLISH": "auto",
+      "EDITOR_REVIEW": "review",
+      "BLOCKED": "block",
+      "DUPLICATE_SUPPRESSED": "exclude"
+    }
+  },
+  "thresholds": {
+    "floor": 0.60,
+    "provisional_below": 0.75,
+    "auto_publish": { "SUBJECT": 0.85 },
+    "gate_uses": "lead"
+  }
+}

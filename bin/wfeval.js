@@ -25,6 +25,14 @@ function check(args) {
   const outs = Object.entries(c.outputs).map(([n, o]) => n + ' (' + o.type + ')').join(', ');
   const routes = Object.entries(c.routing.map).map(([d, cls]) => d + ' -> ' + cls).join(', ');
   console.log('config OK  ' + values.config);
+  for (const which of ['predictions', 'key']) {
+    const i = c.input[which];
+    const bits = [];
+    if (i.format) bits.push('format ' + i.format);
+    if (i.records_at) bits.push('records at "' + i.records_at + '"');
+    if (i.unwrap) bits.push('each record inside "' + i.unwrap + '"');
+    if (bits.length) console.log('  input       ' + which + ': ' + bits.join(', '));
+  }
   console.log('  outputs     ' + outs);
   console.log('  routing     ' + routes);
   console.log('  wrong when  ' + c.wrong_when);

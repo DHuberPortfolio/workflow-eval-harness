@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { validateConfig, loadConfig } = require('../src/config.js');
 const { problems } = require('../src/problems.js');
-const { parseRecords, readRecords, normalizePredictions, normalizeKey, loadRun } = require('../src/load.js');
+const { getPath, parseRecords, readRecords, normalizePredictions, normalizeKey, loadRun } = require('../src/load.js');
 
 // A config with one output of each type, and a confidence gate on SUBJECT.
 const CONFIG = validateConfig({
@@ -53,21 +53,75 @@ test('A4: an empty file or an empty list stops', () => {
   assert.deepEqual(run(p => parseRecords('[]', 'f', p)).flagged, ['stop:A4']);
 });
 
-test('A5: a wrapped object stops, and the hint names its keys', () => {
-  const { flagged, items } = run(p => parseRecords('{"data": [{"id":"R1"}]}', 'f', p));
+test('A5: an object instead of a list stops, and says where lists were found', () => {
+  const { flagged, items } = run(p => parseRecords('{"status":"ok","data":{"results":[{"id":"R1"}]}}', 'f', p));
   assert.deepEqual(flagged, ['stop:A5']);
-  assert.match(items[0].message, /data/);
+  assert.match(items[0].message, /Lists found at: "data\.results"/);
+  assert.match(items[0].message, /records_at/);
 });
 
-test('A6: n8n items are unwrapped, but only when every item has n8n\'s shape', () => {
-  const n8n = run(p => parseRecords('[{"json":{"id":"R1"},"pairedItem":{"item":0}},{"json":{"id":"R2"}}]', 'f', p));
-  assert.deepEqual(n8n.result, [{ id: 'R1' }, { id: 'R2' }]);
-  assert.deepEqual(n8n.flagged, ['fix:A6']);
+test('A5: records_at finds the list inside the file', () => {
+  const { result, flagged } = run(p => parseRecords('{"data":{"results":[{"id":"R1"}]}}', 'f', p, { records_at: 'data.results' }));
+  assert.deepEqual(result, [{ id: 'R1' }]);
+  assert.deepEqual(flagged, []);
+});
 
-  // One item is not n8n-shaped, so nothing is unwrapped: the tool does not half-guess.
-  const mixed = run(p => parseRecords('[{"json":{"id":"R1"}},{"id":"R2"}]', 'f', p));
-  assert.deepEqual(mixed.result, [{ json: { id: 'R1' } }, { id: 'R2' }]);
-  assert.deepEqual(mixed.flagged, []);
+test('A5: records_at pointing at nothing, or used on a plain list, stops', () => {
+  assert.deepEqual(run(p => parseRecords('{"data":{"items":[]}}', 'f', p, { records_at: 'data.results' })).flagged, ['stop:A5']);
+  assert.deepEqual(run(p => parseRecords('[{"id":"R1"}]', 'f', p, { records_at: 'data' })).flagged, ['stop:A5']);
+});
+
+test('A6: unwrap takes each record out of its wrapper field, whatever it is called', () => {
+  const n8n = run(p => parseRecords('[{"json":{"id":"R1"},"pairedItem":{"item":0}},{"json":{"id":"R2"}}]', 'f', p, { unwrap: 'json' }));
+  assert.deepEqual(n8n.result, [{ id: 'R1' }, { id: 'R2' }]);
+  assert.deepEqual(n8n.flagged, []);
+  const other = run(p => parseRecords('[{"record":{"id":"R1"},"meta":{}}]', 'f', p, { unwrap: 'record' }));
+  assert.deepEqual(other.result, [{ id: 'R1' }]);
+});
+
+test('A6: a record missing its wrapper field stops', () => {
+  assert.deepEqual(run(p => parseRecords('[{"json":{"id":"R1"}},{"id":"R2"}]', 'f', p, { unwrap: 'json' })).flagged, ['stop:A6']);
+});
+
+test('A6: wrapped records are never unwrapped by guesswork; the tool names the setting to add', () => {
+  const n8nItems = [{ json: pred({ id: 'R1' }), pairedItem: { item: 0 } }, { json: pred({ id: 'R2' }) }];
+  const { result, flagged, items } = run(p => normalizePredictions(n8nItems, CONFIG, 'preds', p));
+  assert.deepEqual(result, []);
+  assert.deepEqual(flagged, ['stop:A6']);   // said once, not once per record
+  assert.match(items[0].message, /add "unwrap": "json" under input\.predictions/);
+});
+
+test('JSON Lines: one record per line, blank lines skipped, chosen by the file extension', () => {
+  const { result, flagged } = run(p => parseRecords('{"id":"R1"}\n\n{"id":"R2"}\r\n', 'run.jsonl', p));
+  assert.deepEqual(result, [{ id: 'R1' }, { id: 'R2' }]);
+  assert.deepEqual(flagged, []);
+  assert.equal(run(p => parseRecords('{"id":"R1"}', 'run.ndjson', p)).result.length, 1);
+  assert.equal(run(p => parseRecords('{"id":"R1"}\n{"id":"R2"}', 'run.txt', p, { format: 'jsonl' })).result.length, 2);
+});
+
+test('A2: a broken line in JSON Lines stops and names the line', () => {
+  const { flagged, items } = run(p => parseRecords('{"id":"R1"}\n{"id": R2}\n', 'run.jsonl', p));
+  assert.deepEqual(flagged, ['stop:A2']);
+  assert.match(items[0].where, /line 2/);
+});
+
+test('A9: dotted paths read nested fields; a field literally named with a dot wins', () => {
+  assert.equal(getPath({ output: { subject: 'x' } }, 'output.subject'), 'x');
+  assert.equal(getPath({ 'output.subject': 'flat', output: { subject: 'nested' } }, 'output.subject'), 'flat');
+  assert.equal(getPath({ content: [{ text: 'hi' }] }, 'content.0.text'), 'hi');
+  assert.equal(getPath({ output: {} }, 'output.subject'), undefined);
+  assert.equal(getPath({}, 'constructor'), undefined);   // never a built-in property
+});
+
+test('value and confidence can have other names', () => {
+  const renamed = validateConfig({
+    outputs: { tags: { type: 'set', field: 'out.tags', value_key: 'label', confidence_key: 'score' } },
+    routing: { map: { AUTO: 'auto' } },
+  }).config;
+  const { result, flagged } = run(p => normalizePredictions(
+    [{ id: 'R1', route: 'AUTO', out: { tags: [{ label: 'X', score: 0.8, applied: false }] } }], renamed, 'preds', p));
+  assert.deepEqual(flagged, []);
+  assert.deepEqual(result[0].outputs.tags, [{ value: 'X', confidence: 0.8, applied: false, inherited: false }]);
 });
 
 test('A7: an answer key passed as predictions stops (no record has a route)', () => {
@@ -260,6 +314,30 @@ test('the tiny fixture loads with nothing to fix and R5\'s rejected tag intact',
   const r5 = predictions.find(r => r.id === 'R5');
   assert.deepEqual(r5.outputs.SUBJECT, [{ value: 'SUBJ-LAB', confidence: 0.55, applied: false, inherited: false }]);
   assert.deepEqual(answers.find(r => r.id === 'R2').traps, ['plausible-extra-tag']);
+});
+
+test('the same records from an n8n export, a JSON Lines log and an API response load identically', () => {
+  const tiny = path.join(__dirname, 'fixtures', 'tiny');
+  const shapes = path.join(__dirname, 'fixtures', 'shapes');
+  const keyPath = path.join(tiny, 'key.json');
+  const expected = loadRun({ config: loadConfig(path.join(tiny, 'config.json')), predPath: path.join(tiny, 'predictions.json'), keyPath }).predictions;
+
+  for (const [cfg, file] of [['n8n.config.json', 'n8n.json'], ['agent.config.json', 'agent.jsonl'], ['api.config.json', 'api.json']]) {
+    const got = loadRun({ config: loadConfig(path.join(shapes, cfg)), predPath: path.join(shapes, file), keyPath });
+    assert.deepEqual(got.predictions, expected, file);
+    assert.deepEqual(got.problems, [], file);
+  }
+});
+
+test('A10: predictions and answers can share one file', () => {
+  const tiny = path.join(__dirname, 'fixtures', 'tiny');
+  const expected = loadRun({ config: loadConfig(path.join(tiny, 'config.json')), predPath: path.join(tiny, 'predictions.json'), keyPath: path.join(tiny, 'key.json') });
+  const shapes = path.join(__dirname, 'fixtures', 'shapes');
+  const file = path.join(shapes, 'combined.json');
+  const got = loadRun({ config: loadConfig(path.join(shapes, 'combined.config.json')), predPath: file, keyPath: file });
+  assert.deepEqual(got.predictions, expected.predictions);
+  assert.deepEqual(got.key, expected.key);
+  assert.deepEqual(got.problems, []);   // no H4: the trap label is in the record by design
 });
 
 test('loadRun refuses to continue when anything stops, and lists every problem', () => {

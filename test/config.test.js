@@ -25,7 +25,13 @@ test('minimal config gets every default filled in', () => {
   assert.deepEqual(errors, []);
   assert.equal(config.id_field, 'id');
   assert.equal(config.routing.field, 'route');
-  assert.equal(config.outputs.SUBJECT.field, 'SUBJECT');
+  assert.deepEqual(config.outputs.SUBJECT, {
+    type: 'set', field: 'SUBJECT', key_field: 'SUBJECT', labels: null, value_key: 'value', confidence_key: 'confidence',
+  });
+  assert.deepEqual(config.input, {
+    predictions: { format: null, records_at: null, unwrap: null },
+    key: { format: null, records_at: null, unwrap: null },
+  });
   assert.equal(config.wrong_when, 'any_mismatch'); // no gold field, so fall back
   assert.equal(config.thresholds, null);
   assert.equal(config.trap_field, null);
@@ -91,6 +97,34 @@ test('misspelled threshold key is an error', () => {
   const raw = minimal();
   raw.thresholds = { flor: 0.6 };
   assert.match(validateConfig(raw).errors[0], /unknown key "thresholds\.flor"/);
+});
+
+test('fields can be dotted paths, but not with empty parts', () => {
+  const raw = minimal();
+  raw.id_field = 'meta.id';
+  raw.outputs.SUBJECT.field = 'output.subject';
+  raw.outputs.SUBJECT.key_field = 'expected.subject';
+  assert.deepEqual(validateConfig(raw).errors, []);
+  raw.outputs.SUBJECT.field = 'output..subject';
+  assert.match(validateConfig(raw).errors[0], /outputs\.SUBJECT\.field must be a field name, or a dotted path/);
+});
+
+test('input settings are checked, including misspellings', () => {
+  const raw = minimal();
+  raw.input = { predictions: { unwrap: 'json', records_at: 'data.results', format: 'jsonl' } };
+  assert.deepEqual(validateConfig(raw).errors, []);
+  raw.input = { predictions: { unwarp: 'json' }, keys: {} };
+  const errs = validateConfig(raw).errors.join('\n');
+  assert.match(errs, /unknown key "input\.predictions\.unwarp"/);
+  assert.match(errs, /unknown key "input\.keys"/);
+  raw.input = { predictions: { format: 'csv' } };
+  assert.match(validateConfig(raw).errors[0], /format must be one of: json, jsonl/);
+});
+
+test('misspelled output setting is an error', () => {
+  const raw = minimal();
+  raw.outputs.SUBJECT.feild = 'x';
+  assert.match(validateConfig(raw).errors[0], /unknown key "outputs\.SUBJECT\.feild"/);
 });
 
 test('every problem is reported at once', () => {

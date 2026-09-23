@@ -10,11 +10,18 @@ const ROUTE_CLASSES = ['auto', 'review', 'block', 'exclude'];
 const OUTPUT_TYPES = ['set', 'label'];
 const WRONG_WHEN = ['gold_route', 'any_mismatch'];
 const GATE_USES = ['lead', 'weakest'];
-const TOP_LEVEL_KEYS = ['id_field', 'outputs', 'routing', 'wrong_when', 'thresholds', 'trap_field'];
+const FORMATS = ['json', 'jsonl'];
+const TOP_LEVEL_KEYS = ['id_field', 'input', 'outputs', 'routing', 'wrong_when', 'thresholds', 'trap_field'];
+const OUTPUT_KEYS = ['type', 'field', 'key_field', 'labels', 'value_key', 'confidence_key'];
+const INPUT_KEYS = ['format', 'records_at', 'unwrap'];
 
 const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isName = v => typeof v === 'string' && v.length > 0;
 const isProb = v => typeof v === 'number' && v >= 0 && v <= 1;
+// A field name, or a dotted path into nested fields: "output.subject" is the
+// "subject" field inside the "output" field.
+const isPath = v => isName(v) && v.split('.').every(part => part.length > 0);
+const PATH_RULE = 'must be a field name, or a dotted path like "output.subject"';
 
 function validateConfig(raw) {
   const errors = [];
@@ -27,10 +34,40 @@ function validateConfig(raw) {
   }
 
   const idField = raw.id_field === undefined ? 'id' : raw.id_field;
-  if (!isName(idField)) errors.push('id_field must be a non-empty string');
+  if (!isPath(idField)) errors.push('id_field ' + PATH_RULE);
 
-  // outputs: what the workflow assigns. "set" = zero or more codes per record
-  // (metadata facets); "label" = exactly one value from a fixed list (pass/elevate/fail).
+  // input: where the records are in each file. Only needed when a file is not a plain
+  // list of records. Nothing here is specific to any platform:
+  //   format     - "json" or "jsonl" (one record per line). Default: from the file extension.
+  //   records_at - the list is inside the file, e.g. "data.results" in an API response
+  //   unwrap     - each record is inside a field, e.g. "json" in an n8n export
+  const input = {};
+  for (const which of ['predictions', 'key']) input[which] = { format: null, records_at: null, unwrap: null };
+  if (raw.input !== undefined) {
+    if (!isObj(raw.input)) {
+      errors.push('input must be an object');
+    } else {
+      for (const [which, spec] of Object.entries(raw.input)) {
+        if (!(which in input)) { errors.push('unknown key "input.' + which + '" (allowed: predictions, key)'); continue; }
+        if (!isObj(spec)) { errors.push('input.' + which + ' must be an object'); continue; }
+        for (const [k, v] of Object.entries(spec)) {
+          const at = 'input.' + which + '.' + k;
+          if (!INPUT_KEYS.includes(k)) { errors.push('unknown key "' + at + '" (allowed: ' + INPUT_KEYS.join(', ') + ')'); continue; }
+          if (k === 'format' && !FORMATS.includes(v)) errors.push(at + ' must be one of: ' + FORMATS.join(', '));
+          if (k !== 'format' && !isPath(v)) errors.push(at + ' ' + PATH_RULE);
+          input[which][k] = v;
+        }
+      }
+    }
+  }
+
+  // outputs: what the workflow assigns. "set" = zero or more values per record
+  // (tags, violation codes); "label" = exactly one value from a fixed list (pass/elevate/fail).
+  //   field          - where the workflow's values are (default: the output's name)
+  //   key_field      - where the answer key's values are (default: same as field). Differs when
+  //                    predictions and answers share one file, e.g. "output.x" vs "expected.x"
+  //   value_key      - inside a value object, which field holds the value (default "value")
+  //   confidence_key - and which holds the confidence (default "confidence")
   const outputs = {};
   if (!isObj(raw.outputs) || Object.keys(raw.outputs).length === 0) {
     errors.push('outputs must be an object with at least one entry');
@@ -38,8 +75,14 @@ function validateConfig(raw) {
     for (const [name, o] of Object.entries(raw.outputs)) {
       const at = 'outputs.' + name;
       if (!isObj(o)) { errors.push(at + ' must be an object'); continue; }
+      for (const k of Object.keys(o)) {
+        if (!OUTPUT_KEYS.includes(k)) errors.push('unknown key "' + at + '.' + k + '" (allowed: ' + OUTPUT_KEYS.join(', ') + ')');
+      }
       if (!OUTPUT_TYPES.includes(o.type)) errors.push(at + '.type must be one of: ' + OUTPUT_TYPES.join(', '));
-      if (o.field !== undefined && !isName(o.field)) errors.push(at + '.field must be a non-empty string');
+      if (o.field !== undefined && !isPath(o.field)) errors.push(at + '.field ' + PATH_RULE);
+      if (o.key_field !== undefined && !isPath(o.key_field)) errors.push(at + '.key_field ' + PATH_RULE);
+      if (o.value_key !== undefined && !isName(o.value_key)) errors.push(at + '.value_key must be a non-empty string');
+      if (o.confidence_key !== undefined && !isName(o.confidence_key)) errors.push(at + '.confidence_key must be a non-empty string');
       if (o.type === 'label') {
         if (!Array.isArray(o.labels) || o.labels.length < 2 || !o.labels.every(isName)) {
           errors.push(at + '.labels must list at least two label names');
@@ -47,7 +90,15 @@ function validateConfig(raw) {
       } else if (o.labels !== undefined) {
         errors.push(at + '.labels only applies to type "label"');
       }
-      outputs[name] = { type: o.type, field: o.field || name, labels: o.type === 'label' ? o.labels : null };
+      const field = o.field || name;
+      outputs[name] = {
+        type: o.type,
+        field,
+        key_field: o.key_field || field,
+        labels: o.type === 'label' ? o.labels : null,
+        value_key: o.value_key || 'value',
+        confidence_key: o.confidence_key || 'confidence',
+      };
     }
   }
 
@@ -59,8 +110,8 @@ function validateConfig(raw) {
     errors.push('routing must be an object');
   } else {
     const field = r.field === undefined ? 'route' : r.field;
-    if (!isName(field)) errors.push('routing.field must be a non-empty string');
-    if (r.gold_field !== undefined && !isName(r.gold_field)) errors.push('routing.gold_field must be a non-empty string');
+    if (!isPath(field)) errors.push('routing.field ' + PATH_RULE);
+    if (r.gold_field !== undefined && !isPath(r.gold_field)) errors.push('routing.gold_field ' + PATH_RULE);
     if (!isObj(r.map) || Object.keys(r.map).length === 0) {
       errors.push('routing.map must map each workflow decision to one of: ' + ROUTE_CLASSES.join(', '));
     } else {
@@ -138,9 +189,9 @@ function validateConfig(raw) {
   // also broken down by trap type, because a good overall rate can hide one kind of
   // trap that fails every time. Read from the key only - the workflow never sees it.
   const trapField = raw.trap_field === undefined ? null : raw.trap_field;
-  if (trapField !== null && !isName(trapField)) errors.push('trap_field must be a non-empty string');
+  if (trapField !== null && !isPath(trapField)) errors.push('trap_field ' + PATH_RULE);
 
-  const config = errors.length ? null : { id_field: idField, outputs, routing, wrong_when: wrongWhen, thresholds, trap_field: trapField };
+  const config = errors.length ? null : { id_field: idField, input, outputs, routing, wrong_when: wrongWhen, thresholds, trap_field: trapField };
   return { config, errors };
 }
 

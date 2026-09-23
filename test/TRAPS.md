@@ -26,13 +26,19 @@ output, one odd record should not block the whole report, so it warns instead.
 | # | Trap | Why it's dangerous | Action |
 |---|---|---|---|
 | A1 | File missing or unreadable | Obvious, but the message must say which file | STOP |
-| A2 | Not valid JSON | Message must say where it broke | STOP |
+| A2 | Not valid JSON | Message must say where it broke (for JSON Lines, which line) | STOP |
 | A3 | File starts with an invisible byte-order mark (Windows PowerShell adds one) | `JSON.parse` fails on a file that looks perfect | FIX |
 | A4 | Empty file, or `[]` | Every rate becomes "nothing to measure"; better said up front | STOP |
-| A5 | Top level is an object, not a list | Probably wrapped (`{ "data": [...] }`) | STOP, with a hint |
-| A6 | n8n item format `[{ "json": {...} }]` | The records are one level down | FIX: unwrap only if **every** item has n8n's shape; the report says "read as n8n items" |
+| A5 | The records aren't where expected: the file is an object (an API's `{ "data": { "results": [...] } }`), or `records_at` leads to nothing | Probably wrapped by whatever produced it | STOP, listing where lists were found and naming the `records_at` setting |
+| A6 | Every record is inside a wrapper field (n8n: `{ "json": {...} }`; other tools use other names) | The id and every value are one level down | RULE: declared with `unwrap`, never guessed. If the id is inside the same field in every record, STOP once, naming the exact setting to add |
 | A7 | Key file passed where predictions belong (no route field) | Scores the key against itself | STOP |
 | A8 | Predictions identical to the key | Everything scores 100%; almost always a wrong-file mistake | STRICT |
+| A9 | A field literally named `output.subject` next to a nested `output` → `subject` | Two ways to read the same path | RULE: the literal name wins (spreadsheet-style exports flatten nested names that way) |
+| A10 | Predictions and answers in the same file | The key's fields sit beside the workflow's | RULE: allowed; outputs name the key's fields with `key_field`; H4 does not apply |
+
+Formats: JSON (a list of records, or a list inside an object via `records_at`) and
+JSON Lines (`.jsonl` / `.ndjson`, one record per line). Nothing is specific to a
+platform; where things are is declared in the config's `input` and field settings.
 
 ## B. Matching records (`align.js`)
 
