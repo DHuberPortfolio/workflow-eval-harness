@@ -23,6 +23,7 @@ function check(args) {
   console.log('  outputs     ' + outs);
   console.log('  routing     ' + routes);
   console.log('  wrong when  ' + c.wrong_when);
+  console.log('  traps       ' + (c.trap_field ? 'read from key field "' + c.trap_field + '"' : 'not set'));
   const t = c.thresholds;
   if (!t) { console.log('  thresholds  not set'); return; }
   const gates = Object.entries(t.auto_publish).map(([f, v]) => f + ' >= ' + v).join(', ') || 'none';

@@ -1,5 +1,6 @@
 {
   "id_field": "id",
+  "trap_field": "trap",
   "outputs": {
     "SUBJECT": { "type": "set" },
     "GEOGRAPHY": { "type": "set" }

@@ -68,6 +68,25 @@ TP 9 · FP 1 · FN 2 → precision = 9/10 = **0.900** · recall = 9/11 = **0.818
 - **Review-queue precision** = review where gold says not auto / review = R3 / {R3, R4} = 1/2 = **50.0%**
 - **Block precision** = blocked where gold says not auto / blocked = R5 / {R5} = 1/1 = **100.0%**
 
+## Per-trap results (trap_field: trap)
+
+"Routed correctly" means the predicted route class matches the key's expected route class.
+R1 has no trap on purpose: records without a trap label must be grouped under
+"(none)", not dropped. Dropping them would make the totals below stop adding up to 6.
+
+| trap | records | routed correctly | silent errors | wasted reviews |
+|---|---|---|---|---|
+| (none) | R1 | 1/1 | 0 | 0 |
+| plausible-extra-tag | R2 | 0/1 | 1 (R2) | 0 |
+| missing-secondary-geo | R3 | 1/1 | 0 | 0 |
+| correct-but-unsure | R4, R5 | 1/2 | 0 | 1 (R4) |
+| near-duplicate | R6 | 1/1 | 0 | 0 |
+| **total** | **6** | **4/6** | **1** | **1** |
+
+Reading it: the workflow handled "correct-but-unsure" safely (no silent error), but at a cost:
+it held back R4, which was fine. "plausible-extra-tag" is the trap that got through.
+The overall silent error rate (1/2) cannot tell you which trap caused it; this table can.
+
 ## Auto-publish gate (SUBJECT only, gate_uses: lead)
 
 The gate compares each gated facet's strongest *applied* value to its threshold (0.85).

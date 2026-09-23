@@ -10,7 +10,7 @@ const ROUTE_CLASSES = ['auto', 'review', 'block', 'exclude'];
 const OUTPUT_TYPES = ['set', 'label'];
 const WRONG_WHEN = ['gold_route', 'any_mismatch'];
 const GATE_USES = ['lead', 'weakest'];
-const TOP_LEVEL_KEYS = ['id_field', 'outputs', 'routing', 'wrong_when', 'thresholds'];
+const TOP_LEVEL_KEYS = ['id_field', 'outputs', 'routing', 'wrong_when', 'thresholds', 'trap_field'];
 
 const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isName = v => typeof v === 'string' && v.length > 0;
@@ -133,7 +133,14 @@ function validateConfig(raw) {
     }
   }
 
-  const config = errors.length ? null : { id_field: idField, outputs, routing, wrong_when: wrongWhen, thresholds };
+  // trap_field: optional field on answer-key records naming what the record is
+  // designed to test ("entity-disambiguation", "weak-correct-tag"). Results are then
+  // also broken down by trap type, because a good overall rate can hide one kind of
+  // trap that fails every time. Read from the key only - the workflow never sees it.
+  const trapField = raw.trap_field === undefined ? null : raw.trap_field;
+  if (trapField !== null && !isName(trapField)) errors.push('trap_field must be a non-empty string');
+
+  const config = errors.length ? null : { id_field: idField, outputs, routing, wrong_when: wrongWhen, thresholds, trap_field: trapField };
   return { config, errors };
 }
 

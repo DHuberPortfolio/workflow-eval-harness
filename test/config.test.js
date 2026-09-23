@@ -16,6 +16,7 @@ test('tiny fixture config loads', () => {
   assert.deepEqual(Object.keys(c.outputs), ['SUBJECT', 'GEOGRAPHY']);
   assert.equal(c.routing.gold_field, 'expected_route');
   assert.equal(c.wrong_when, 'gold_route');
+  assert.equal(c.trap_field, 'trap');
   assert.deepEqual(c.thresholds, { floor: 0.6, provisional_below: 0.75, auto_publish: { SUBJECT: 0.85 }, gate_uses: 'lead' });
 });
 
@@ -27,6 +28,13 @@ test('minimal config gets every default filled in', () => {
   assert.equal(config.outputs.SUBJECT.field, 'SUBJECT');
   assert.equal(config.wrong_when, 'any_mismatch'); // no gold field, so fall back
   assert.equal(config.thresholds, null);
+  assert.equal(config.trap_field, null);
+});
+
+test('trap_field must be a field name if given', () => {
+  const raw = minimal();
+  raw.trap_field = '';
+  assert.match(validateConfig(raw).errors[0], /trap_field must be/);
 });
 
 test('gate defaults to the lead value, not the weakest (the run-1 bug)', () => {
