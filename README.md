@@ -35,7 +35,7 @@ written as JSON (`--json`) and as a self-contained HTML report (`--html`).
 | Command | Question it answers |
 |---|---|
 | `wfeval score` | How did this run do? Silent errors by type and severity, routing, output quality, per-trap results, calibration. `--fail-on critical` exits non-zero for CI. |
-| `wfeval variance` | How much do the numbers move between runs of identical code? Mean, spread and range per metric, and the records that behave differently run to run. |
+| `wfeval variance` | How much do the numbers move between runs of identical code? Mean, spread and range per metric, the records that behave differently run to run, and possible key gaps: values stated in every run that the key does not list, for a person to rule on. |
 | `wfeval compare` | Did a change help, or did it move within that noise? Every metric's change against the noise range of repeated runs, and every record that was fixed or broken. |
 | `wfeval whatif` | What would the numbers be at another threshold? Sweeps the auto-publish gate or the value floor. |
 | `wfeval check` | Is this config, and this pair of files, readable? Prints what it understood. |

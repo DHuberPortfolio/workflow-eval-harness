@@ -2,7 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { loadConfig } = require('../src/config.js');
+const { loadConfig, validateConfig } = require('../src/config.js');
 const { varianceRun, compareRun } = require('../src/score.js');
 
 const tiny = path.join(__dirname, 'fixtures', 'tiny');
@@ -33,6 +33,48 @@ test('variance: the records that behave differently from run to run', () => {
     ['R4', 'EDITOR_REVIEW EDITOR_REVIEW AUTO_PUBLISH'],
   ]);
   assert.deepEqual(V.records.silent_changed, [{ id: 'R2', silent: [true, false, true] }]);
+});
+
+test('I7: a value stated in every run that the key lacks is listed for a person, not trusted', () => {
+  assert.deepEqual(V.records.key_gap_candidates, [
+    { id: 'R2', output: 'SUBJECT', value: 'SUBJ-ANTI', runs: 3, of: 3, applied: 3, confidence: { min: 0.8, max: 0.88 } },
+  ]);
+});
+
+test('key gaps leave out invented, inherited, suppressed and unscored values', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const { config: cfg, errors } = validateConfig({
+    id_field: 'id',
+    outputs: { TAGS: { type: 'set' } },
+    routing: { field: 'route', map: { GO: 'auto', DUP: 'exclude' } },
+    allowed_values: { TAGS: ['A', 'B', 'C', 'D'] },
+  });
+  assert.deepEqual(errors, []);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wfeval-gaps-'));
+  const write = (name, rows) => { const f = path.join(dir, name); fs.writeFileSync(f, JSON.stringify(rows)); return f; };
+  const A = { value: 'A', confidence: 0.9 };
+  const key = write('key.json', ['X1', 'X2', 'X3', 'X4'].map(id => ({ id, TAGS: ['A'] })));
+  const one = write('one.json', [
+    // B is a candidate; Z is not an allowed value; C only follows from B
+    { id: 'X1', route: 'GO', TAGS: [A, { value: 'B', confidence: 0.7 }, { value: 'Z', confidence: 0.9 }, { value: 'C', confidence: 0.8, inherited_from: 'B' }] },
+    { id: 'X2', route: 'GO', TAGS: [A, { value: 'B', confidence: 0.6, applied: false }] },
+    { id: 'X3', route: 'DUP', TAGS: [A, { value: 'D', confidence: 0.9 }] },
+    { id: 'X4', route: 'GO', TAGS: [A, { value: 'B', confidence: 0.8 }] },
+  ]);
+  const two = write('two.json', [
+    { id: 'X1', route: 'GO', TAGS: [A, { value: 'B', confidence: 0.9 }] },
+    { id: 'X2', route: 'GO', TAGS: [A] },
+    { id: 'X3', route: 'DUP', TAGS: [A, { value: 'D', confidence: 0.9 }] },
+    { id: 'X4', route: 'GO', scored: false, TAGS: [] },   // the model call failed
+  ]);
+  const v = varianceRun({ config: cfg, keyPath: key, predPaths: [one, two] });
+  assert.deepEqual(v.records.key_gap_candidates, [
+    { id: 'X1', output: 'TAGS', value: 'B', runs: 2, of: 2, applied: 2, confidence: { min: 0.7, max: 0.9 } },
+    { id: 'X2', output: 'TAGS', value: 'B', runs: 1, of: 2, applied: 0, confidence: { min: 0.6, max: 0.6 } },
+    { id: 'X4', output: 'TAGS', value: 'B', runs: 1, of: 2, applied: 1, confidence: { min: 0.8, max: 0.8 } },
+  ]);
+  fs.rmSync(dir, { recursive: true });
 });
 
 test('I1: variance needs at least two runs', () => {

@@ -52,8 +52,43 @@ function spread(values) {
   return { mean, sd, min, max, range: max - min };
 }
 
+// Values an output states in run after run that the key does not list. Each is either the
+// same mistake made every time, or something the key is missing; the tool cannot tell
+// which, so it lists them for a person to decide. Only values a key could list count: not
+// invented ones (outside allowed_values), not inherited ones (they follow from a stated
+// value), not suppressed duplicates, and only from runs where the model answered.
+function keyGapCandidates(runs, config) {
+  const found = new Map();
+  runs.forEach((run, i) => {
+    for (const r of run.results.paired) {
+      if (!r.scored || r.route_class === 'exclude') continue;
+      for (const [name, o] of Object.entries(config.outputs)) {
+        if (o.type !== 'set' || r.key[name] == null) continue;
+        const inKey = new Set(r.key[name]);
+        const allowed = config.allowed_values[name];
+        for (const v of r.pred[name] || []) {
+          if (inKey.has(v.value) || v.inherited || (Array.isArray(allowed) && !allowed.includes(v.value))) continue;
+          const at = JSON.stringify([r.id, name, v.value]);
+          if (!found.has(at)) found.set(at, { id: r.id, output: name, value: v.value, runs: new Set(), applied: new Set(), confidences: [] });
+          const c = found.get(at);
+          c.runs.add(i);
+          if (v.applied) c.applied.add(i);
+          if (typeof v.confidence === 'number') c.confidences.push(v.confidence);
+        }
+      }
+    }
+  });
+  // Most consistent first; ties keep the records' order.
+  return [...found.values()]
+    .map(c => ({
+      id: c.id, output: c.output, value: c.value, runs: c.runs.size, of: runs.length, applied: c.applied.size,
+      confidence: c.confidences.length ? { min: Math.min(...c.confidences), max: Math.max(...c.confidences) } : null,
+    }))
+    .sort((a, b) => b.runs - a.runs);
+}
+
 // runs: [{ label, results }], two or more.
-function varianceOf(runs) {
+function varianceOf(runs, config) {
   const metrics = metricList(runs[0].results).map(m => {
     const values = runs.map(run => m.get(run.results));
     const s = spread(values);
@@ -82,6 +117,7 @@ function varianceOf(runs) {
     records: {
       route_changed: rows.filter(r => new Set(r.routes).size > 1).map(r => ({ id: r.id, routes: r.routes, should: r.gold_route })),
       silent_changed: rows.filter(r => new Set(r.silent).size > 1).map(r => ({ id: r.id, silent: r.silent })),
+      key_gap_candidates: keyGapCandidates(runs, config),
     },
   };
 }

@@ -42,6 +42,19 @@ Spread is the sample standard deviation: how far a typical run sits from the ave
 Read it this way: three runs of *identical code* put the silent error rate anywhere from
 0% to 50%. No single run of this workflow can claim a silent error rate more precise than that.
 
+**Possible key gaps** (values stated that the key does not list, per record and output):
+
+| record | output | value | runs stating it | applied in | confidence |
+|---|---|---|---|---|---|
+| R2 | SUBJECT | SUBJ-ANTI | a, b, c = 3 of 3 | 3 | 0.80 (b) to 0.88 (a, c) |
+
+Nothing else: R1, R3, R4 and R5 state only values the key lists (R3 misses GEO-EU, which
+is a miss, not an extra), and R6 is a suppressed duplicate, which is left out.
+
+R2's SUBJ-ANTI is stated in every run, and it is still wrong: the key is right that R2 is
+about M&A only. That is why the list is for a person to decide (trap I7): the same value in
+every run means *either* the same mistake every time *or* a gap in the key.
+
 ## Compare
 
 **a → b**: silent error rate 50.0% → 0.0% (-50.0 points). Against the three-run noise range

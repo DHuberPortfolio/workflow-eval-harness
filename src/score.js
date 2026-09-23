@@ -77,7 +77,7 @@ function varianceRun({ config, keyPath, predPaths, mode = 'strict' }) {
   }
   const runs = predPaths.map(f => ({ label: f, results: scoreRun({ config, predPath: f, keyPath, mode }) }));
   notes.push(...failedCallNotes(runs));
-  return { inputs: { key: keyPath, runs: predPaths, mode }, ...varianceOf(runs), problems: notes };
+  return { inputs: { key: keyPath, runs: predPaths, mode }, ...varianceOf(runs, config), problems: notes };
 }
 
 // I6: a run where model calls failed is measuring the failures (every failed record went to a

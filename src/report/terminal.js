@@ -159,7 +159,10 @@ function renderVariance(v) {
   }
   parts.push(table(rows, rows[0].map((_, i) => i).filter(i => i > 0)));
   const silent = v.metrics.find(m => m.name === 'silent error rate');
-  if (silent && silent.range !== null) {
+  if (silent && silent.range === 0) {
+    parts.push('Every run gave the same silent error rate, ' + fmt(silent.min, 'points') + '. ' + v.runs.length +
+      ' runs are a small sample: that makes a steady rate likely, not certain.');
+  } else if (silent && silent.range !== null) {
     parts.push('Identical code put the silent error rate anywhere from ' + fmt(silent.min, 'points') + ' to ' + fmt(silent.max, 'points') +
       '. A single run cannot claim more precision than that ' + fmtSpread(silent.range, 'points') + ' range.');
   }
@@ -169,6 +172,16 @@ function renderVariance(v) {
   const sc = v.records.silent_changed;
   parts.push('RECORDS SILENT IN SOME RUNS ONLY  ' + (sc.length ? '' : 'none') +
     sc.map(r => '\n  ' + r.id.padEnd(8) + r.silent.map(s => (s ? 'silent' : 'ok')).join(' / ')).join(''));
+  const gaps = v.records.key_gap_candidates;
+  const every = gaps.filter(g => g.runs === g.of);
+  const lines = ['POSSIBLE KEY GAPS  ' + (every.length
+    ? 'stated in every run, not in the key: the same mistake every time, or a value the key is missing. A person decides which.'
+    : 'none stated in every run')];
+  const conf = c => (c === null ? '' : ' · confidence ' + (c.min === c.max ? c.min.toFixed(2) : c.min.toFixed(2) + '-' + c.max.toFixed(2)));
+  for (const g of every) lines.push('  ' + g.id.padEnd(8) + g.output + '  ' + g.value + '   applied in ' + g.applied + ' of ' + g.of + conf(g.confidence));
+  const some = gaps.length - every.length;
+  if (some) lines.push('  ' + some + ' more stated in some runs only (listed in --json)');
+  parts.push(lines.join('\n'));
   if (v.problems.length) parts.push('WARNINGS\n' + v.problems.map(i => '  [' + i.trap + '] ' + i.where + ': ' + i.message).join('\n'));
   return parts.join('\n\n') + '\n';
 }
