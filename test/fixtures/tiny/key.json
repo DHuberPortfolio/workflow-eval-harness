@@ -1,0 +1,8 @@
+[
+  { "id": "R1", "expected_route": "AUTO_PUBLISH",         "SUBJECT": ["SUBJ-MNA"],  "GEOGRAPHY": ["GEO-US"] },
+  { "id": "R2", "expected_route": "EDITOR_REVIEW",        "SUBJECT": ["SUBJ-MNA"],  "GEOGRAPHY": ["GEO-US"] },
+  { "id": "R3", "expected_route": "EDITOR_REVIEW",        "SUBJECT": ["SUBJ-EARN"], "GEOGRAPHY": ["GEO-UK", "GEO-EU"] },
+  { "id": "R4", "expected_route": "AUTO_PUBLISH",         "SUBJECT": ["SUBJ-EARN"], "GEOGRAPHY": ["GEO-US"] },
+  { "id": "R5", "expected_route": "BLOCKED",              "SUBJECT": ["SUBJ-LAB"],  "GEOGRAPHY": ["GEO-EU"] },
+  { "id": "R6", "expected_route": "DUPLICATE_SUPPRESSED", "SUBJECT": ["SUBJ-MNA"],  "GEOGRAPHY": ["GEO-US"] }
+]

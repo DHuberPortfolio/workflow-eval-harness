@@ -1,0 +1,15 @@
+{
+  "name": "workflow-eval-harness",
+  "version": "0.1.0",
+  "description": "Config-driven evaluation harness for AI workflow outputs. Headline metric: silent error rate.",
+  "bin": {
+    "wfeval": "bin/wfeval.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18.3"
+  },
+  "license": "MIT"
+}

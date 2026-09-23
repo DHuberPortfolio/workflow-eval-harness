@@ -1,0 +1,23 @@
+{
+  "id_field": "id",
+  "outputs": {
+    "SUBJECT": { "type": "set" },
+    "GEOGRAPHY": { "type": "set" }
+  },
+  "routing": {
+    "field": "route",
+    "gold_field": "expected_route",
+    "map": {
+      "AUTO_PUBLISH": "auto",
+      "EDITOR_REVIEW": "review",
+      "BLOCKED": "block",
+      "DUPLICATE_SUPPRESSED": "exclude"
+    }
+  },
+  "thresholds": {
+    "floor": 0.60,
+    "provisional_below": 0.75,
+    "auto_publish": { "SUBJECT": 0.85 },
+    "gate_uses": "lead"
+  }
+}
