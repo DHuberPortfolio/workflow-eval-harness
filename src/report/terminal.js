@@ -126,11 +126,8 @@ function renderTerminal(results) {
   if (r.silent_omissions) parts.push(silentSection('SILENT OMISSIONS', r.silent_omissions, false));
   parts.push(r.safeguard_failures.records === 0 ? 'SAFEGUARD FAILURES  none'
     : 'SAFEGUARD FAILURES  ' + r.safeguard_failures.detail.map(d => d.id + ' (' + d.types.join(', ') + ')').join('  ') +
-      '
-  Critical, and a workflow bug even when the content is right: find the branch that routed these records
-' +
-      '  and why it did not apply the check (SG-GATE: lead confidence below the gate; SG-FLOOR: a value below the floor was applied).
-' +
+      '\n  Critical, and a workflow bug even when the content is right: find the branch that routed these records\n' +
+      '  and why it did not apply the check (SG-GATE: lead confidence below the gate; SG-FLOOR: a value below the floor was applied).\n' +
       '  If the key agrees with the record, the fix is a model that clears the threshold, not a lower threshold.');
   parts.push('WASTED REVIEWS  ' + list(r.review_queue.wasted) + (r.block && r.block.wrongly_blocked.length ? '\nWRONGLY BLOCKED  ' + list(r.block.wrongly_blocked) : ''));
   const classes = by => ['auto', 'review', 'block', 'exclude'].map(k => k + ' ' + by[k]).join(' · ');
