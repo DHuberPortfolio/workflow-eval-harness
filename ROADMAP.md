@@ -49,7 +49,8 @@ the design is wrong.
       recall and the gate. Records whose route depended on something the harness cannot
       recompute are reported as "needs replay", never guessed. A workflow-specific replay
       (caps, hierarchies, cue lists) can be supplied by its adapter.
-- [ ] Self-contained HTML report (no CDN)
+- [x] Self-contained HTML report (no CDN): headline, tiles, silent errors, quality, traps, calibration chart
+      with hover and keyboard tooltips, every record; light and dark; escaped input values (`--html`)
 - [ ] README: architecture and the reasoning behind each metric
 - [ ] Publish to GitHub
 
