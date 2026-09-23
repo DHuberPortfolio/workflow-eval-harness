@@ -55,7 +55,7 @@ the design is wrong.
 - [ ] Publish to GitHub
 
 ## Real-world fixtures (one per workflow, in `examples/`)
-- [ ] Metadata enrichment: adapter + reproduce run 49's facet and routing figures
+- [x] Metadata enrichment: adapter + reproduce run 49's facet and routing figures (`examples/metadata-enrichment/`)
 - [ ] Bar compliance: adapter + its 40-document ground truth set
 - [ ] Competitor registry: needs "declined to classify" handled as its own outcome
 - [ ] Competitor watch: needs **ordinal labels** (bands 1-5, where near-misses count less than

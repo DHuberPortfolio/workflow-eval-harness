@@ -1,0 +1,31 @@
+{
+  "id_field": "id",
+  "outputs": {
+    "SUBJECT":   { "type": "set", "field": "output.SUBJECT",   "key_field": "expected.SUBJECT" },
+    "INDUSTRY":  { "type": "set", "field": "output.INDUSTRY",  "key_field": "expected.INDUSTRY" },
+    "GEOGRAPHY": { "type": "set", "field": "output.GEOGRAPHY", "key_field": "expected.GEOGRAPHY" },
+    "COMPANY":   { "type": "set", "field": "output.COMPANY",   "key_field": "expected.COMPANY" }
+  },
+  "routing": {
+    "field": "decision",
+    "map": {
+      "AUTO_PUBLISH": "auto",
+      "EDITOR_REVIEW": "review",
+      "SPECIALIST_REVIEW": "review",
+      "DUPLICATE_SUPPRESSED": "exclude"
+    }
+  },
+  "thresholds": {
+    "floor": 0.60,
+    "provisional_below": 0.75,
+    "auto_publish": { "SUBJECT": 0.85, "INDUSTRY": 0.70 },
+    "gate_uses": "lead"
+  },
+  "allowed_values": {
+    "SUBJECT":   { "file": "allowed/SUBJECT.json" },
+    "INDUSTRY":  { "file": "allowed/INDUSTRY.json" },
+    "GEOGRAPHY": { "file": "allowed/GEOGRAPHY.json" },
+    "COMPANY":   { "file": "allowed/COMPANY.json" }
+  },
+  "whatif": { "movable_field": "decision_branch", "movable_values": ["gate", "auto"] }
+}
