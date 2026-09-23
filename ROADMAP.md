@@ -39,6 +39,7 @@ the design is wrong.
 - [x] Calibration: bucket per stated confidence value (fixed width optional); inherited values
       excluded; interval per bucket; per output; the config's thresholds checked (`calibration.js`)
 - [x] `wfeval variance`: N runs, mean and spread per metric, records that change between runs (`test/fixtures/runs/`)
+- [x] Possible key gaps in `variance`: values stated in every run that the key lacks, listed for a person (trap I7)
 - [x] `wfeval compare`: metric deltas, verdict against a `--noise` baseline, the records that flipped and whether each was fixed or broken
 
 ## Day 4: what-if and publishing
@@ -52,11 +53,13 @@ the design is wrong.
 - [x] Self-contained HTML report (no CDN): headline, tiles, silent errors, quality, traps, calibration chart
       with hover and keyboard tooltips, every record; light and dark; escaped input values (`--html`)
 - [x] README: architecture and the reasoning behind each metric; `docs/CONFIG.md` config reference
-- [ ] Publish to GitHub (waiting on the owner: public or private, and when)
+- [x] Published to GitHub, private until the owner decides it is ready to be public
 
 ## Real-world fixtures (one per workflow, in `examples/`)
 - [x] Metadata enrichment: adapter + reproduce run 49's facet and routing figures (`examples/metadata-enrichment/`)
 - [x] Compliance reviewer: adapter, three live runs from n8n (executions 50-52), variance (`examples/compliance-reviewer/`)
+- [x] Compliance reviewer: prompt v2 measured (runs 56-59), pass-with-notes log in n8n, answer key v2 from the key-gap review (`KEY_GAPS.md`)
+- [x] Metadata enrichment: Harness Export node in n8n (compact records, `decision_branch` emitted), three fresh runs (61-63) for variance
 - [ ] Competitor registry: needs "declined to classify" handled as its own outcome
 - [x] Ordinal labels (bands 1-5: near misses count less than far misses), with a hand-worked
       fixture (`test/fixtures/ordinal/`). Competitor watch's own runs not scored: running it writes

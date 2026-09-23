@@ -50,3 +50,19 @@ test('the adapter stops on a decision reason it does not recognise', () => {
   assert.equal(branchOf({ article_id: 'A1', decision_reason: 'All tags in vocabulary, ...' }), 'auto');
   assert.throws(() => branchOf({ article_id: 'A1', decision_reason: 'Something new' }), /unrecognised decision_reason/);
 });
+
+// Real data: three fresh runs of the same workflow (executions 61-63), saved from its
+// Harness Export node. Each file was checked against that run's own scorecard when saved.
+test('runs 61-63: identical code, the numbers that moved and the one value stated every run', () => {
+  const { varianceRun } = require('../src/score.js');
+  const runs = [61, 62, 63].map(n => path.join(dir, 'runs', 'exec-' + n + '.json'));
+  const v = varianceRun({ config, keyPath: runs[0], predPaths: runs });
+  const metric = name => v.metrics.find(m => m.name === name).values;
+  assert.deepEqual(metric('silent error rate'), [0, 0, 0]);
+  assert.deepEqual(metric('straight-through'), [29.2, 33.3, 33.3]);
+  assert.deepEqual(v.records.route_changed.map(r => [r.id, r.routes.join(' ')]), [['A22', 'EDITOR_REVIEW AUTO_PUBLISH AUTO_PUBLISH']]);
+  // SUBJ-ANTI on A01 is stated in every run and the key leaves it out on purpose: the
+  // workflow's salience gate exists for exactly this marginal claim (trap I7).
+  assert.deepEqual(v.records.key_gap_candidates.filter(g => g.runs === g.of).map(g => [g.id, g.value]), [['A01', 'SUBJ-ANTI']]);
+  assert.deepEqual(v.problems, []);
+});
