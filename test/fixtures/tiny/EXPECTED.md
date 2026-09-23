@@ -134,10 +134,47 @@ GEOGRAPHY is not listed under `auto_publish`, so it never gates.
 | R5 | none applied | no | BLOCKED |
 | R6 | 0.99 | yes | DUPLICATE_SUPPRESSED (duplicate rule wins) |
 
-Kept for the what-if tests later. Note R4: its lead of 0.80 misses the gate, yet the
-key says it was safe to auto-publish. Lowering SUBJECT's threshold to 0.80 would send
-R4 through correctly and still let R2 (0.90) through wrongly: straight-through rises
-to 3/6 while the silent error rate goes from 1/2 to 1/3, from one fewer
-error-free record held back, not from one fewer error. That is the kind of trade-off the
-what-if report must make visible. Lowering the floor to 0.55 would apply R5's SUBJ-LAB
-and raise SUBJECT recall to 5/5.
+Note R4: its lead of 0.80 misses the gate, yet the key says it was safe to auto-publish.
+
+## What-if: the gate
+
+The config has no `whatif.movable_field`, so every record that went through or was
+reviewed (R1-R4) is assumed to have been routed by the gate alone: an upper bound on what
+can move. R5 (blocked) and R6 (suppressed) never move.
+
+SUBJECT leads: R1 0.95 · R2 0.90 · R3 0.70 · R4 0.80.
+
+| SUBJECT gate | goes through | straight-through | silent errors | silent error rate |
+|---|---|---|---|---|
+| 0.50 - 0.70 | R1 R2 R3 R4 | 4/6 | R2 R3 | 2/4 |
+| 0.75 - 0.80 | R1 R2 R4 | 3/6 | R2 | 1/3 |
+| 0.85 (current) | R1 R2 | 2/6 | R2 | 1/2 |
+| 0.90 | R1 R2 | 2/6 | R2 | 1/2 |
+| 0.95 | R1 | 1/6 | - | 0/1 |
+| 1.00 | - | 0/6 | - | none went through |
+
+At 0.85 the simulation reproduces the actual routes of all four movable records, so the
+assumption holds on this run. Lowering the gate to 0.80 lets R4 through correctly, and the
+silent error rate falls from 1/2 to 1/3, but **not because an error was prevented**: R2
+still goes through wrong. The rate falls because a correct record joined the denominator.
+That is why the what-if shows the error count beside the rate.
+
+## What-if: the floor
+
+Current floor 0.60. A value rejected with a confidence below the current floor is assumed
+to have been rejected by the floor, so a lower floor re-admits it. The gate is re-checked
+for movable records whose values changed; a record whose values changed but that cannot
+move (R5, blocked) is marked "needs replay": its route might change for reasons this tool
+cannot recompute.
+
+| floor | values changed | needs replay | overall TP/FP/FN | precision | recall | F1 | silent errors |
+|---|---|---|---|---|---|---|---|
+| 0.55 | + R5 SUBJ-LAB | R5 | 10/1/1 | 90.9% | 90.9% | 0.909 | R2 (1/2) |
+| 0.60 (current) | - | - | 9/1/2 | 90.0% | 81.8% | 0.857 | R2 (1/2) |
+| 0.70 | - R3 GEO-UK | - | 8/1/3 | 88.9% | 72.7% | 0.800 | R2 (1/2) |
+| 0.90 | - R2 SUBJ-ANTI, - R3 all, - R4 all, - R5 GEO-EU | R5 | 4/0/7 | 100.0% | 36.4% | 0.533 | R2 (1/2) |
+
+At 0.90 the wrong SUBJ-ANTI is gone and R2's values are all correct, yet R2 is still a
+silent error: the key says it should have been reviewed. Above 0.80, R4 loses its only
+subject (SUBJ-EARN, 0.80) and would fail the gate, but it was already reviewed, so no
+route moves; the cost shows up as recall instead.

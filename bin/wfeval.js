@@ -6,7 +6,7 @@ const { parseArgs } = require('node:util');
 const { loadConfig, SEVERITIES } = require('../src/config.js');
 const { loadRun } = require('../src/load.js');
 const { scoreRun, varianceRun, compareRun } = require('../src/score.js');
-const { renderTerminal, renderVariance, renderCompare } = require('../src/report/terminal.js');
+const { renderTerminal, renderVariance, renderCompare, renderWhatif } = require('../src/report/terminal.js');
 const { resultsJson } = require('../src/report/json.js');
 
 const USAGE = `usage: wfeval <command> [options]
@@ -29,7 +29,10 @@ commands:
             what changed between two runs, and whether it is bigger than the noise
             of repeated identical runs (give those with --noise)
 
-  whatif    (not built yet)
+  whatif    --config <file> --pred <file> --key <file> (--gate | --floor)
+            [--output <name>] [--from <n>] [--to <n>] [--step <n>] [--lenient] [--json <file>]
+            what the numbers would be at other thresholds. --gate sweeps the auto-publish
+            gate (all gated outputs, or one with --output); --floor sweeps the value floor
 
 exit codes: 0 done · 1 input problems (listed) · 2 bad command · 3 --fail-on triggered`;
 
@@ -144,7 +147,29 @@ function compare(args) {
   if (values.json) writeFile(values.json, JSON.stringify(resultsJson(c), null, 2) + '\n');
 }
 
-const COMMANDS = { check, score, variance, compare };
+function whatif(args) {
+  const { values } = parseArgs({ args, options: {
+    config: { type: 'string' }, pred: { type: 'string' }, key: { type: 'string' }, lenient: { type: 'boolean' },
+    gate: { type: 'boolean' }, floor: { type: 'boolean' }, output: { type: 'string' },
+    from: { type: 'string' }, to: { type: 'string' }, step: { type: 'string' }, json: { type: 'string' },
+  } });
+  need(values, ['config', 'pred', 'key'], 'whatif');
+  if (Boolean(values.gate) === Boolean(values.floor)) throw new Error('whatif needs exactly one of --gate or --floor');
+  const config = loadConfig(values.config);
+  const { paired } = scoreRun({ config, predPath: values.pred, keyPath: values.key, mode: MODE(values) });
+  const opts = {};
+  for (const k of ['from', 'to', 'step']) {
+    if (values[k] === undefined) continue;
+    opts[k] = Number(values[k]);
+    if (!Number.isFinite(opts[k])) throw new Error('--' + k + ' must be a number');
+  }
+  const { gateSweep, floorSweep } = require('../src/metrics/whatif.js');
+  const w = values.gate ? gateSweep(paired, config, { ...opts, outputs: values.output ? [values.output] : null }) : floorSweep(paired, config, opts);
+  process.stdout.write(renderWhatif(w));
+  if (values.json) writeFile(values.json, JSON.stringify(resultsJson({ inputs: { predictions: values.pred, key: values.key }, ...w }), null, 2) + '\n');
+}
+
+const COMMANDS = { check, score, variance, compare, whatif };
 
 function main(argv) {
   const [cmd, ...rest] = argv;

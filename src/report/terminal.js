@@ -184,4 +184,41 @@ function renderCompare(c) {
   return parts.join('\n\n') + '\n';
 }
 
-module.exports = { renderTerminal, renderVariance, renderCompare, WRONG_WHEN };
+// ---------- What-if ----------
+
+const frac = r => (r === null ? 'n/a' : r.d === 0 ? 'none through' : pct(r) + ' (' + r.n + '/' + r.d + ')');
+
+function renderWhatif(w) {
+  const parts = [];
+  if (w.kind === 'gate') {
+    parts.push('WHAT-IF: CONFIDENCE GATE  sweeping ' + w.outputs.join(', '));
+    parts.push('Assumption: ' + w.assumption + '.');
+    const rows = [['gate', 'through', 'straight-through', 'silent errors', 'silent error rate', 'moved in', 'moved out', 'wasted reviews', '']];
+    for (const r of w.rows) {
+      rows.push([r.threshold.toFixed(2), r.through.length, pct(r.straight_through), list(r.silent_errors, 6), frac(r.silent_error_rate),
+        list(r.moved_in, 6), list(r.moved_out, 6), r.wasted_reviews.length, r.current ? '<- current' : '']);
+    }
+    parts.push(table(rows, [1, 2]));
+    if (w.check) {
+      parts.push(w.check.differing.length === 0
+        ? 'Check: at the current gate (' + w.check.threshold + ') the simulation reproduces the actual route of all ' + w.check.movable + ' movable records.'
+        : 'CHECK FAILED: at the current gate (' + w.check.threshold + ') the simulation routes ' + w.check.differing.length + ' of ' + w.check.movable +
+          ' movable records differently from the actual run (' + list(w.check.differing) + '). Those records were not routed by the gate alone: ' +
+          'set whatif.movable_field so the what-if only moves records the gate decided.');
+    }
+    parts.push('Read the silent error COUNT beside the rate: a rate can fall because correct records joined the denominator, with no error prevented.');
+  } else {
+    parts.push('WHAT-IF: CONFIDENCE FLOOR');
+    parts.push('Assumption: ' + w.assumption);
+    const rows = [['floor', 'precision', 'recall', 'F1', 'TP/FP/FN', 're-admitted', 'evicted', 'routes moved', 'silent errors', 'needs replay', '']];
+    for (const r of w.rows) {
+      const o = r.overall;
+      rows.push([r.floor.toFixed(2), o ? pct(o.precision) : 'n/a', o ? pct(o.recall) : 'n/a', o ? num(o.f1) : 'n/a', o ? o.tp + '/' + o.fp + '/' + o.fn : '',
+        r.readmitted.length, r.evicted.length, list(r.moved, 4), frac(r.silent_error_rate), list(r.needs_replay, 6), r.current ? '<- current' : '']);
+    }
+    parts.push(table(rows, [1, 2, 3, 5, 6]));
+  }
+  return parts.join('\n\n') + '\n';
+}
+
+module.exports = { renderTerminal, renderVariance, renderCompare, renderWhatif, WRONG_WHEN };

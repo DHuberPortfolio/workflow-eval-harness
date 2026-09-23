@@ -42,10 +42,10 @@ the design is wrong.
 - [x] `wfeval compare`: metric deltas, verdict against a `--noise` baseline, the records that flipped and whether each was fixed or broken
 
 ## Day 4: what-if and publishing
-- [ ] `wfeval whatif --gate`: sweep each gated output's threshold. Only records marked
+- [x] `wfeval whatif --gate`: sweep each gated output's threshold. Only records marked
       `movable` (their route was decided by the confidence gate, or they went through)
       can change route; values never change, so precision/recall stay fixed. Counts beside rates.
-- [ ] `wfeval whatif --floor`: re-admit or evict values by the floor and recompute precision,
+- [x] `wfeval whatif --floor`: re-admit or evict values by the floor and recompute precision,
       recall and the gate. Records whose route depended on something the harness cannot
       recompute are reported as "needs replay", never guessed. A workflow-specific replay
       (caps, hierarchies, cue lists) can be supplied by its adapter.
