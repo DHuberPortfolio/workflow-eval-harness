@@ -21,7 +21,8 @@ the design is wrong.
       renamed value/confidence keys, predictions and answers in one file (`test/fixtures/shapes/`)
 - [x] CSV input (spreadsheets, Zapier Tables and other exports): `A@0.95 | B` cells, configurable
       separators, `rejected_field` and label `confidence_field` (both work for JSON too)
-- [ ] `align.js`: match predictions to key by id (traps B, C)
+- [x] `align.js`: match predictions to key by id, resolve route classes (traps A8, B2-B6, B9, C1-C5);
+      `wfeval check` shows matched records and route counts
 - [ ] Second tiny fixture shaped like a compliance review: a label output (pass / elevate / fail)
       plus a set of violation codes, so both output types are proven from the start
 - [ ] Precision / recall / F1 per output and overall, set and label outputs

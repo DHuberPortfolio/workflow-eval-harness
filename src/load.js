@@ -22,6 +22,7 @@ const fs = require('fs');
 const nodePath = require('path');
 const { problems } = require('./problems.js');
 const { csvToRecords, decodeCsvRecords } = require('./csv.js');
+const { align } = require('./align.js');
 
 const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const describe = v => (v === null ? 'null' : v === undefined ? 'nothing' : Array.isArray(v) ? 'a list'
@@ -375,7 +376,8 @@ function normalizeKey(raws, config, source, p) {
   return out;
 }
 
-// Loads both files. Throws, listing every problem, if anything must stop scoring.
+// Loads both files and pairs them up (align.js). Throws, listing every problem, if
+// anything must stop scoring. Returns the clean records of each file and the pairs.
 // The predictions and key may be the same file (A10); it is then read once.
 function loadRun({ config, predPath, keyPath, mode = 'strict' }) {
   const p = problems(mode);
@@ -389,8 +391,12 @@ function loadRun({ config, predPath, keyPath, mode = 'strict' }) {
   if (formatOf(keyPath, config.input.key) === 'csv') keyRaws = decodeCsvRecords(keyRaws, config, 'key', config.input.key, keyPath, p);
   const predictions = normalizePredictions(predRaws, config, predPath, p, { sameFile });
   const key = normalizeKey(keyRaws, config, keyPath, p);
+  // Matching half-read files would only add noise (every unread record "missing"),
+  // so reading problems are reported on their own first.
   p.throwIfStopped();
-  return { predictions, key, problems: p.items };
+  const records = align(predictions, key, config, p, { sameFile, predSource: predPath, keySource: keyPath });
+  p.throwIfStopped();
+  return { predictions, key, records, problems: p.items };
 }
 
 module.exports = { getPath, formatOf, parseRecords, readRecords, normalizePredictions, normalizeKey, loadRun };

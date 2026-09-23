@@ -32,7 +32,7 @@ output, one odd record should not block the whole report, so it warns instead.
 | A5 | The records aren't where expected: the file is an object (an API's `{ "data": { "results": [...] } }`), or `records_at` leads to nothing | Probably wrapped by whatever produced it | STOP, listing where lists were found and naming the `records_at` setting |
 | A6 | Every record is inside a wrapper field (n8n: `{ "json": {...} }`; other tools use other names) | The id and every value are one level down | RULE: declared with `unwrap`, never guessed. If the id is inside the same field in every record, STOP once, naming the exact setting to add |
 | A7 | Key file passed where predictions belong (no route field) | Scores the key against itself | STOP |
-| A8 | Predictions identical to the key | Everything scores 100%; almost always a wrong-file mistake | STRICT |
+| A8 | Predictions identical to the key | Everything scores 100%; almost always a wrong-file mistake | STOP if one file and the same fields are read as both prediction and answer. WARN if the values are identical and no prediction has a confidence (a real perfect run is possible) |
 | A9 | A field literally named `output.subject` next to a nested `output` → `subject` | Two ways to read the same path | RULE: the literal name wins (spreadsheet-style exports flatten nested names that way) |
 | A10 | Predictions and answers in the same file | The key's fields sit beside the workflow's | RULE: allowed; outputs name the key's fields with `key_field`; H4 does not apply |
 

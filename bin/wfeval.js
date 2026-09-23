@@ -53,6 +53,11 @@ function check(args) {
   console.log('data OK  (' + mode + ' mode)');
   console.log('  predictions ' + run.predictions.length + ' records   ' + values.pred);
   console.log('  answer key  ' + run.key.length + ' records   ' + values.key);
+  const count = field => ['auto', 'review', 'block', 'exclude']
+    .map(cls => cls + ' ' + run.records.filter(r => r[field] === cls).length).join(' · ');
+  console.log('  matched     ' + run.records.length + ' records');
+  console.log('  routed      ' + count('route_class'));
+  if (c.routing.gold_field) console.log('  should be   ' + count('gold_class'));
   for (const level of ['warn', 'fix']) {
     const found = run.problems.filter(i => i.level === level);
     if (found.length === 0) continue;
