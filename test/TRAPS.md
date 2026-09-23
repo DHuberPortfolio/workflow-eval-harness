@@ -57,10 +57,10 @@ output, one odd record should not block the whole report, so it warns instead.
 | C3 | Route with different case or spaces: `"auto_publish "` | Guessing could turn a review into an auto-publish | FIX spaces only; case is STOP |
 | C4 | Gold route missing on a key record (when grading by gold route) | Can't tell if it was a silent error | STOP |
 | C5 | Gold route not in the config map | Same | STOP |
-| C6 | Key says retelling, workflow published it anyway | One event counted twice | RULE: silent publish, type SP-DUPLICATE (see docs/SILENT_ERRORS.md) |
-| C7 | Workflow suppressed a record as a retelling, key says it's its own story | A real story never published, nobody told | RULE: silent omission, type SO-FALSE-DUPLICATE |
-| C8 | Workflow kept a retelling and suppressed the main source of the same story | The story went out, from the wrong source | RULE: SP-WRONG-SOURCE + SO-MAIN-SOURCE; needs `duplicate_of` in the key |
-| C9 | Key record marked as a retelling points at an id that isn't in the key | The story cluster is broken | STOP |
+| C6 | Key says duplicate, workflow let it through anyway | The same thing counted twice | RULE: silent publish, type SP-DUPLICATE (see docs/SILENT_ERRORS.md) |
+| C7 | Workflow suppressed a record as a duplicate, key says it isn't one | A real record never goes through, nobody told | RULE: silent omission, type SO-FALSE-DUPLICATE |
+| C8 | Workflow kept a duplicate and suppressed the primary record it duplicates | The right content went through, from the wrong copy | RULE: SP-WRONG-PRIMARY + SO-PRIMARY-SUPPRESSED; needs `duplicate_of` in the key |
+| C9 | Key record marked as a duplicate points at an id that isn't in the key | The duplicate group is broken | STOP |
 | C10 | Record where the model call failed (no output at all) | Its empty tags would count as misses and drag recall down for a reason that isn't tagging quality | RULE: counts in routing; excluded from precision/recall (adapter marks it `"scored": false`) |
 
 ## D. Set outputs (codes)
@@ -74,7 +74,7 @@ output, one odd record should not block the whole report, so it warns instead.
 | D5 | Facet is a single string, not a list | Could be one code, or `"A\|B"` packed together | STOP |
 | D6 | Same code twice in one facet | Counted twice, inflating TP or FP; also a sign the workflow's de-duplication is broken | STRICT. In lenient mode: keep once (highest confidence) |
 | D7 | Stray spaces in a code: `" GEO-US"` | Counted as wrong when it's right | FIX: trim |
-| D8 | Code differs by case: `"geo-us"` vs `"GEO-US"` | Is it the same code? | RULE: different codes, so it counts as wrong (controlled vocabularies are exact); plus STRICT with the near-match named |
+| D8 | Code differs by case: `"geo-us"` vs `"GEO-US"` | Is it the same code? | RULE: different codes, so it counts as wrong (allowed-value lists are exact); plus STRICT with the near-match named |
 | D9 | Empty code `""` | Counted as a false positive | STOP |
 | D10 | `"applied": false` | Must not count as predicted | RULE: excluded from precision/recall, kept for calibration and what-if |
 | D11 | `applied` missing | Most exports won't include it | FIX: treat as applied |
@@ -84,7 +84,7 @@ output, one odd record should not block the whole report, so it warns instead.
 | D15 | Extra fields on records (evidence, notes, cost) | Normal in real exports | RULE: ignored |
 | D16 | A facet in the files but not in the config | Probably intentional | RULE: ignored |
 | D17 | `inherited_from` on a value | Copies another tag's confidence; not a separate claim by the model | RULE: counts in precision/recall, excluded from calibration and from "proposed by model" counts |
-| D18 | Broader terms added on one side only (predictions rolled up to ancestors, key not, or the reverse) | Every ancestor shows up as a false positive or false negative | STRICT when a vocabulary is given: check both sides are closed under the same ancestors |
+| D18 | Broader terms added on one side only (predictions rolled up to ancestors, key not, or the reverse) | Every ancestor shows up as a false positive or false negative | STRICT when a value hierarchy is given: check both sides are closed under the same ancestors |
 
 ## E. Confidence values
 
@@ -126,7 +126,7 @@ output, one odd record should not block the whole report, so it warns instead.
 |---|---|---|---|
 | H1 | Record with no trap label | Dropped from the per-trap table; totals stop adding up | RULE: grouped as "(none)" |
 | H2 | Trap name typo: `entity-disambig` vs `entity-disambiguation` | Splits one trap type into two small groups | Caught by H5 |
-| H3 | Record with several traps (e.g. a retelling that also has a weak-but-correct tag) | Which group does it count in? | RULE: the trap field may be a list; the record counts in each group; the table notes that group totals can exceed the record count |
+| H3 | Record with several traps (e.g. a duplicate that also has a weak-but-correct value) | Which group does it count in? | RULE: the trap field may be a list; the record counts in each group; the table notes that group totals can exceed the record count |
 | H4 | Trap field present on **predictions** | The workflow may have seen what it was being tested on | STRICT |
 | H5 | A trap type with too few records (below `min_per_trap`, e.g. 3) | One record passing can be luck; it proves nothing about the trap | STRICT. The report always lists every trap type with its count |
 
@@ -142,7 +142,7 @@ output, one odd record should not block the whole report, so it warns instead.
 
 ## Note on duplicates
 
-"Duplicate" here means a **retelling of the same story**, not an identical copy: many
-outlets reporting one event. The workflow keeps the main source and suppresses the
-retellings, so one event does not look like many. The key marks a retelling with
-`duplicate_of` pointing at the main source's id.
+"Duplicate" means a record that repeats one already kept, not necessarily an identical
+copy (in a news workflow, the same event retold by another outlet). The workflow keeps
+the primary and suppresses the rest. The key marks a duplicate with `duplicate_of`,
+pointing at the primary record's id. See docs/SILENT_ERRORS.md.
