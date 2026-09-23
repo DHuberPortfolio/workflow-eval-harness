@@ -51,12 +51,12 @@ the design is wrong.
       (caps, hierarchies, cue lists) can be supplied by its adapter.
 - [x] Self-contained HTML report (no CDN): headline, tiles, silent errors, quality, traps, calibration chart
       with hover and keyboard tooltips, every record; light and dark; escaped input values (`--html`)
-- [ ] README: architecture and the reasoning behind each metric
-- [ ] Publish to GitHub
+- [x] README: architecture and the reasoning behind each metric; `docs/CONFIG.md` config reference
+- [ ] Publish to GitHub (waiting on the owner: public or private, and when)
 
 ## Real-world fixtures (one per workflow, in `examples/`)
 - [x] Metadata enrichment: adapter + reproduce run 49's facet and routing figures (`examples/metadata-enrichment/`)
-- [ ] Bar compliance: adapter + its 40-document ground truth set
+- [ ] Bar compliance: adapter + its 40-document ground truth set (needs a run's output from n8n)
 - [ ] Competitor registry: needs "declined to classify" handled as its own outcome
 - [ ] Competitor watch: needs **ordinal labels** (bands 1-5, where near-misses count less than
       far misses)
