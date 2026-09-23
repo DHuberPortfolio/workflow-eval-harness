@@ -61,6 +61,7 @@ output, one odd record should not block the whole report, so it warns instead.
 | C7 | Workflow suppressed a record as a retelling, key says it's its own story | A real story never published, nobody told | RULE: silent omission, type SO-FALSE-DUPLICATE |
 | C8 | Workflow kept a retelling and suppressed the main source of the same story | The story went out, from the wrong source | RULE: SP-WRONG-SOURCE + SO-MAIN-SOURCE; needs `duplicate_of` in the key |
 | C9 | Key record marked as a retelling points at an id that isn't in the key | The story cluster is broken | STOP |
+| C10 | Record where the model call failed (no output at all) | Its empty tags would count as misses and drag recall down for a reason that isn't tagging quality | RULE: counts in routing; excluded from precision/recall (adapter marks it `"scored": false`) |
 
 ## D. Set outputs (codes)
 
@@ -82,7 +83,8 @@ output, one odd record should not block the whole report, so it warns instead.
 | D14 | Empty prediction and empty key for a facet | Correct, but there is nothing to count | RULE: exact match; adds no TP/FP/FN |
 | D15 | Extra fields on records (evidence, notes, cost) | Normal in real exports | RULE: ignored |
 | D16 | A facet in the files but not in the config | Probably intentional | RULE: ignored |
-| D17 | `inherited_from` on a value | Copies another tag's confidence; not a separate claim by the model | RULE: counts in precision/recall, excluded from calibration |
+| D17 | `inherited_from` on a value | Copies another tag's confidence; not a separate claim by the model | RULE: counts in precision/recall, excluded from calibration and from "proposed by model" counts |
+| D18 | Broader terms added on one side only (predictions rolled up to ancestors, key not, or the reverse) | Every ancestor shows up as a false positive or false negative | STRICT when a vocabulary is given: check both sides are closed under the same ancestors |
 
 ## E. Confidence values
 
@@ -116,6 +118,7 @@ output, one odd record should not block the whole report, so it warns instead.
 | G6 | Rounding before dividing | Small errors compound | RULE: compute from raw counts; round only for display |
 | G7 | Straight-through denominator | Must include excluded records (your choice) | RULE: all records |
 | G8 | Silent error with a small base: 0/7 | Looks perfect, could be 35% | RULE: every rate shows its range |
+| G9 | Comparing two different populations (run 4's negative rejection rate: applied included inherited, proposed did not) | Impossible numbers, or worse, plausible wrong ones | RULE: every ratio's top and bottom count the same kind of thing |
 
 ## H. Traps inside the trap labels
 

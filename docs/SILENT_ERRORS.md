@@ -53,15 +53,24 @@ it. **MISSING** is the model's blind spot, and no threshold will fix it.
 ## Family 2: silent omissions
 
 The workflow routed the record somewhere **no human sees**, and the answer key says
-it should have been published or reviewed. Which routes count as "no human sees" is
-set in the config: suppressed duplicates always do; a block might (a full deny) or
-might not (a hand-off to an agent or an analyst).
+it should have been published or reviewed.
+
+Which routes a human sees follows from the four route classes, the same in every workflow:
+
+| Class | What happens | Human sees it? |
+|---|---|---|
+| auto | published straight through | no |
+| review | the middle band: elevated to an analyst to decide | **yes** |
+| block | an obvious no: never processed, never enters the database | no |
+| exclude | a retelling of a story already kept | no |
+
+So a silent omission is: **key says auto or review, workflow said block or exclude.**
 
 | Code | Type | How the tool detects it | Default severity |
 |---|---|---|---|
 | SO-FALSE-DUPLICATE | **Real story suppressed**: suppressed as a retelling, but the key says it is its own story | Workflow route exclude; key does not mark it as a retelling | high |
 | SO-MAIN-SOURCE | **Main source suppressed**: the key marks this as the main source, the workflow kept a retelling instead | Needs `duplicate_of` in the key | medium |
-| SO-FALSE-BLOCK | **Good record denied**: blocked with no human, but the key says publish or review | Workflow route block (unseen); key route auto or review | medium |
+| SO-FALSE-BLOCK | **Good record denied**: blocked, never processed, but the key says publish or review | Workflow route class block; key route class auto or review | medium |
 
 A record that went in and never came out at all is not measured here. It stops
 the run (see TRAPS.md, B5), because it is a workflow bug to fix, not a rate to report.
@@ -69,9 +78,6 @@ the run (see TRAPS.md, B5), because it is a workflow bug to fix, not a rate to r
 ## What the config will need
 
 ```json
-"routing": {
-  "unseen": ["DUPLICATE_SUPPRESSED", "DENY"]
-},
 "duplicate_of_field": "duplicate_of",
 "labels_safe": ["pass"],
 "labels_blocked": ["fail"],
