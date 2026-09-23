@@ -15,7 +15,7 @@ test('tiny fixture config loads', () => {
   const c = loadConfig(TINY);
   assert.deepEqual(Object.keys(c.outputs), ['SUBJECT', 'GEOGRAPHY']);
   assert.equal(c.routing.gold_field, 'expected_route');
-  assert.equal(c.wrong_when, 'gold_route');
+  assert.equal(c.wrong_when, 'either');   // a gold route exists and no wrong_when is set
   assert.equal(c.trap_field, 'trap');
   assert.deepEqual(c.thresholds, { floor: 0.6, provisional_below: 0.75, auto_publish: { SUBJECT: 0.85 }, gate_uses: 'lead' });
 });
@@ -148,6 +148,62 @@ test('misspelled output setting is an error', () => {
   const raw = minimal();
   raw.outputs.SUBJECT.feild = 'x';
   assert.match(validateConfig(raw).errors[0], /unknown key "outputs\.SUBJECT\.feild"/);
+});
+
+test('wrong_when accepts either, gold_route and any_mismatch; the first two need a gold route', () => {
+  const raw = minimal();
+  raw.wrong_when = 'either';
+  assert.match(validateConfig(raw).errors[0], /wrong_when is "either" but routing\.gold_field is not set/);
+  raw.routing.gold_field = 'expected';
+  for (const w of ['either', 'gold_route', 'any_mismatch']) { raw.wrong_when = w; assert.deepEqual(validateConfig(raw).errors, []); }
+  raw.wrong_when = 'sometimes';
+  assert.match(validateConfig(raw).errors[0], /wrong_when must be one of/);
+});
+
+test('severity overrides a type\'s default level; unknown types and levels are errors', () => {
+  const raw = minimal();
+  raw.severity = { 'SP-DUPLICATE': 'medium' };
+  const { config } = validateConfig(raw);
+  assert.equal(config.severity['SP-DUPLICATE'], 'medium');
+  assert.equal(config.severity['SP-WRONG'], 'high');   // untouched default
+  raw.severity = { 'SP-TYPO': 'low', 'SP-WRONG': 'severe' };
+  const errs = validateConfig(raw).errors.join('\n');
+  assert.match(errs, /SP-TYPO is not a known error type/);
+  assert.match(errs, /SP-WRONG must be one of: critical, high, medium, low/);
+});
+
+test('min_per_trap needs a trap field and a whole number', () => {
+  const raw = minimal();
+  raw.min_per_trap = 3;
+  assert.match(validateConfig(raw).errors[0], /trap_field is not/);
+  raw.trap_field = 'trap';
+  assert.deepEqual(validateConfig(raw).errors, []);
+  raw.min_per_trap = 2.5;
+  assert.match(validateConfig(raw).errors[0], /whole number/);
+});
+
+test('allowed_values: a list, or a file read relative to the config', () => {
+  const raw = minimal();
+  raw.allowed_values = { SUBJECT: ['A', 'B'] };
+  assert.deepEqual(validateConfig(raw).config.allowed_values, { SUBJECT: ['A', 'B'] });
+  raw.allowed_values = { SUBJECT: { file: 'vocab.json', field: 'code' } };
+  assert.deepEqual(validateConfig(raw).config.allowed_values, { SUBJECT: { file: 'vocab.json', field: 'code' } });
+  raw.allowed_values = { GEO: ['A'], SUBJECT: 'vocab.json' };
+  const errs = validateConfig(raw).errors.join('\n');
+  assert.match(errs, /allowed_values\.GEO is not a declared output/);
+  assert.match(errs, /allowed_values\.SUBJECT must be a list/);
+});
+
+test('calibration buckets and whatif settings are checked', () => {
+  const raw = minimal();
+  raw.calibration = { buckets: 0.1 };
+  raw.whatif = { movable_field: 'decision_branch', movable_values: [6, 7] };
+  assert.deepEqual(validateConfig(raw).errors, []);
+  raw.calibration = { buckets: 2 };
+  raw.whatif = { movable_field: 'decision_branch' };
+  const errs = validateConfig(raw).errors.join('\n');
+  assert.match(errs, /calibration must be/);
+  assert.match(errs, /whatif must be/);
 });
 
 test('every problem is reported at once', () => {

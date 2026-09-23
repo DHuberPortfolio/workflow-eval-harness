@@ -1,19 +1,66 @@
 #!/usr/bin/env node
 // CLI entry. Parses arguments, dispatches to a subcommand, sets the exit code.
 // No metric logic lives here - this file only connects the terminal to src/.
+const fs = require('node:fs');
 const { parseArgs } = require('node:util');
-const { loadConfig } = require('../src/config.js');
+const { loadConfig, SEVERITIES } = require('../src/config.js');
 const { loadRun } = require('../src/load.js');
+const { scoreRun } = require('../src/score.js');
+const { renderTerminal } = require('../src/report/terminal.js');
+const { resultsJson } = require('../src/report/json.js');
 
 const USAGE = `usage: wfeval <command> [options]
 
 commands:
   check     --config <file> [--pred <file> --key <file>] [--lenient]
             validate a config, and optionally read a predictions file and answer key
-  score     (not built yet)
+
+  score     --config <file> --pred <file> --key <file> [--lenient]
+            [--json <file>] [--html <file>] [--quiet] [--fail-on <severity>]
+            score one run. --fail-on critical|high|medium|low exits with code 3 when a
+            silent error or safeguard failure at or above that severity is found (for CI)
+
   variance  (not built yet)
   compare   (not built yet)
-  whatif    (not built yet)`;
+  whatif    (not built yet)
+
+exit codes: 0 done · 1 input problems (listed) · 2 bad command · 3 --fail-on triggered`;
+
+const MODE = values => (values.lenient ? 'lenient' : 'strict');
+function need(values, names, cmd) {
+  const missing = names.filter(n => !values[n]);
+  if (missing.length) throw new Error(cmd + ' needs ' + missing.map(n => '--' + n + ' <file>').join(' '));
+}
+function writeFile(file, text) {
+  fs.writeFileSync(file, text);
+  console.error('wrote ' + file);
+}
+
+function score(args) {
+  const { values } = parseArgs({ args, options: {
+    config: { type: 'string' }, pred: { type: 'string' }, key: { type: 'string' }, lenient: { type: 'boolean' },
+    json: { type: 'string' }, html: { type: 'string' }, quiet: { type: 'boolean' }, 'fail-on': { type: 'string' },
+  } });
+  need(values, ['config', 'pred', 'key'], 'score');
+  const failOn = values['fail-on'];
+  if (failOn !== undefined && !SEVERITIES.includes(failOn)) throw new Error('--fail-on must be one of: ' + SEVERITIES.join(', '));
+
+  const results = scoreRun({ config: loadConfig(values.config), predPath: values.pred, keyPath: values.key, mode: MODE(values) });
+  if (!values.quiet) process.stdout.write(renderTerminal(results));
+  if (values.json) writeFile(values.json, JSON.stringify(resultsJson(results), null, 2) + '\n');
+  if (values.html) writeFile(values.html, require('../src/report/html.js').renderHtml(results));
+
+  if (failOn) {
+    const limit = SEVERITIES.indexOf(failOn);
+    const r = results.routing;
+    const hits = [
+      ...r.silent_errors.records.filter(x => SEVERITIES.indexOf(x.severity) <= limit).map(x => x.id + ' (' + x.severity + ')'),
+      ...(SEVERITIES.indexOf('critical') <= limit ? r.safeguard_failures.detail.map(d => d.id + ' (safeguard)') : []),
+    ];
+    if (hits.length) { console.error('fail-on ' + failOn + ': ' + hits.join(', ')); return 3; }
+  }
+  return 0;
+}
 
 function check(args) {
   const { values } = parseArgs({ args, options: {
@@ -66,15 +113,14 @@ function check(args) {
   }
 }
 
-const COMMANDS = { check };
+const COMMANDS = { check, score };
 
 function main(argv) {
   const [cmd, ...rest] = argv;
   if (!cmd || cmd === '-h' || cmd === '--help') { console.log(USAGE); return 0; }
   if (!COMMANDS[cmd]) { console.error('unknown or unbuilt command: ' + cmd + '\n\n' + USAGE); return 2; }
   try {
-    COMMANDS[cmd](rest);
-    return 0;
+    return COMMANDS[cmd](rest) || 0;
   } catch (e) {
     console.error('error: ' + e.message);
     return 1;

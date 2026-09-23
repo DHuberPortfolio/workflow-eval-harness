@@ -1,0 +1,10 @@
+id,verdict,confidence,violations,violations_rejected,scored
+D1,pass,0.95,,,
+D2,pass,0.90,,,
+D3,fail,0.92,SUPERLATIVE@0.93,,
+D4,elevate,0.70,COMPARISON@0.72,,
+D5,elevate,0.80,COMPARISON@0.62,,
+D6,fail,0.88,TESTIMONIAL@0.65,,
+D7,pass,0.86,,TESTIMONIAL@0.55,
+D8,pass,0.80,,,
+D9,elevate,,,,false

@@ -215,7 +215,31 @@ test('D17: a value inherited from another is marked as inherited', () => {
 test('D15: extra fields on records are ignored', () => {
   const { result, flagged } = readPred(pred({ evidence: 'x', cost_usd: 0.01 }));
   assert.deepEqual(flagged, []);
-  assert.deepEqual(Object.keys(result[0]), ['id', 'route', 'scored', 'outputs']);
+  assert.deepEqual(Object.keys(result[0]), ['id', 'route', 'scored', 'movable', 'outputs']);
+});
+
+test('E1 does not apply to a record whose model call failed: it has no confidences by nature', () => {
+  assert.deepEqual(readPred(pred({ scored: false, SUBJECT: ['SUBJ-MNA'] })).flagged, []);
+});
+
+test('whatif.movable_field marks records whose route the confidence gate decided', () => {
+  const cfg = validateConfig({
+    outputs: { tags: { type: 'set' } }, routing: { map: { AUTO: 'auto' } },
+    whatif: { movable_field: 'branch', movable_values: [6, 7] },
+  }).config;
+  const read = branch => run(p => normalizePredictions([{ id: 'R1', route: 'AUTO', tags: [], branch }], cfg, 'preds', p)).result[0].movable;
+  assert.equal(read(6), true);
+  assert.equal(read('7'), true);    // CSV text matches the config's number
+  assert.equal(read(3), false);
+  assert.equal(read(undefined), null);
+});
+
+test('duplicate_of is read from the key as an id', () => {
+  const cfg = validateConfig({ outputs: { tags: { type: 'set' } }, routing: { map: { AUTO: 'auto' } }, duplicate_of_field: 'dup' }).config;
+  const read = dup => run(p => normalizeKey([{ id: 'R2', tags: [], dup }], cfg, 'key', p));
+  assert.equal(read('R1').result[0].duplicate_of, 'R1');
+  assert.equal(read(undefined).result[0].duplicate_of, null);
+  assert.deepEqual(read(['R1']).flagged, ['stop:C9']);
 });
 
 // ---------- E. Confidence ----------

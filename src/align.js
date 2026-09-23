@@ -3,7 +3,7 @@
 // Like matching exams to an answer key by student number: this is where problems that
 // only show up when the two files are compared are caught (traps A8, B2-B6, B9, C1-C5).
 // Every metric after this works from the paired records it returns:
-//   { id, route, route_class, gold_route, gold_class, scored, traps, pred, key }
+//   { id, route, route_class, gold_route, gold_class, scored, movable, traps, duplicate_of, pred, key }
 // where pred and key are the two sides' outputs, as load.js produced them.
 
 const has = (obj, k) => Object.prototype.hasOwnProperty.call(obj, k);
@@ -110,6 +110,16 @@ function align(predictions, key, config, p, opts = {}) {
     const goldClass = config.routing.gold_field
       ? routeClass(k.gold_route, map, keySource + ' ' + id, p, 'correct route (' + config.routing.gold_field + ')', 'C4', 'C5')
       : null;
+    // Duplicate groups (C9, C11): a duplicate must point at a real, different record, and
+    // the key should agree with itself that a duplicate is suppressed.
+    const dup = k.duplicate_of ?? null;
+    if (dup !== null) {
+      if (dup === id) p.stop('C9', keySource + ' ' + id, 'is marked as a duplicate of itself');
+      else if (!answers.has(dup)) p.stop('C9', keySource + ' ' + id, 'is marked as a duplicate of "' + dup + '", which is not in the answer key');
+      if (goldClass !== null && goldClass !== 'exclude') {
+        p.strict('C11', keySource + ' ' + id, 'is marked as a duplicate of "' + dup + '", but its correct route is "' + k.gold_route + '", not a suppressing one');
+      }
+    }
     records.push({
       id,
       route: typeof pr.route === 'string' ? pr.route.trim() : pr.route,
@@ -117,7 +127,9 @@ function align(predictions, key, config, p, opts = {}) {
       gold_route: typeof k.gold_route === 'string' ? k.gold_route.trim() : k.gold_route,
       gold_class: goldClass,
       scored: pr.scored,
+      movable: pr.movable ?? null,
       traps: k.traps,
+      duplicate_of: dup,
       pred: pr.outputs,
       key: k.outputs,
     });

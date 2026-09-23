@@ -23,21 +23,21 @@ the design is wrong.
       separators, `rejected_field` and label `confidence_field` (both work for JSON too)
 - [x] `align.js`: match predictions to key by id, resolve route classes (traps A8, B2-B6, B9, C1-C5);
       `wfeval check` shows matched records and route counts
-- [ ] Second tiny fixture shaped like a compliance review: a label output (pass / elevate / fail)
-      plus a set of violation codes, so both output types are proven from the start
-- [ ] Precision / recall / F1 per output and overall, set and label outputs
+- [x] Second hand-worked fixture shaped like a compliance review, as CSV (`test/fixtures/compliance/`)
+- [x] Precision / recall / F1 per output, per value and overall; label accuracy, per-label scores,
+      confusion matrix; exact-match rate (`src/metrics/classification.js`)
 
 ## Day 2: routing
-- [ ] Silent error rate (headline), straight-through, review-queue precision, block precision
-- [ ] Silent error types and severity: silent publishes and silent omissions
-- [ ] Per-output breakdown
-- [ ] Per-trap breakdown: routed correctly, silent errors, wasted reviews per trap type
-- [ ] Trap coverage check: every trap type listed with its count; below `min_per_trap` stops in strict mode
-- [ ] `wfeval score` terminal report + JSON results file
+- [x] Silent error rate (headline), straight-through, silent omissions, review-queue precision,
+      block precision, safeguard failures (`src/metrics/judge.js`, `routing.js`)
+- [x] Silent error types and severity; `wrong_when`: either / gold_route / any_mismatch
+- [x] Per-output breakdown
+- [x] Per-trap breakdown and coverage check (`min_per_trap`)
+- [x] `wfeval score` terminal report, `--json` results file, `--fail-on <severity>` for CI
 
 ## Day 3: across runs
-- [ ] Calibration: bucket per stated confidence value (fixed width optional); inherited values
-      excluded; interval per bucket; per output
+- [x] Calibration: bucket per stated confidence value (fixed width optional); inherited values
+      excluded; interval per bucket; per output; the config's thresholds checked (`calibration.js`)
 - [ ] `wfeval variance`: N runs, mean and spread per metric
 - [ ] `wfeval compare`: metric deltas plus the records that flipped
 

@@ -37,23 +37,56 @@ Every workflow's decisions are mapped (in its config) onto four classes:
 These are defaults. Every type's severity can be changed in the config, because what
 counts as serious differs between workflows.
 
+## What decides that a record needed a human (`wrong_when`)
+
+| Setting | A record needed a human when | Use it when |
+|---|---|---|
+| `either` (default with a gold route) | the key's route says so, **or** its values are wrong | the outputs are what gets published (tags): a wrong tag is itself an error |
+| `gold_route` | the key's route says so | the outputs are *reasons*, not published content (a compliance reviewer's violation codes) |
+| `any_mismatch` (default without one) | its values are wrong | the key has no correct route |
+
+A record that went through and needed a human is a silent error. All the types that
+apply are listed for it, including ones from the evidence `wrong_when` does not count,
+because they explain it: "should have gone to a human" (SP-SHOULD-REVIEW) *because* "the
+floor dropped the correct value" (SP-MISSING-REJECTED).
+
 ## Family 1: silent publishes
 
-The record went through (route class auto), and the answer key says that was wrong.
+The record went through (route class auto), and it needed a human.
+
+**Route types** (need a correct route in the key):
 
 | Code | Type | How the tool detects it | Default severity |
 |---|---|---|---|
-| SP-GATE | **Gate bypassed**: went through although a gated output's lead confidence is below its threshold | Recompute the gate from the applied values and the config thresholds | critical |
-| SP-FLOOR | **Below-floor value applied**: a value under the floor was applied and went through | Applied value with confidence < floor | critical |
-| SP-FORBIDDEN | **Should have been blocked**: the key says block, the workflow let it through | Key route class is block | critical |
-| SP-VERDICT | **Dangerous label**: a label output says a "safe" label where the key has a "blocked" one | Label outputs; the config lists which labels are safe and which are blocked | critical |
-| SP-INVALID | **Value outside the allowed list**: an applied value that is not in the list of allowed values | Needs an allowed-values file; "not measured" without one | critical |
-| SP-WRONG | **Wrong value**: an applied value that is not in the key | Applied value not in key | high |
-| SP-MISSING-REJECTED | **Correct value thrown away**: a key value the model proposed but the floor rejected | Key value present in predictions with `applied: false` | medium |
-| SP-MISSING | **Correct value never proposed**: a key value the model never suggested | Key value absent from predictions | medium |
-| SP-SHOULD-REVIEW | **Should have gone to a human**: the key says review, and no type above explains why | Key route class is review and no other SP type applies | medium |
-| SP-WRONG-PRIMARY | **Wrong copy kept**: a duplicate went through while the primary record it duplicates was suppressed | Needs `duplicate_of` in the key | medium |
-| SP-DUPLICATE | **Duplicate went through**: a record the key marks as a duplicate of another also went through | Key route class is exclude | low |
+| SP-FORBIDDEN | **Should have been blocked** | Key route class is block | critical |
+| SP-SHOULD-REVIEW | **Should have gone to a human** | Key route class is review | medium |
+| SP-WRONG-PRIMARY | **Wrong copy kept**: a duplicate went through while its primary was suppressed | Needs `duplicate_of_field` | medium |
+| SP-DUPLICATE | **Duplicate went through** | Key route class is exclude | low |
+
+**Value types** (compare the outputs with the key):
+
+| Code | Type | How the tool detects it | Default severity |
+|---|---|---|---|
+| SP-INVALID | **Value outside the allowed list** | Applied value not in `allowed_values`; "not measured" without one | critical |
+| SP-WRONG | **Wrong value** | Applied value not in the key | high |
+| SP-MISSING-REJECTED | **Correct value thrown away**: proposed, but not applied (the floor dropped it) | Key value present in predictions with `applied: false` | medium |
+| SP-MISSING | **Correct value never proposed** | Key value absent from predictions | medium |
+
+An output that is also the route (a verdict label read from `routing.field`) is judged by
+the route types only: a wrong verdict *is* the routing error, and counting it again as a
+wrong value would count one mistake twice. A wrong label on any other output is SP-WRONG.
+
+## Safeguard failures
+
+Not silent errors, and not in the silent error rate, but reported beside it at critical
+severity: a record went through although one of the workflow's own safeguards should have
+held it. The content may happen to be right; the process is still broken, and the next
+record through the same hole may not be so lucky.
+
+| Code | Type | How the tool detects it |
+|---|---|---|
+| SG-GATE | **Went through below the confidence gate** | Recompute the gate from the applied values and `thresholds.auto_publish` (the lead value, or the weakest with `gate_uses: weakest`). A gated output with nothing applied fails the gate |
+| SG-FLOOR | **A value under the floor was applied** | Applied value with confidence < `thresholds.floor` |
 
 Splitting the two missing-value types matters for tuning: **MISSING-REJECTED** is the
 floor's cost (the model knew; the guard dropped it), so a lower floor would fix it.
@@ -84,19 +117,18 @@ primary source so one event does not look like many. The key marks a duplicate w
 
 | Type | Tagging (metadata enrichment) | Compliance review (bar compliance) |
 |---|---|---|
-| SP-MISSING | a subject code the model never suggested | **a violation the review missed, on copy that went live**: the expensive failure |
-| SP-WRONG | an extra wrong code | a violation flagged that is not there (only silent if the copy still went through) |
-| SP-VERDICT | n/a | "pass" on copy the key says must fail |
+| SP-FORBIDDEN | n/a (nothing is blocked) | **"pass" on copy the key says must fail**: the expensive failure |
+| SP-MISSING | a subject code the model never suggested | the violation behind a wrong pass, never even proposed |
+| SP-WRONG | an extra wrong code | n/a with `wrong_when: gold_route` (a false flag on copy that goes live changes nothing) |
 | SO-FALSE-BLOCK | n/a | good copy auto-denied, never shown to an analyst |
 | SP-DUPLICATE | a retelling of a story already kept | n/a |
 
-## What the config will need
+## Config
 
 ```json
+"wrong_when": "gold_route",
 "duplicate_of_field": "duplicate_of",
-"labels_safe": ["pass"],
-"labels_blocked": ["fail"],
-"allowed_values": "allowed.json",
+"allowed_values": { "SUBJECT": { "file": "vocab.json", "field": "code" } },
 "severity": { "SP-DUPLICATE": "medium" }
 ```
 

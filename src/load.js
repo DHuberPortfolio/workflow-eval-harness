@@ -296,20 +296,31 @@ function withRejected(value, raw, name, o, where, p) {
   return [...(value || []), ...marked];
 }
 
-function readOutputs(raw, config, where, p, isKey) {
+// scored: false for a record whose model call failed. It has no confidences to check (E1).
+function readOutputs(raw, config, where, p, isKey, scored = true) {
   const gates = config.thresholds ? config.thresholds.auto_publish : {};
   const outputs = {};
   for (const [name, o] of Object.entries(config.outputs)) {
     let value = getPath(raw, isKey ? o.key_field : o.field);
+    const gated = scored && name in gates;
     if (o.type === 'set') {
       if (!isKey && o.rejected_field) value = withRejected(value, raw, name, o, where, p);
-      outputs[name] = readSet(value, name, o, where, p, isKey, name in gates);
+      outputs[name] = readSet(value, name, o, where, p, isKey, gated);
     } else {
       const extConf = !isKey && o.confidence_field ? getPath(raw, o.confidence_field) : undefined;
-      outputs[name] = readLabel(value, name, o, where, p, isKey, name in gates, extConf);
+      outputs[name] = readLabel(value, name, o, where, p, isKey, gated, extConf);
     }
   }
   return outputs;
+}
+
+// whatif.movable_field: whether this record's route was decided by the confidence gate.
+// Compared as text, so a CSV's "6" matches a config's 6. null when the field is absent.
+function readMovable(raw, config) {
+  if (!config.whatif) return null;
+  const v = getPath(raw, config.whatif.movable_field);
+  if (v === undefined || v === null || v === '') return null;
+  return config.whatif.movable_values.some(m => String(m) === String(v).trim());
 }
 
 // ---------- Whole files ----------
@@ -345,7 +356,7 @@ function normalizePredictions(raws, config, source, p, opts = {}) {
       if (typeof raw.scored === 'boolean') scored = raw.scored;
       else p.stop('C10', where, '"scored" must be true or false without quotes, got ' + describe(raw.scored));
     }
-    out.push({ id, route: getPath(raw, rf), scored, outputs: readOutputs(raw, config, where, p, false) });
+    out.push({ id, route: getPath(raw, rf), scored, movable: readMovable(raw, config), outputs: readOutputs(raw, config, where, p, false, scored) });
   });
   return out;
 }
@@ -371,7 +382,13 @@ function normalizeKey(raws, config, source, p) {
       else if (t !== undefined && t !== null) p.stop('H3', where, 'the trap field must be text or a list of text, got ' + describe(t));
     }
     const goldRoute = config.routing.gold_field ? getPath(raw, config.routing.gold_field) : null;
-    out.push({ id, gold_route: goldRoute, traps, outputs: readOutputs(raw, config, where, p, true) });
+    let duplicateOf = null;   // the id of the primary record this one duplicates (align.js checks it exists)
+    if (config.duplicate_of_field) {
+      const d = getPath(raw, config.duplicate_of_field);
+      if (typeof d === 'string' || typeof d === 'number') duplicateOf = String(d).trim() || null;
+      else if (d !== undefined && d !== null) p.stop('C9', where, config.duplicate_of_field + ' must be the id of another record, got ' + describe(d));
+    }
+    out.push({ id, gold_route: goldRoute, traps, duplicate_of: duplicateOf, outputs: readOutputs(raw, config, where, p, true) });
   });
   return out;
 }
@@ -379,8 +396,8 @@ function normalizeKey(raws, config, source, p) {
 // Loads both files and pairs them up (align.js). Throws, listing every problem, if
 // anything must stop scoring. Returns the clean records of each file and the pairs.
 // The predictions and key may be the same file (A10); it is then read once.
-function loadRun({ config, predPath, keyPath, mode = 'strict' }) {
-  const p = problems(mode);
+// Pass `p` to collect problems into an existing list (score.js adds its own checks after).
+function loadRun({ config, predPath, keyPath, mode = 'strict', p = problems(mode) }) {
   const sameFile = nodePath.resolve(predPath) === nodePath.resolve(keyPath);
   const sameInput = JSON.stringify(config.input.predictions) === JSON.stringify(config.input.key);
   let predRaws = readRecords(predPath, p, config.input.predictions);

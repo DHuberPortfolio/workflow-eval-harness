@@ -1,0 +1,10 @@
+id,expected_verdict,violations,trap
+D1,pass,,clean-copy
+D2,fail,GUARANTEE,implied-guarantee
+D3,fail,SUPERLATIVE,superlative
+D4,elevate,COMPARISON,unqualified-comparison
+D5,pass,,clean-copy
+D6,elevate,TESTIMONIAL,borderline-testimonial
+D7,elevate,TESTIMONIAL,weak-testimonial
+D8,pass,,clean-copy
+D9,fail,GUARANTEE,implied-guarantee

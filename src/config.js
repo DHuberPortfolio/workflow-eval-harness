@@ -5,14 +5,24 @@
 // The returned config has every default filled in, so no other module needs to
 // know what the defaults are.
 const fs = require('fs');
+const path = require('path');
 
 const ROUTE_CLASSES = ['auto', 'review', 'block', 'exclude'];
 const OUTPUT_TYPES = ['set', 'label'];
-const WRONG_WHEN = ['gold_route', 'any_mismatch'];
+const WRONG_WHEN = ['either', 'gold_route', 'any_mismatch'];
 const GATE_USES = ['lead', 'weakest'];
 const FORMATS = ['json', 'jsonl', 'csv'];
 const DELIMITERS = [',', ';', '\t', '|'];
-const TOP_LEVEL_KEYS = ['id_field', 'input', 'outputs', 'routing', 'wrong_when', 'thresholds', 'trap_field'];
+const TOP_LEVEL_KEYS = ['id_field', 'input', 'outputs', 'routing', 'wrong_when', 'thresholds', 'trap_field',
+  'duplicate_of_field', 'allowed_values', 'severity', 'min_per_trap', 'calibration', 'whatif'];
+const SEVERITIES = ['critical', 'high', 'medium', 'low'];
+// Every silent error type (docs/SILENT_ERRORS.md) and its default severity.
+const ERROR_TYPES = {
+  'SP-FORBIDDEN': 'critical', 'SP-INVALID': 'critical', 'SP-WRONG': 'high', 'SP-SHOULD-REVIEW': 'medium',
+  'SP-MISSING-REJECTED': 'medium', 'SP-MISSING': 'medium', 'SP-WRONG-PRIMARY': 'medium', 'SP-DUPLICATE': 'low',
+  'SO-FALSE-DUPLICATE': 'high', 'SO-PRIMARY-SUPPRESSED': 'medium', 'SO-FALSE-BLOCK': 'medium',
+  'SG-GATE': 'critical', 'SG-FLOOR': 'critical',
+};
 const OUTPUT_KEYS = ['type', 'field', 'key_field', 'labels', 'value_key', 'confidence_key', 'rejected_field', 'confidence_field'];
 const INPUT_KEYS = ['format', 'records_at', 'unwrap', 'delimiter', 'list_separator', 'confidence_separator'];
 
@@ -156,15 +166,18 @@ function validateConfig(raw) {
     routing = { field, map: isObj(r.map) ? r.map : {}, gold_field: r.gold_field || null };
   }
 
-  // wrong_when: how a record is judged wrong for the routing metrics.
-  //   gold_route   - the answer key says where it should have gone (preferred)
-  //   any_mismatch - any output differs from the answer key
-  // Defaults to gold_route whenever a gold field exists.
+  // wrong_when: what decides that a record needed a human (so letting it through
+  // was a silent error, and reviewing it was worth it).
+  //   gold_route   - only the answer key's route. Right when the outputs are reasons
+  //                  rather than published content (a compliance reviewer's violation codes).
+  //   any_mismatch - only whether the outputs match the key. The only option without a gold route.
+  //   either       - both. Right when the outputs are what gets published (tags), and the key
+  //                  also says where each record should go. The default when a gold route exists.
   const wrongWhen = raw.wrong_when === undefined
-    ? (routing && routing.gold_field ? 'gold_route' : 'any_mismatch')
+    ? (routing && routing.gold_field ? 'either' : 'any_mismatch')
     : raw.wrong_when;
   if (!WRONG_WHEN.includes(wrongWhen)) errors.push('wrong_when must be one of: ' + WRONG_WHEN.join(', '));
-  if (wrongWhen === 'gold_route' && routing && !routing.gold_field) errors.push('wrong_when is "gold_route" but routing.gold_field is not set');
+  if (wrongWhen !== 'any_mismatch' && routing && !routing.gold_field) errors.push('wrong_when is "' + wrongWhen + '" but routing.gold_field is not set');
 
   // thresholds: the confidence numbers the workflow used. Optional - only
   // calibration and what-if read them. They act at two levels:
@@ -222,19 +235,110 @@ function validateConfig(raw) {
   const trapField = raw.trap_field === undefined ? null : raw.trap_field;
   if (trapField !== null && !isPath(trapField)) errors.push('trap_field ' + PATH_RULE);
 
-  const config = errors.length ? null : { id_field: idField, input, outputs, routing, wrong_when: wrongWhen, thresholds, trap_field: trapField };
+  // min_per_trap: every trap type in the key should have at least this many records.
+  // One record passing a trap can be luck. Off unless set; in strict mode, below it stops.
+  const minPerTrap = raw.min_per_trap === undefined ? null : raw.min_per_trap;
+  if (minPerTrap !== null && !(Number.isInteger(minPerTrap) && minPerTrap >= 1)) errors.push('min_per_trap must be a whole number of 1 or more');
+  if (minPerTrap !== null && trapField === null) errors.push('min_per_trap is set but trap_field is not');
+
+  // duplicate_of_field: on answer-key records, the id of the primary record this one
+  // duplicates. Lets the tool tell "wrong copy kept" from "real record suppressed".
+  const duplicateOf = raw.duplicate_of_field === undefined ? null : raw.duplicate_of_field;
+  if (duplicateOf !== null && !isPath(duplicateOf)) errors.push('duplicate_of_field ' + PATH_RULE);
+
+  // allowed_values: per set or label output, the complete list of values allowed (a
+  // controlled vocabulary). An applied value outside it is an invented value (SP-INVALID).
+  // Either the list itself, or { "file": "vocab.json", "field": "code" } to read it from a
+  // JSON file next to the config (a list of values, or of objects holding the value in "field").
+  const allowed = {};
+  if (raw.allowed_values !== undefined) {
+    if (!isObj(raw.allowed_values)) errors.push('allowed_values must be an object');
+    else {
+      for (const [name, v] of Object.entries(raw.allowed_values)) {
+        const at = 'allowed_values.' + name;
+        if (!outputs[name]) errors.push(at + ' is not a declared output');
+        if (Array.isArray(v) && v.length > 0 && v.every(isName)) allowed[name] = v;
+        else if (isObj(v) && isName(v.file) && (v.field === undefined || isName(v.field)) && Object.keys(v).every(k => k === 'file' || k === 'field')) allowed[name] = { file: v.file, field: v.field || null };
+        else errors.push(at + ' must be a list of values, or { "file": "...", "field": "..." }');
+      }
+    }
+  }
+
+  // severity: override the default severity of any silent error type.
+  const severity = { ...ERROR_TYPES };
+  if (raw.severity !== undefined) {
+    if (!isObj(raw.severity)) errors.push('severity must be an object');
+    else {
+      for (const [type, level] of Object.entries(raw.severity)) {
+        if (!(type in ERROR_TYPES)) errors.push('severity.' + type + ' is not a known error type (known: ' + Object.keys(ERROR_TYPES).join(', ') + ')');
+        else if (!SEVERITIES.includes(level)) errors.push('severity.' + type + ' must be one of: ' + SEVERITIES.join(', '));
+        else severity[type] = level;
+      }
+    }
+  }
+
+  // calibration.buckets: how stated confidences are grouped.
+  //   "distinct" - one bucket per value the model actually used. Models tend to state a few
+  //                round numbers (0.6, 0.75, 0.85), and a fixed-width bucket would blur them.
+  //   a number   - fixed-width buckets, e.g. 0.1
+  //   "auto"     - distinct when the model used 12 values or fewer, otherwise 0.1 (default)
+  const calibration = { buckets: 'auto' };
+  if (raw.calibration !== undefined) {
+    const b = isObj(raw.calibration) ? raw.calibration.buckets : undefined;
+    const okWidth = typeof b === 'number' && b > 0 && b <= 0.5;
+    if (!isObj(raw.calibration) || Object.keys(raw.calibration).some(k => k !== 'buckets') || !(b === 'auto' || b === 'distinct' || okWidth)) {
+      errors.push('calibration must be { "buckets": "auto" | "distinct" | a width such as 0.1 }');
+    } else calibration.buckets = b;
+  }
+
+  // whatif: which records a what-if may move. A threshold change can only move a record
+  // whose route was decided by the confidence gate (or that went through it). Name the
+  // prediction field that says so, and its values for those records, e.g.
+  // { "movable_field": "decision_branch", "movable_values": [6, 7] }. Without it, a what-if
+  // assumes every auto or review route was decided by the gate: an upper bound.
+  let whatif = null;
+  if (raw.whatif !== undefined) {
+    const w = raw.whatif;
+    const vals = isObj(w) ? w.movable_values : undefined;
+    if (!isObj(w) || !isPath(w.movable_field) || !Array.isArray(vals) || vals.length === 0 ||
+        !vals.every(v => isName(v) || Number.isFinite(v)) || Object.keys(w).some(k => k !== 'movable_field' && k !== 'movable_values')) {
+      errors.push('whatif must be { "movable_field": "<field>", "movable_values": [<values>] }');
+    } else whatif = { movable_field: w.movable_field, movable_values: vals };
+  }
+
+  const config = errors.length ? null : {
+    id_field: idField, input, outputs, routing, wrong_when: wrongWhen, thresholds, trap_field: trapField,
+    min_per_trap: minPerTrap, duplicate_of_field: duplicateOf, allowed_values: allowed, severity, calibration, whatif,
+  };
   return { config, errors };
 }
 
-// The only function here that touches the disk. Throws one error listing every problem.
-function loadConfig(path) {
-  let text;
-  try { text = fs.readFileSync(path, 'utf8'); } catch (e) { throw new Error('cannot read config ' + path + ': ' + e.message); }
-  let raw;
-  try { raw = JSON.parse(text); } catch (e) { throw new Error('config ' + path + ' is not valid JSON: ' + e.message); }
-  const { config, errors } = validateConfig(raw);
-  if (errors.length) throw new Error('config ' + path + ' has ' + errors.length + ' problem(s):\n  - ' + errors.join('\n  - '));
+// Reads allowed-value lists given as files, relative to the config file's folder.
+function resolveAllowedValues(config, configPath) {
+  for (const [name, v] of Object.entries(config.allowed_values)) {
+    if (Array.isArray(v)) continue;
+    const file = path.resolve(path.dirname(configPath), v.file);
+    let list;
+    try { list = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, '')); } catch (e) {
+      throw new Error('allowed_values.' + name + ': cannot read ' + file + ': ' + e.message);
+    }
+    if (!Array.isArray(list)) throw new Error('allowed_values.' + name + ': ' + file + ' must hold a list');
+    const values = list.map(x => (v.field ? (x !== null && typeof x === 'object' ? x[v.field] : undefined) : x));
+    if (!values.every(isName)) throw new Error('allowed_values.' + name + ': every entry of ' + file + ' must be ' + (v.field ? 'an object with text in "' + v.field + '"' : 'text'));
+    config.allowed_values[name] = values;
+  }
   return config;
 }
 
-module.exports = { validateConfig, loadConfig, ROUTE_CLASSES };
+// The only function here that touches the disk. Throws one error listing every problem.
+function loadConfig(configPath) {
+  let text;
+  try { text = fs.readFileSync(configPath, 'utf8'); } catch (e) { throw new Error('cannot read config ' + configPath + ': ' + e.message); }
+  let raw;
+  try { raw = JSON.parse(text.replace(/^﻿/, '')); } catch (e) { throw new Error('config ' + configPath + ' is not valid JSON: ' + e.message); }
+  const { config, errors } = validateConfig(raw);
+  if (errors.length) throw new Error('config ' + configPath + ' has ' + errors.length + ' problem(s):\n  - ' + errors.join('\n  - '));
+  return resolveAllowedValues(config, configPath);
+}
+
+module.exports = { validateConfig, loadConfig, ROUTE_CLASSES, ERROR_TYPES, SEVERITIES };

@@ -35,8 +35,21 @@ test('each paired record carries both sides and both route classes', () => {
   const { result } = run([P('R1', 'REVIEW')], [K('R1', 'AUTO', ['A'], ['weak-tag'])]);
   assert.deepEqual(result[0], {
     id: 'R1', route: 'REVIEW', route_class: 'review', gold_route: 'AUTO', gold_class: 'auto',
-    scored: true, traps: ['weak-tag'], pred: { tags: [tag('A')] }, key: { tags: ['A'] },
+    scored: true, movable: null, traps: ['weak-tag'], duplicate_of: null, pred: { tags: [tag('A')] }, key: { tags: ['A'] },
   });
+});
+
+test('C9: a duplicate must point at another record that is in the key', () => {
+  const dupOf = (id, of, gold = 'DUP') => ({ ...K(id, gold), duplicate_of: of });
+  assert.deepEqual(run([P('R1'), P('R2', 'DUP')], [K('R1'), dupOf('R2', 'R1')]).flagged, []);
+  assert.deepEqual(run([P('R2', 'DUP')], [dupOf('R2', 'R2')]).flagged, ['stop:C9']);
+  assert.deepEqual(run([P('R2', 'DUP')], [dupOf('R2', 'R7')]).flagged, ['stop:C9']);
+});
+
+test('C11: a duplicate whose correct route does not suppress it is inconsistent', () => {
+  const inconsistent = { ...K('R2', 'AUTO'), duplicate_of: 'R1' };
+  assert.deepEqual(run([P('R1'), P('R2')], [K('R1'), inconsistent]).flagged, ['stop:C11']);
+  assert.deepEqual(run([P('R1'), P('R2')], [K('R1'), inconsistent], { mode: 'lenient' }).flagged, ['warn:C11']);
 });
 
 test('B2 + B3: the same id twice in either file stops', () => {

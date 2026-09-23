@@ -63,10 +63,18 @@ TP 9 · FP 1 · FN 2 → precision = 9/10 = **0.900** · recall = 9/11 = **0.818
 | block | R5 | 1 |
 | exclude | R6 | 1 |
 
+The config sets no `wrong_when`, and the key has correct routes, so the default is
+`either`: a record needed a human if the key's route says so **or** its values are wrong.
+(In a tagging workflow the tags are what gets published, so a wrong tag is itself an error.)
+
 - **Straight-through rate** = auto / total = 2/6 = **33.3%**
-- **Silent error rate** = auto-published but gold says not auto / auto = R2 / {R1, R2} = 1/2 = **50.0%**
-- **Review-queue precision** = review where gold says not auto / review = R3 / {R3, R4} = 1/2 = **50.0%**
-- **Block precision** = blocked where gold says not auto / blocked = R5 / {R5} = 1/1 = **100.0%**
+- **Silent error rate** = auto-published records that needed a human / auto = R2 / {R1, R2} = 1/2 = **50.0%**
+  - R2: **SP-WRONG** (SUBJ-ANTI applied, not in the key; high) and **SP-SHOULD-REVIEW** (key says review; medium) → high
+- **Safeguard failures** = none. R1 and R2 both lead SUBJECT at or above 0.85 (0.95, 0.90), and no applied value is under the 0.60 floor.
+- **Silent omissions** = blocked or suppressed, but the key says auto or review / key says auto or review =
+  none of {R1, R2, R3, R4} = 0/4 = **0.0%**. (R5 should be blocked; R6 should be suppressed.)
+- **Review-queue precision** = reviewed records that needed a human / reviewed = R3 / {R3, R4} = 1/2 = **50.0%**
+- **Block precision** = blocked records the key also says to block / blocked = R5 / {R5} = 1/1 = **100.0%**
 
 ## Per-trap results (trap_field: trap)
 
@@ -74,18 +82,43 @@ TP 9 · FP 1 · FN 2 → precision = 9/10 = **0.900** · recall = 9/11 = **0.818
 R1 has no trap on purpose: records without a trap label must be grouped under
 "(none)", not dropped. Dropping them would make the totals below stop adding up to 6.
 
-| trap | records | routed correctly | silent errors | wasted reviews |
-|---|---|---|---|---|
-| (none) | R1 | 1/1 | 0 | 0 |
-| plausible-extra-tag | R2 | 0/1 | 1 (R2) | 0 |
-| missing-secondary-geo | R3 | 1/1 | 0 | 0 |
-| correct-but-unsure | R4, R5 | 1/2 | 0 | 1 (R4) |
-| near-duplicate | R6 | 1/1 | 0 | 0 |
-| **total** | **6** | **4/6** | **1** | **1** |
+| trap | records | routed correctly | silent errors | silent omissions | wasted reviews |
+|---|---|---|---|---|---|
+| (none) | R1 | 1/1 | 0 | 0 | 0 |
+| correct-but-unsure | R4, R5 | 1/2 | 0 | 0 | 1 (R4) |
+| missing-secondary-geo | R3 | 1/1 | 0 | 0 | 0 |
+| near-duplicate | R6 | 1/1 | 0 | 0 | 0 |
+| plausible-extra-tag | R2 | 0/1 | 1 (R2) | 0 | 0 |
+| **total** | **6** | **4/6** | **1** | **0** | **1** |
 
 Reading it: the workflow handled "correct-but-unsure" safely (no silent error), but at a cost:
 it held back R4, which was fine. "plausible-extra-tag" is the trap that got through.
 The overall silent error rate (1/2) cannot tell you which trap caused it; this table can.
+
+## Calibration
+
+Does a stated confidence mean what it says? Every value the model proposed with a
+confidence counts, applied or not (R5's rejected SUBJ-LAB is a claim too), from R1-R5.
+A value is correct if it is in the key. The model used 9 distinct confidence values, so
+each gets its own bucket.
+
+| stated | values | correct | accuracy | gap (accuracy - stated) |
+|---|---|---|---|---|
+| 0.55 | R5 SUBJ-LAB | 1/1 | 100% | +0.45 |
+| 0.65 | R3 GEO-UK | 1/1 | 100% | +0.35 |
+| 0.70 | R3 SUBJ-EARN, R5 GEO-EU | 2/2 | 100% | +0.30 |
+| 0.75 | R4 GEO-US | 1/1 | 100% | +0.25 |
+| 0.80 | R4 SUBJ-EARN | 1/1 | 100% | +0.20 |
+| 0.88 | R2 SUBJ-ANTI | 0/1 | 0% | -0.88 |
+| 0.90 | R1 GEO-US, R2 SUBJ-MNA | 2/2 | 100% | +0.10 |
+| 0.92 | R2 GEO-US | 1/1 | 100% | +0.08 |
+| 0.95 | R1 SUBJ-MNA | 1/1 | 100% | +0.05 |
+| **all** | 11 | **10/11** | 90.9% | |
+
+**Average calibration gap** (expected calibration error): the size of each gap, weighted
+by how many values are in the bucket = (0.45 + 0.35 + 2×0.30 + 0.25 + 0.20 + 0.88 + 2×0.10 + 0.08 + 0.05) / 11
+= 3.06 / 11 = **0.278**. Mostly under-confidence (right more often than stated), with one
+confident miss. At 11 values this says nothing reliable; it is here to test the arithmetic.
 
 ## Auto-publish gate (SUBJECT only, gate_uses: lead)
 

@@ -1,0 +1,23 @@
+{
+  "id_field": "id",
+  "trap_field": "trap",
+  "outputs": {
+    "verdict": {
+      "type": "label",
+      "labels": ["pass", "elevate", "fail"],
+      "key_field": "expected_verdict",
+      "confidence_field": "confidence"
+    },
+    "violations": { "type": "set", "rejected_field": "violations_rejected" }
+  },
+  "routing": {
+    "field": "verdict",
+    "gold_field": "expected_verdict",
+    "map": { "pass": "auto", "elevate": "review", "fail": "block" }
+  },
+  "wrong_when": "gold_route",
+  "thresholds": {
+    "floor": 0.60,
+    "auto_publish": { "verdict": 0.85 }
+  }
+}

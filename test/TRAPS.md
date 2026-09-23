@@ -73,7 +73,8 @@ Nothing is specific to a platform; where things are is declared in the config's
 | C7 | Workflow suppressed a record as a duplicate, key says it isn't one | A real record never goes through, nobody told | RULE: silent omission, type SO-FALSE-DUPLICATE |
 | C8 | Workflow kept a duplicate and suppressed the primary record it duplicates | The right content went through, from the wrong copy | RULE: SP-WRONG-PRIMARY + SO-PRIMARY-SUPPRESSED; needs `duplicate_of` in the key |
 | C9 | Key record marked as a duplicate points at an id that isn't in the key | The duplicate group is broken | STOP |
-| C10 | Record where the model call failed (no output at all) | Its empty tags would count as misses and drag recall down for a reason that isn't tagging quality | RULE: counts in routing; excluded from precision/recall (adapter marks it `"scored": false`) |
+| C10 | Record where the model call failed (no output at all) | Its empty tags would count as misses and drag recall down for a reason that isn't tagging quality | RULE: counts in routing; excluded from precision/recall and calibration; exempt from E1 (marked `"scored": false`) |
+| C11 | Key marks a record as a duplicate, but its correct route doesn't suppress it | The key contradicts itself | STRICT |
 
 ## D. Set outputs (codes)
 
@@ -133,6 +134,8 @@ Nothing is specific to a platform; where things are is declared in the config's
 | G6 | Rounding before dividing | Small errors compound | RULE: compute from raw counts; round only for display |
 | G7 | Straight-through denominator | Must include excluded records (your choice) | RULE: all records |
 | G8 | Silent error with a small base: 0/7 | Looks perfect, could be 35% | RULE: every rate shows its range |
+| G10 | Fixed-width calibration buckets: in binary, 0.7 / 0.1 is 6.9999…, so 0.7 lands in the 0.6–0.7 bucket | Every value on a bucket edge is misfiled, and models love round numbers | RULE: nudge before rounding down; 1.0 joins the top bucket |
+| G11 | Totals that match while records don't: two misroutes in opposite directions | "routed" and "should be" counts agree, and nothing looks wrong | RULE: every metric is computed record by record, from the pairs |
 | G9 | Comparing two different populations (run 4's negative rejection rate: applied included inherited, proposed did not) | Impossible numbers, or worse, plausible wrong ones | RULE: every ratio's top and bottom count the same kind of thing |
 
 ## H. Traps inside the trap labels
