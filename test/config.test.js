@@ -27,11 +27,10 @@ test('minimal config gets every default filled in', () => {
   assert.equal(config.routing.field, 'route');
   assert.deepEqual(config.outputs.SUBJECT, {
     type: 'set', field: 'SUBJECT', key_field: 'SUBJECT', labels: null, value_key: 'value', confidence_key: 'confidence',
+    rejected_field: null, confidence_field: null,
   });
-  assert.deepEqual(config.input, {
-    predictions: { format: null, records_at: null, unwrap: null },
-    key: { format: null, records_at: null, unwrap: null },
-  });
+  const noInput = { format: null, records_at: null, unwrap: null, delimiter: null, list_separator: '|', confidence_separator: '@' };
+  assert.deepEqual(config.input, { predictions: noInput, key: noInput });
   assert.equal(config.wrong_when, 'any_mismatch'); // no gold field, so fall back
   assert.equal(config.thresholds, null);
   assert.equal(config.trap_field, null);
@@ -117,8 +116,32 @@ test('input settings are checked, including misspellings', () => {
   const errs = validateConfig(raw).errors.join('\n');
   assert.match(errs, /unknown key "input\.predictions\.unwarp"/);
   assert.match(errs, /unknown key "input\.keys"/);
-  raw.input = { predictions: { format: 'csv' } };
-  assert.match(validateConfig(raw).errors[0], /format must be one of: json, jsonl/);
+  raw.input = { predictions: { format: 'xml' } };
+  assert.match(validateConfig(raw).errors[0], /format must be one of: json, jsonl, csv/);
+});
+
+test('CSV separators must be valid and different from each other', () => {
+  const raw = minimal();
+  raw.input = { predictions: { format: 'csv', delimiter: ';', list_separator: '/', confidence_separator: '~' } };
+  assert.deepEqual(validateConfig(raw).errors, []);
+  raw.input = { predictions: { list_separator: '@' } };
+  assert.match(validateConfig(raw).errors[0], /list_separator and confidence_separator are both "@"/);
+  raw.input = { predictions: { delimiter: '|' } };
+  assert.match(validateConfig(raw).errors[0], /delimiter "\|" is also used as a separator inside cells/);
+  raw.input = { predictions: { delimiter: ':' } };
+  assert.match(validateConfig(raw).errors[0], /delimiter must be one of/);
+});
+
+test('rejected_field is for sets, confidence_field is for labels', () => {
+  const raw = minimal();
+  raw.outputs.SUBJECT.rejected_field = 'SUBJECT_rejected';
+  raw.outputs.verdict = { type: 'label', labels: ['pass', 'fail'], confidence_field: 'confidence' };
+  assert.deepEqual(validateConfig(raw).errors, []);
+  raw.outputs.SUBJECT.confidence_field = 'x';
+  raw.outputs.verdict.rejected_field = 'y';
+  const errs = validateConfig(raw).errors.join('\n');
+  assert.match(errs, /SUBJECT\.confidence_field only applies to type "label"/);
+  assert.match(errs, /verdict\.rejected_field only applies to type "set"/);
 });
 
 test('misspelled output setting is an error', () => {

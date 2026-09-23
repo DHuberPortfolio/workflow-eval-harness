@@ -19,8 +19,8 @@ the design is wrong.
 - [x] `load.js`: read JSON and n8n item exports, normalize values (traps A, B1/B7/B8, C10, D, E, F, H3/H4); `wfeval check --pred --key`
 - [x] Platform-neutral input: JSON and JSON Lines; `records_at`, `unwrap`, dotted field paths,
       renamed value/confidence keys, predictions and answers in one file (`test/fixtures/shapes/`)
-- [ ] CSV input (spreadsheets, Zapier Tables and other exports): needs a convention for several
-      values, with confidences, in one cell
+- [x] CSV input (spreadsheets, Zapier Tables and other exports): `A@0.95 | B` cells, configurable
+      separators, `rejected_field` and label `confidence_field` (both work for JSON too)
 - [ ] `align.js`: match predictions to key by id (traps B, C)
 - [ ] Second tiny fixture shaped like a compliance review: a label output (pass / elevate / fail)
       plus a set of violation codes, so both output types are proven from the start

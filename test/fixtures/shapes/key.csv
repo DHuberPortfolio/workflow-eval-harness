@@ -1,0 +1,7 @@
+id,expected_route,SUBJECT,GEOGRAPHY,trap
+R1,AUTO_PUBLISH,SUBJ-MNA,GEO-US,
+R2,EDITOR_REVIEW,SUBJ-MNA,GEO-US,plausible-extra-tag
+R3,EDITOR_REVIEW,SUBJ-EARN,GEO-UK | GEO-EU,missing-secondary-geo
+R4,AUTO_PUBLISH,SUBJ-EARN,GEO-US,correct-but-unsure
+R5,BLOCKED,SUBJ-LAB,GEO-EU,correct-but-unsure
+R6,DUPLICATE_SUPPRESSED,SUBJ-MNA,GEO-US,near-duplicate

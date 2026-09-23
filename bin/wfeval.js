@@ -31,6 +31,7 @@ function check(args) {
     if (i.format) bits.push('format ' + i.format);
     if (i.records_at) bits.push('records at "' + i.records_at + '"');
     if (i.unwrap) bits.push('each record inside "' + i.unwrap + '"');
+    if (i.delimiter) bits.push('cells split on ' + JSON.stringify(i.delimiter));
     if (bits.length) console.log('  input       ' + which + ': ' + bits.join(', '));
   }
   console.log('  outputs     ' + outs);

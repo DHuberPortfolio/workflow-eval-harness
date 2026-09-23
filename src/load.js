@@ -21,6 +21,7 @@
 const fs = require('fs');
 const nodePath = require('path');
 const { problems } = require('./problems.js');
+const { csvToRecords, decodeCsvRecords } = require('./csv.js');
 
 const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const describe = v => (v === null ? 'null' : v === undefined ? 'nothing' : Array.isArray(v) ? 'a list'
@@ -68,8 +69,17 @@ function parseJsonLines(text, source, p) {
   return ok ? records : null;
 }
 
+// Which format a file is in: the config's setting, otherwise its extension.
+function formatOf(source, input = {}) {
+  if (input.format) return input.format;
+  if (/\.(jsonl|ndjson)$/i.test(source)) return 'jsonl';
+  if (/\.(csv|tsv)$/i.test(source)) return 'csv';
+  return 'json';
+}
+
 // Turns file text into a list of records. `input` is the config's input.predictions or
 // input.key; with nothing set, the file must be a plain list of records.
+// CSV records come back with every cell as text; loadRun decodes them (see csv.js).
 function parseRecords(text, source, p, input = {}) {
   if (text.charCodeAt(0) === 0xFEFF) {
     // Windows tools often write this invisible marker at the start of UTF-8 files.
@@ -78,9 +88,12 @@ function parseRecords(text, source, p, input = {}) {
   }
   if (text.trim() === '') { p.stop('A4', source, 'the file is empty'); return []; }
 
-  const format = input.format || (/\.(jsonl|ndjson)$/i.test(source) ? 'jsonl' : 'json');
+  const format = formatOf(source, input);
   let data;
-  if (format === 'jsonl') {
+  if (format === 'csv') {
+    if (input.records_at || input.unwrap) { p.stop('A5', source, '"records_at" and "unwrap" do not apply to CSV: each row is one record'); return []; }
+    return csvToRecords(text, source, p, input.delimiter || (/\.tsv$/i.test(source) ? '\t' : ','));
+  } else if (format === 'jsonl') {
     if (input.records_at) { p.stop('A5', source, '"records_at" does not apply to JSON Lines: each line is already one record'); return []; }
     data = parseJsonLines(text, source, p);
     if (data === null) return [];
@@ -235,7 +248,8 @@ function readSet(raw, name, o, where, p, isKey, gated) {
 }
 
 // Reads a label output: exactly one value from the declared list (F1-F4).
-function readLabel(raw, name, o, where, p, isKey) {
+// extConf: the confidence from a separate field (confidence_field), if the config has one.
+function readLabel(raw, name, o, where, p, isKey, gated, extConf) {
   if (raw === undefined || raw === null) { p.stop(isKey ? 'F4' : 'F3', where, name + ' has no label'); return null; }
   if (Array.isArray(raw)) { p.stop('F2', where, name + ' must be one label, got a list'); return null; }
   const v = readValue(raw, o, where + ' ' + name, p, isKey);
@@ -247,17 +261,52 @@ function readLabel(raw, name, o, where, p, isKey) {
       (near ? ' (did you mean "' + near + '"?)' : ''));
     return null;
   }
+  if (isKey) return v;
+
+  if (extConf !== undefined && extConf !== null) {
+    // E8: the same confidence given in two places; which one would be right?
+    if (v.confidence !== null) { p.stop('E8', where, name + ' has a confidence in two places: with the label and in ' + o.confidence_field); return null; }
+    const c = readConfidence(extConf, where + ' ' + o.confidence_field, p);
+    if (c === undefined) return null;
+    v.confidence = c;
+  }
+  if (gated && v.confidence === null) p.strict('E1', where + ' ' + name, 'the label has no confidence, but ' + name + ' has a confidence gate');
   return v;
+}
+
+// rejected_field: values the workflow proposed but did not apply, listed separately.
+// They join the output's list marked applied: false, so from here on they are handled
+// exactly like values written with "applied": false.
+function withRejected(value, raw, name, o, where, p) {
+  const rejected = getPath(raw, o.rejected_field);
+  if (rejected === undefined || rejected === null) return value;
+  if (!Array.isArray(rejected)) { p.stop('D5', where, o.rejected_field + ' must be a list, got ' + describe(rejected)); return value; }
+  if (value !== undefined && value !== null && !Array.isArray(value)) return value;   // readSet reports it
+
+  const marked = [];
+  rejected.forEach((item, i) => {
+    if (isObj(item) && item.applied !== undefined && item.applied !== false) {
+      // D19: listed as rejected but marked applied. Contradictory, so neither is trusted.
+      p.stop('D19', where + ' ' + o.rejected_field + '[' + i + ']', 'is in the rejected list but has "applied": ' + JSON.stringify(item.applied));
+      return;
+    }
+    marked.push(typeof item === 'string' ? { [o.value_key]: item, applied: false } : isObj(item) ? { ...item, applied: false } : item);
+  });
+  return [...(value || []), ...marked];
 }
 
 function readOutputs(raw, config, where, p, isKey) {
   const gates = config.thresholds ? config.thresholds.auto_publish : {};
   const outputs = {};
   for (const [name, o] of Object.entries(config.outputs)) {
-    const value = getPath(raw, isKey ? o.key_field : o.field);
-    outputs[name] = o.type === 'set'
-      ? readSet(value, name, o, where, p, isKey, name in gates)
-      : readLabel(value, name, o, where, p, isKey);
+    let value = getPath(raw, isKey ? o.key_field : o.field);
+    if (o.type === 'set') {
+      if (!isKey && o.rejected_field) value = withRejected(value, raw, name, o, where, p);
+      outputs[name] = readSet(value, name, o, where, p, isKey, name in gates);
+    } else {
+      const extConf = !isKey && o.confidence_field ? getPath(raw, o.confidence_field) : undefined;
+      outputs[name] = readLabel(value, name, o, where, p, isKey, name in gates, extConf);
+    }
   }
   return outputs;
 }
@@ -332,12 +381,16 @@ function loadRun({ config, predPath, keyPath, mode = 'strict' }) {
   const p = problems(mode);
   const sameFile = nodePath.resolve(predPath) === nodePath.resolve(keyPath);
   const sameInput = JSON.stringify(config.input.predictions) === JSON.stringify(config.input.key);
-  const predRaws = readRecords(predPath, p, config.input.predictions);
-  const keyRaws = sameFile && sameInput ? predRaws : readRecords(keyPath, p, config.input.key);
+  let predRaws = readRecords(predPath, p, config.input.predictions);
+  let keyRaws = sameFile && sameInput ? predRaws : readRecords(keyPath, p, config.input.key);
+  // CSV cells are text until decoded. Decoding depends on which side is read (a combined
+  // file has prediction columns and key columns), so it happens once per side.
+  if (formatOf(predPath, config.input.predictions) === 'csv') predRaws = decodeCsvRecords(predRaws, config, 'predictions', config.input.predictions, predPath, p);
+  if (formatOf(keyPath, config.input.key) === 'csv') keyRaws = decodeCsvRecords(keyRaws, config, 'key', config.input.key, keyPath, p);
   const predictions = normalizePredictions(predRaws, config, predPath, p, { sameFile });
   const key = normalizeKey(keyRaws, config, keyPath, p);
   p.throwIfStopped();
   return { predictions, key, problems: p.items };
 }
 
-module.exports = { getPath, parseRecords, readRecords, normalizePredictions, normalizeKey, loadRun };
+module.exports = { getPath, formatOf, parseRecords, readRecords, normalizePredictions, normalizeKey, loadRun };

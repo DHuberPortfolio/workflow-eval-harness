@@ -316,6 +316,43 @@ test('the tiny fixture loads with nothing to fix and R5\'s rejected tag intact',
   assert.deepEqual(answers.find(r => r.id === 'R2').traps, ['plausible-extra-tag']);
 });
 
+test('rejected_field: values listed separately join the output as not applied', () => {
+  const cfg = validateConfig({
+    outputs: { tags: { type: 'set', rejected_field: 'rejected.tags' } },
+    routing: { map: { AUTO: 'auto' } },
+  }).config;
+  const rec = { id: 'R1', route: 'AUTO', tags: ['A'], rejected: { tags: [{ value: 'B', confidence: 0.5 }, 'C'] } };
+  const { result, flagged } = run(p => normalizePredictions([rec], cfg, 'preds', p));
+  assert.deepEqual(flagged, []);
+  assert.deepEqual(result[0].outputs.tags.map(v => [v.value, v.applied]), [['A', true], ['B', false], ['C', false]]);
+});
+
+test('D19: a value in the rejected list marked as applied stops', () => {
+  const cfg = validateConfig({ outputs: { tags: { type: 'set', rejected_field: 'rej' } }, routing: { map: { AUTO: 'auto' } } }).config;
+  const { flagged } = run(p => normalizePredictions([{ id: 'R1', route: 'AUTO', tags: [], rej: [{ value: 'B', applied: true }] }], cfg, 'preds', p));
+  assert.deepEqual(flagged, ['stop:D19']);
+});
+
+test('E8: a label confidence given both with the label and in its own field stops', () => {
+  const cfg = validateConfig({
+    outputs: { verdict: { type: 'label', labels: ['pass', 'fail'], confidence_field: 'conf' } },
+    routing: { map: { AUTO: 'auto' } },
+  }).config;
+  const both = { id: 'R1', route: 'AUTO', verdict: { value: 'pass', confidence: 0.9 }, conf: 0.8 };
+  assert.deepEqual(run(p => normalizePredictions([both], cfg, 'preds', p)).flagged, ['stop:E8']);
+  const one = { id: 'R1', route: 'AUTO', verdict: 'pass', conf: 0.8 };
+  assert.equal(run(p => normalizePredictions([one], cfg, 'preds', p)).result[0].outputs.verdict.confidence, 0.8);
+});
+
+test('E1: a gated label with no confidence stops in strict mode', () => {
+  const cfg = validateConfig({
+    outputs: { verdict: { type: 'label', labels: ['pass', 'fail'] } },
+    routing: { map: { AUTO: 'auto' } },
+    thresholds: { auto_publish: { verdict: 0.85 } },
+  }).config;
+  assert.deepEqual(run(p => normalizePredictions([{ id: 'R1', route: 'AUTO', verdict: 'pass' }], cfg, 'preds', p)).flagged, ['stop:E1']);
+});
+
 test('the same records from an n8n export, a JSON Lines log and an API response load identically', () => {
   const tiny = path.join(__dirname, 'fixtures', 'tiny');
   const shapes = path.join(__dirname, 'fixtures', 'shapes');

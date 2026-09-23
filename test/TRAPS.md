@@ -36,9 +36,15 @@ output, one odd record should not block the whole report, so it warns instead.
 | A9 | A field literally named `output.subject` next to a nested `output` → `subject` | Two ways to read the same path | RULE: the literal name wins (spreadsheet-style exports flatten nested names that way) |
 | A10 | Predictions and answers in the same file | The key's fields sit beside the workflow's | RULE: allowed; outputs name the key's fields with `key_field`; H4 does not apply |
 
-Formats: JSON (a list of records, or a list inside an object via `records_at`) and
-JSON Lines (`.jsonl` / `.ndjson`, one record per line). Nothing is specific to a
-platform; where things are is declared in the config's `input` and field settings.
+| A11 | CSV: a quoted cell is never closed | Everything after it merges into one cell | STOP, naming the line the quote opened on |
+| A12 | CSV: a row with more or fewer cells than the header (usually an unquoted comma inside a value), or a `;`-separated file read as `,`-separated | Values land in the wrong columns | STOP, naming the line, or the `delimiter` setting to change |
+| A13 | CSV: a header with an empty or repeated column name | A column can't be addressed, or two claim one name | STOP |
+| A14 | CSV cell conventions | A cell only holds text | RULE: `\|` between values, `@` before a confidence (both configurable); an empty set cell means "no values"; a missing column means missing (D1/D2); a value that itself contains `@` needs another `confidence_separator` (otherwise STOP) |
+
+Formats: JSON (a list of records, or a list inside an object via `records_at`),
+JSON Lines (`.jsonl` / `.ndjson`, one record per line) and CSV (`.csv`, `.tsv`).
+Nothing is specific to a platform; where things are is declared in the config's
+`input` and field settings.
 
 ## B. Matching records (`align.js`)
 
@@ -90,6 +96,7 @@ platform; where things are is declared in the config's `input` and field setting
 | D15 | Extra fields on records (evidence, notes, cost) | Normal in real exports | RULE: ignored |
 | D16 | A facet in the files but not in the config | Probably intentional | RULE: ignored |
 | D17 | `inherited_from` on a value | Copies another tag's confidence; not a separate claim by the model | RULE: counts in precision/recall, excluded from calibration and from "proposed by model" counts |
+| D19 | A value in the `rejected_field` list marked `"applied": true` | Contradicts itself | STOP |
 | D18 | Broader terms added on one side only (predictions rolled up to ancestors, key not, or the reverse) | Every ancestor shows up as a false positive or false negative | STRICT when a value hierarchy is given: check both sides are closed under the same ancestors |
 
 ## E. Confidence values
@@ -102,6 +109,8 @@ platform; where things are is declared in the config's `input` and field setting
 | E4 | Negative, above 1, or not a number | Meaningless | STOP |
 | E5 | Exactly on the threshold: `0.85` vs gate `0.85` | Off-by-one at the most important number | RULE: at or above passes |
 | E6 | Confidence on answer-key values | Leftover from copying predictions into the key | RULE: ignored |
+| E7 | Decimal comma: `0,95` (European spreadsheets) | Misread, or read as two values | STOP, showing `0.95` |
+| E8 | A label's confidence given twice: with the label and in its `confidence_field` | Which one is right? | STOP |
 
 ## F. Label outputs (pass / elevate / fail)
 

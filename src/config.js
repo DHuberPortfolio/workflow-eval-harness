@@ -10,10 +10,11 @@ const ROUTE_CLASSES = ['auto', 'review', 'block', 'exclude'];
 const OUTPUT_TYPES = ['set', 'label'];
 const WRONG_WHEN = ['gold_route', 'any_mismatch'];
 const GATE_USES = ['lead', 'weakest'];
-const FORMATS = ['json', 'jsonl'];
+const FORMATS = ['json', 'jsonl', 'csv'];
+const DELIMITERS = [',', ';', '\t', '|'];
 const TOP_LEVEL_KEYS = ['id_field', 'input', 'outputs', 'routing', 'wrong_when', 'thresholds', 'trap_field'];
-const OUTPUT_KEYS = ['type', 'field', 'key_field', 'labels', 'value_key', 'confidence_key'];
-const INPUT_KEYS = ['format', 'records_at', 'unwrap'];
+const OUTPUT_KEYS = ['type', 'field', 'key_field', 'labels', 'value_key', 'confidence_key', 'rejected_field', 'confidence_field'];
+const INPUT_KEYS = ['format', 'records_at', 'unwrap', 'delimiter', 'list_separator', 'confidence_separator'];
 
 const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isName = v => typeof v === 'string' && v.length > 0;
@@ -38,11 +39,19 @@ function validateConfig(raw) {
 
   // input: where the records are in each file. Only needed when a file is not a plain
   // list of records. Nothing here is specific to any platform:
-  //   format     - "json" or "jsonl" (one record per line). Default: from the file extension.
+  //   format     - "json", "jsonl" (one record per line) or "csv". Default: from the file
+  //                extension (.jsonl/.ndjson, .csv, .tsv; anything else is json)
   //   records_at - the list is inside the file, e.g. "data.results" in an API response
   //   unwrap     - each record is inside a field, e.g. "json" in an n8n export
+  // CSV only (a spreadsheet cell holds text, so it needs conventions):
+  //   delimiter            - between cells: "," (default; tab for .tsv), ";", "\t" or "|"
+  //   list_separator       - between several values in one cell (default "|")
+  //   confidence_separator - before a value's confidence: "SUBJ-MNA@0.95" (default "@")
   const input = {};
-  for (const which of ['predictions', 'key']) input[which] = { format: null, records_at: null, unwrap: null };
+  for (const which of ['predictions', 'key']) {
+    input[which] = { format: null, records_at: null, unwrap: null, delimiter: null, list_separator: '|', confidence_separator: '@' };
+  }
+  const isSeparator = v => isName(v) && !/["\r\n]/.test(v);
   if (raw.input !== undefined) {
     if (!isObj(raw.input)) {
       errors.push('input must be an object');
@@ -54,8 +63,16 @@ function validateConfig(raw) {
           const at = 'input.' + which + '.' + k;
           if (!INPUT_KEYS.includes(k)) { errors.push('unknown key "' + at + '" (allowed: ' + INPUT_KEYS.join(', ') + ')'); continue; }
           if (k === 'format' && !FORMATS.includes(v)) errors.push(at + ' must be one of: ' + FORMATS.join(', '));
-          if (k !== 'format' && !isPath(v)) errors.push(at + ' ' + PATH_RULE);
+          if ((k === 'records_at' || k === 'unwrap') && !isPath(v)) errors.push(at + ' ' + PATH_RULE);
+          if (k === 'delimiter' && !DELIMITERS.includes(v)) errors.push(at + ' must be one of: "," ";" "\\t" (tab) "|"');
+          if ((k === 'list_separator' || k === 'confidence_separator') && !isSeparator(v)) errors.push(at + ' must be non-empty text without quotes or line breaks');
           input[which][k] = v;
+        }
+        // The three CSV separators must differ, or a cell could be read two ways.
+        const s = input[which];
+        if (s.list_separator === s.confidence_separator) errors.push('input.' + which + ': list_separator and confidence_separator are both "' + s.list_separator + '"');
+        if (s.delimiter && (s.delimiter === s.list_separator || s.delimiter === s.confidence_separator)) {
+          errors.push('input.' + which + ': delimiter "' + s.delimiter + '" is also used as a separator inside cells');
         }
       }
     }
@@ -68,6 +85,10 @@ function validateConfig(raw) {
   //                    predictions and answers share one file, e.g. "output.x" vs "expected.x"
   //   value_key      - inside a value object, which field holds the value (default "value")
   //   confidence_key - and which holds the confidence (default "confidence")
+  //   rejected_field - (sets) a separate field listing values the workflow proposed but did
+  //                    not apply; read as applied: false
+  //   confidence_field - (labels) a separate field holding the label's confidence, e.g. a
+  //                    "confidence" column next to a "verdict" column
   const outputs = {};
   if (!isObj(raw.outputs) || Object.keys(raw.outputs).length === 0) {
     errors.push('outputs must be an object with at least one entry');
@@ -83,6 +104,14 @@ function validateConfig(raw) {
       if (o.key_field !== undefined && !isPath(o.key_field)) errors.push(at + '.key_field ' + PATH_RULE);
       if (o.value_key !== undefined && !isName(o.value_key)) errors.push(at + '.value_key must be a non-empty string');
       if (o.confidence_key !== undefined && !isName(o.confidence_key)) errors.push(at + '.confidence_key must be a non-empty string');
+      if (o.rejected_field !== undefined) {
+        if (!isPath(o.rejected_field)) errors.push(at + '.rejected_field ' + PATH_RULE);
+        if (o.type !== 'set') errors.push(at + '.rejected_field only applies to type "set"');
+      }
+      if (o.confidence_field !== undefined) {
+        if (!isPath(o.confidence_field)) errors.push(at + '.confidence_field ' + PATH_RULE);
+        if (o.type !== 'label') errors.push(at + '.confidence_field only applies to type "label"');
+      }
       if (o.type === 'label') {
         if (!Array.isArray(o.labels) || o.labels.length < 2 || !o.labels.every(isName)) {
           errors.push(at + '.labels must list at least two label names');
@@ -98,6 +127,8 @@ function validateConfig(raw) {
         labels: o.type === 'label' ? o.labels : null,
         value_key: o.value_key || 'value',
         confidence_key: o.confidence_key || 'confidence',
+        rejected_field: o.rejected_field || null,
+        confidence_field: o.confidence_field || null,
       };
     }
   }
