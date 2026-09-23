@@ -134,4 +134,54 @@ function renderTerminal(results) {
   return parts.join('\n\n') + '\n';
 }
 
-module.exports = { renderTerminal, WRONG_WHEN };
+// ---------- Across runs ----------
+
+const fmt = (v, unit) => (v === null ? 'n/a' : unit === 'points' ? v.toFixed(1) + '%' : unit === 'records' ? String(v) : v.toFixed(3));
+const fmtDelta = (v, unit) => (v === null ? 'n/a' : (v > 0 ? '+' : '') + (unit === 'points' ? v.toFixed(1) + ' pts' : unit === 'records' ? String(v) : v.toFixed(3)));
+const fmtSpread = (v, unit) => (v === null ? 'n/a' : unit === 'points' ? v.toFixed(1) + ' pts' : unit === 'records' ? v.toFixed(1) : v.toFixed(3));
+
+function renderVariance(v) {
+  const parts = ['VARIANCE  ' + v.runs.length + ' runs against ' + v.inputs.key];
+  parts.push(v.runs.map((r, i) => '  run ' + (i + 1) + '  ' + r).join('\n'));
+  const rows = [['metric', ...v.runs.map((_, i) => 'run ' + (i + 1)), 'mean', 'spread (sd)', 'min', 'max', 'range']];
+  for (const m of v.metrics) {
+    rows.push([m.name, ...m.values.map(x => fmt(x, m.unit)), fmt(m.mean, m.unit), fmtSpread(m.sd, m.unit), fmt(m.min, m.unit), fmt(m.max, m.unit), fmtSpread(m.range, m.unit)]);
+  }
+  parts.push(table(rows, rows[0].map((_, i) => i).filter(i => i > 0)));
+  const silent = v.metrics.find(m => m.name === 'silent error rate');
+  if (silent && silent.range !== null) {
+    parts.push('Identical code put the silent error rate anywhere from ' + fmt(silent.min, 'points') + ' to ' + fmt(silent.max, 'points') +
+      '. A single run cannot claim more precision than that ' + fmtSpread(silent.range, 'points') + ' range.');
+  }
+  const rc = v.records.route_changed;
+  parts.push('RECORDS THAT CHANGED ROUTE  ' + (rc.length ? '' : 'none') +
+    rc.map(r => '\n  ' + r.id.padEnd(8) + r.routes.join(' / ') + (r.should ? '   (should: ' + r.should + ')' : '')).join(''));
+  const sc = v.records.silent_changed;
+  parts.push('RECORDS SILENT IN SOME RUNS ONLY  ' + (sc.length ? '' : 'none') +
+    sc.map(r => '\n  ' + r.id.padEnd(8) + r.silent.map(s => (s ? 'silent' : 'ok')).join(' / ')).join(''));
+  if (v.problems.length) parts.push('WARNINGS\n' + v.problems.map(i => '  [' + i.trap + '] ' + i.where + ': ' + i.message).join('\n'));
+  return parts.join('\n\n') + '\n';
+}
+
+function renderCompare(c) {
+  const parts = ['COMPARE  ' + c.inputs.before + '  ->  ' + c.inputs.after];
+  parts.push(c.noise_runs ? 'noise baseline: ' + c.noise_runs.length + ' runs of identical code (' + c.noise_runs.join(', ') + ')'
+    : 'no noise baseline: pass --noise with repeated runs of the unchanged workflow to tell a real change from run-to-run noise');
+  const rows = [['metric', 'before', 'after', 'change', 'noise range', 'verdict']];
+  for (const m of c.metrics) rows.push([m.name, fmt(m.before, m.unit), fmt(m.after, m.unit), fmtDelta(m.delta, m.unit), m.noise_range === null ? '' : fmtSpread(m.noise_range, m.unit), m.verdict]);
+  parts.push(table(rows, [1, 2, 3, 4]));
+  const r = c.records;
+  const lines = ['RECORDS THAT CHANGED  routes fixed ' + c.summary.routes_fixed + ' · routes broken ' + c.summary.routes_broken];
+  for (const x of r.route_changed) lines.push('  ' + x.id.padEnd(8) + x.before + ' -> ' + x.after + (x.should ? '   should: ' + x.should + (x.outcome ? '   ' + x.outcome : '') : ''));
+  for (const x of r.became_silent) lines.push('  ' + x.id.padEnd(8) + 'became a silent error (' + x.types.join(', ') + ')');
+  for (const x of r.no_longer_silent) lines.push('  ' + x.id.padEnd(8) + 'no longer a silent error (was ' + x.types.join(', ') + ')');
+  for (const x of r.became_omission) lines.push('  ' + x.id.padEnd(8) + 'became a silent omission (' + x.types.join(', ') + ')');
+  for (const x of r.no_longer_omission) lines.push('  ' + x.id.padEnd(8) + 'no longer a silent omission');
+  if (r.values_changed.length) lines.push('  values changed on: ' + list(r.values_changed.map(x => x.id)));
+  if (lines.length === 1) lines.push('  none');
+  parts.push(lines.join('\n'));
+  if (c.problems.length) parts.push('WARNINGS\n' + c.problems.map(i => '  [' + i.trap + '] ' + i.where + ': ' + i.message).join('\n'));
+  return parts.join('\n\n') + '\n';
+}
+
+module.exports = { renderTerminal, renderVariance, renderCompare, WRONG_WHEN };

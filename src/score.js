@@ -55,4 +55,36 @@ function scoreRun({ config, predPath, keyPath, mode = 'strict' }) {
   };
 }
 
-module.exports = { scoreRun, scoreRecords };
+// ---------- Across runs ----------
+
+const fs = require('fs');
+const crypto = require('crypto');
+const { varianceOf, compareOf } = require('./metrics/runs.js');
+
+const fingerprint = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+
+// N result files from repeated runs of identical code: mean and spread per metric.
+function varianceRun({ config, keyPath, predPaths, mode = 'strict' }) {
+  // I1: the spread of one number is meaningless.
+  if (predPaths.length < 2) throw new Error('[I1] variance needs two or more runs, got ' + predPaths.length);
+  const notes = [];
+  // I3: the same run passed twice makes the runs look more stable than they are.
+  const seen = new Map();
+  for (const f of predPaths) {
+    const h = fingerprint(f);
+    if (seen.has(h)) notes.push({ level: 'warn', trap: 'I3', where: f, message: 'has exactly the same content as ' + seen.get(h) + '; the spread will look smaller than it is' });
+    else seen.set(h, f);
+  }
+  const runs = predPaths.map(f => ({ label: f, results: scoreRun({ config, predPath: f, keyPath, mode }) }));
+  return { inputs: { key: keyPath, runs: predPaths, mode }, ...varianceOf(runs), problems: notes };
+}
+
+// Two runs, and optionally repeated runs of identical code to judge them against.
+function compareRun({ config, keyPath, beforePath, afterPath, noisePaths = [], mode = 'strict' }) {
+  const before = scoreRun({ config, predPath: beforePath, keyPath, mode });
+  const after = scoreRun({ config, predPath: afterPath, keyPath, mode });
+  const noise = noisePaths.length ? varianceRun({ config, keyPath, predPaths: noisePaths, mode }) : null;
+  return { inputs: { key: keyPath, before: beforePath, after: afterPath, noise: noisePaths, mode }, ...compareOf(before, after, noise), problems: noise ? noise.problems : [] };
+}
+
+module.exports = { scoreRun, scoreRecords, varianceRun, compareRun };

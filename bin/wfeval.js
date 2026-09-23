@@ -5,8 +5,8 @@ const fs = require('node:fs');
 const { parseArgs } = require('node:util');
 const { loadConfig, SEVERITIES } = require('../src/config.js');
 const { loadRun } = require('../src/load.js');
-const { scoreRun } = require('../src/score.js');
-const { renderTerminal } = require('../src/report/terminal.js');
+const { scoreRun, varianceRun, compareRun } = require('../src/score.js');
+const { renderTerminal, renderVariance, renderCompare } = require('../src/report/terminal.js');
 const { resultsJson } = require('../src/report/json.js');
 
 const USAGE = `usage: wfeval <command> [options]
@@ -20,8 +20,15 @@ commands:
             score one run. --fail-on critical|high|medium|low exits with code 3 when a
             silent error or safeguard failure at or above that severity is found (for CI)
 
-  variance  (not built yet)
-  compare   (not built yet)
+  variance  --config <file> --key <file> <run> <run> [<run> ...] [--lenient] [--json <file>]
+            several runs of identical code: mean and spread of every metric, and the
+            records that behave differently from run to run
+
+  compare   --config <file> --key <file> --before <file> --after <file>
+            [--noise <run> --noise <run> ...] [--lenient] [--json <file>]
+            what changed between two runs, and whether it is bigger than the noise
+            of repeated identical runs (give those with --noise)
+
   whatif    (not built yet)
 
 exit codes: 0 done · 1 input problems (listed) · 2 bad command · 3 --fail-on triggered`;
@@ -113,7 +120,31 @@ function check(args) {
   }
 }
 
-const COMMANDS = { check, score };
+function variance(args) {
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
+    config: { type: 'string' }, key: { type: 'string' }, lenient: { type: 'boolean' }, json: { type: 'string' },
+  } });
+  need(values, ['config', 'key'], 'variance');
+  const v = varianceRun({ config: loadConfig(values.config), keyPath: values.key, predPaths: positionals, mode: MODE(values) });
+  process.stdout.write(renderVariance(v));
+  if (values.json) writeFile(values.json, JSON.stringify(resultsJson(v), null, 2) + '\n');
+}
+
+function compare(args) {
+  const { values } = parseArgs({ args, options: {
+    config: { type: 'string' }, key: { type: 'string' }, before: { type: 'string' }, after: { type: 'string' },
+    noise: { type: 'string', multiple: true }, lenient: { type: 'boolean' }, json: { type: 'string' },
+  } });
+  need(values, ['config', 'key', 'before', 'after'], 'compare');
+  const c = compareRun({
+    config: loadConfig(values.config), keyPath: values.key, beforePath: values.before, afterPath: values.after,
+    noisePaths: values.noise || [], mode: MODE(values),
+  });
+  process.stdout.write(renderCompare(c));
+  if (values.json) writeFile(values.json, JSON.stringify(resultsJson(c), null, 2) + '\n');
+}
+
+const COMMANDS = { check, score, variance, compare };
 
 function main(argv) {
   const [cmd, ...rest] = argv;

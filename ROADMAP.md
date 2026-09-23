@@ -38,8 +38,8 @@ the design is wrong.
 ## Day 3: across runs
 - [x] Calibration: bucket per stated confidence value (fixed width optional); inherited values
       excluded; interval per bucket; per output; the config's thresholds checked (`calibration.js`)
-- [ ] `wfeval variance`: N runs, mean and spread per metric
-- [ ] `wfeval compare`: metric deltas plus the records that flipped
+- [x] `wfeval variance`: N runs, mean and spread per metric, records that change between runs (`test/fixtures/runs/`)
+- [x] `wfeval compare`: metric deltas, verdict against a `--noise` baseline, the records that flipped and whether each was fixed or broken
 
 ## Day 4: what-if and publishing
 - [ ] `wfeval whatif --gate`: sweep each gated output's threshold. Only records marked

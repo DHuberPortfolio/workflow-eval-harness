@@ -1,0 +1,25 @@
+[
+  { "id": "R1", "route": "AUTO_PUBLISH",
+    "SUBJECT":   [{ "value": "SUBJ-MNA", "confidence": 0.95 }],
+    "GEOGRAPHY": [{ "value": "GEO-US", "confidence": 0.90 }] },
+
+  { "id": "R2", "route": "AUTO_PUBLISH",
+    "SUBJECT":   [{ "value": "SUBJ-MNA", "confidence": 0.90 }, { "value": "SUBJ-ANTI", "confidence": 0.88 }],
+    "GEOGRAPHY": [{ "value": "GEO-US", "confidence": 0.92 }] },
+
+  { "id": "R3", "route": "EDITOR_REVIEW",
+    "SUBJECT":   [{ "value": "SUBJ-EARN", "confidence": 0.70 }],
+    "GEOGRAPHY": [{ "value": "GEO-UK", "confidence": 0.65 }] },
+
+  { "id": "R4", "route": "EDITOR_REVIEW",
+    "SUBJECT":   [{ "value": "SUBJ-EARN", "confidence": 0.80 }],
+    "GEOGRAPHY": [{ "value": "GEO-US", "confidence": 0.75 }] },
+
+  { "id": "R5", "route": "BLOCKED",
+    "SUBJECT":   [{ "value": "SUBJ-LAB", "confidence": 0.55, "applied": false }],
+    "GEOGRAPHY": [{ "value": "GEO-EU", "confidence": 0.70 }] },
+
+  { "id": "R6", "route": "DUPLICATE_SUPPRESSED",
+    "SUBJECT":   [{ "value": "SUBJ-MNA", "confidence": 0.99 }],
+    "GEOGRAPHY": [{ "value": "GEO-US", "confidence": 0.99 }] }
+]
