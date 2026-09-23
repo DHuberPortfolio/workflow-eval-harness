@@ -15,8 +15,8 @@ the design is wrong.
 - [x] Rates with 95% Wilson intervals (`src/metrics/stats.js`)
 - [x] Trap labels declared in config (`trap_field`)
 - [x] Tool trap catalogue (`test/TRAPS.md`) and silent error types (`docs/SILENT_ERRORS.md`)
-- [ ] Strict mode (default) and `--lenient`
-- [ ] `load.js`: read JSON and n8n item exports, normalize values (traps A, D, E, F)
+- [x] Strict mode (default) and `--lenient` (`src/problems.js`)
+- [x] `load.js`: read JSON and n8n item exports, normalize values (traps A, B1/B7/B8, C10, D, E, F, H3/H4); `wfeval check --pred --key`
 - [ ] `align.js`: match predictions to key by id (traps B, C)
 - [ ] Second tiny fixture shaped like a compliance review: a label output (pass / elevate / fail)
       plus a set of violation codes, so both output types are proven from the start
