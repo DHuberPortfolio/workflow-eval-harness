@@ -338,6 +338,10 @@ function normalizePredictions(raws, config, source, p, opts = {}) {
     return [];
   }
 
+  // Predictions that carry their answers beside them (a combined format): the config says so
+  // by reading the key from different fields than the predictions.
+  const combined = opts.sameFile || Object.values(config.outputs).some(o => o.key_field !== o.field);
+
   const out = [];
   raws.forEach((raw, i) => {
     if (!isObj(raw)) { p.stop('B1', source + ' record #' + (i + 1), 'is ' + describe(raw) + ', not a record'); return; }
@@ -346,9 +350,8 @@ function normalizePredictions(raws, config, source, p, opts = {}) {
     const where = source + ' ' + id;
 
     // H4: a trap label next to the workflow's output suggests the workflow could see it.
-    // Not checked when predictions and key share one file: there the key is in each
-    // record by design.
-    if (config.trap_field && !opts.sameFile && getPath(raw, config.trap_field) !== undefined) {
+    // Not checked for a combined format, where the key sits in each record by design.
+    if (config.trap_field && !combined && getPath(raw, config.trap_field) !== undefined) {
       p.strict('H4', where, 'has the trap field "' + config.trap_field + '": the workflow may have seen what it was being tested on');
     }
     let scored = true;   // C10: false for records where the model produced nothing to score

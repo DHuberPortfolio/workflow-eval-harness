@@ -33,6 +33,7 @@ function notMeasured(config) {
   const out = [];
   const gold = config.routing.gold_field !== null;
   if (!gold) out.push({ what: 'SP-FORBIDDEN, SP-SHOULD-REVIEW, SP-DUPLICATE, silent omissions, block precision', why: 'the answer key has no correct route (routing.gold_field)' });
+  else if (!Object.values(config.routing.map).includes('block')) out.push({ what: 'block precision', why: 'no decision maps to block' });
   if (Object.keys(config.allowed_values).length === 0) out.push({ what: 'SP-INVALID', why: 'no allowed_values list' });
   if (!config.duplicate_of_field && Object.values(config.routing.map).includes('exclude')) {
     out.push({ what: 'SP-WRONG-PRIMARY, SO-PRIMARY-SUPPRESSED', why: 'no duplicate_of_field, so duplicate groups are unknown' });
@@ -88,7 +89,8 @@ function scoreRouting(judgments, config) {
       precision: rate(reviewed.filter(j => j.needs_human).length, reviewed.length),
       wasted: ids(reviewed.filter(j => j.wasted_review)),
     },
-    block: gold ? {
+    // Only when some decision blocks: a workflow without a block route has no block precision.
+    block: gold && Object.values(config.routing.map).includes('block') ? {
       precision: rate(blocked.filter(j => j.gold_class === 'block').length, blocked.length),
       wrongly_blocked: ids(blocked.filter(j => j.gold_class !== 'block')),
     } : null,

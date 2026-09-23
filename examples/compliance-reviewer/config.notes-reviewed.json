@@ -1,0 +1,24 @@
+{
+  "id_field": "id",
+  "trap_field": "expected.trap",
+  "outputs": {
+    "violations": {
+      "type": "set",
+      "field": "output.violations",
+      "key_field": "expected.violations"
+    }
+  },
+  "routing": {
+    "field": "decision",
+    "gold_field": "expected.verdict",
+    "map": {
+      "PASS": "auto",
+      "PASS_WITH_NOTES": "review",
+      "REVIEW_REQUIRED": "review",
+      "BLOCK": "review",
+      "CLEAN": "auto",
+      "VIOLATION": "review"
+    }
+  },
+  "wrong_when": "gold_route"
+}

@@ -145,7 +145,7 @@ Nothing is specific to a platform; where things are is declared in the config's
 | H1 | Record with no trap label | Dropped from the per-trap table; totals stop adding up | RULE: grouped as "(none)" |
 | H2 | Trap name typo: `entity-disambig` vs `entity-disambiguation` | Splits one trap type into two small groups | Caught by H5 |
 | H3 | Record with several traps (e.g. a duplicate that also has a weak-but-correct value) | Which group does it count in? | RULE: the trap field may be a list; the record counts in each group; the table notes that group totals can exceed the record count |
-| H4 | Trap field present on **predictions** | The workflow may have seen what it was being tested on | STRICT |
+| H4 | Trap field present on **predictions** | The workflow may have seen what it was being tested on | STRICT, except for a combined format (the config reads the key from other fields than the predictions), where the key sits in each record by design |
 | H5 | A trap type with too few records (below `min_per_trap`, e.g. 3) | One record passing can be luck; it proves nothing about the trap | STRICT. The report always lists every trap type with its count |
 
 ## I. Multiple runs (Day 3)

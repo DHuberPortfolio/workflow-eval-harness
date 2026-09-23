@@ -56,7 +56,7 @@ the design is wrong.
 
 ## Real-world fixtures (one per workflow, in `examples/`)
 - [x] Metadata enrichment: adapter + reproduce run 49's facet and routing figures (`examples/metadata-enrichment/`)
-- [ ] Bar compliance: adapter + its 40-document ground truth set (needs a run's output from n8n)
+- [x] Compliance reviewer: adapter, three live runs from n8n (executions 50-52), variance (`examples/compliance-reviewer/`)
 - [ ] Competitor registry: needs "declined to classify" handled as its own outcome
 - [ ] Competitor watch: needs **ordinal labels** (bands 1-5, where near-misses count less than
       far misses)

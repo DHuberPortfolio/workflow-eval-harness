@@ -314,6 +314,17 @@ test('H4: a trap label on a prediction is suspicious (the workflow may have seen
   assert.deepEqual(readPred(pred({ trap: 'near-duplicate' }), 'lenient').flagged, ['warn:H4']);
 });
 
+test('H4 does not apply when the config says answers sit beside predictions (a combined format)', () => {
+  const combined = validateConfig({
+    trap_field: 'expected.trap',
+    outputs: { tags: { type: 'set', field: 'output.tags', key_field: 'expected.tags' } },
+    routing: { map: { AUTO: 'auto' } },
+  }).config;
+  const rec = { id: 'R1', route: 'AUTO', output: { tags: [] }, expected: { tags: [], trap: 'weak-tag' } };
+  // Predictions from one run's file, the key from another's: still no H4.
+  assert.deepEqual(run(p => normalizePredictions([rec], combined, 'run-2.json', p)).flagged, []);
+});
+
 // ---------- The whole thing ----------
 
 test('every problem in a file is reported at once', () => {
