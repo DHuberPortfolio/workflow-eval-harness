@@ -65,3 +65,19 @@ test('compare without a noise baseline says so rather than guessing', () => {
   assert.equal(metric(c, 'silent error rate').verdict, 'no noise baseline');
   assert.equal(metric(c, 'GEOGRAPHY F1').verdict, 'no change');
 });
+
+test('I6: a run with failed model calls is flagged before it is compared', () => {
+  const E = path.join(__dirname, '..', 'examples', 'compliance-reviewer');
+  const cfg = loadConfig(path.join(E, 'config.json'));
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const clean = path.join(E, 'runs', 'exec-56.harness.json');
+  const rows = JSON.parse(fs.readFileSync(clean, 'utf8'));
+  rows[30] = { ...rows[30], scored: false, output: { violations: [] } };   // one call failed
+  const failed = path.join(os.tmpdir(), 'wfeval-failed-run.json');
+  fs.writeFileSync(failed, JSON.stringify(rows));
+  const c = compareRun({ config: cfg, keyPath: clean, beforePath: clean, afterPath: failed });
+  assert.deepEqual(c.problems.map(p => p.trap), ['I6']);
+  assert.equal(c.metrics.find(m => m.name === 'model calls failed').after, 1);
+  fs.unlinkSync(failed);
+});

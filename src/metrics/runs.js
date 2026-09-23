@@ -20,6 +20,7 @@ function metricList(results) {
   list.push({ name: 'review-queue precision', unit: 'points', get: r => exact(r.routing.review_queue.precision) });
   if (results.routing.block) list.push({ name: 'block precision', unit: 'points', get: r => exact(r.routing.block.precision) });
   list.push({ name: 'safeguard failures', unit: 'records', get: r => r.routing.safeguard_failures.records });
+  list.push({ name: 'model calls failed', unit: 'records', get: r => r.quality.left_out.model_failed.length });
   for (const [name, o] of Object.entries(results.quality.outputs)) {
     if (o.type === 'set') {
       list.push({ name: name + ' precision', unit: 'points', get: r => exact(r.quality.outputs[name].precision) });

@@ -157,6 +157,7 @@ Nothing is specific to a platform; where things are is declared in the config's
 | I3 | The same file passed twice | Makes the runs look more stable than they are | WARN |
 | I4 | `compare` given runs scored with different configs | Changes caused by the config look like changes in the workflow | STOP |
 | I5 | A difference smaller than run-to-run noise | Looks like progress | RULE: `compare` says "within noise" when a variance baseline exists |
+| I6 | A run where model calls failed (rate limits, several runs started at once) | Every failed record goes to a person, so the run measures the failures, not the workflow | WARN, naming the run; `model calls failed` is tracked as a metric |
 
 ## Note on duplicates
 

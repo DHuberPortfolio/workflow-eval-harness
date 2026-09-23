@@ -76,7 +76,17 @@ function varianceRun({ config, keyPath, predPaths, mode = 'strict' }) {
     else seen.set(h, f);
   }
   const runs = predPaths.map(f => ({ label: f, results: scoreRun({ config, predPath: f, keyPath, mode }) }));
+  notes.push(...failedCallNotes(runs));
   return { inputs: { key: keyPath, runs: predPaths, mode }, ...varianceOf(runs), problems: notes };
+}
+
+// I6: a run where model calls failed is measuring the failures (every failed record went to a
+// person), not the workflow. Comparing it with clean runs mixes the two.
+function failedCallNotes(runs) {
+  return runs.filter(r => r.results.quality.left_out.model_failed.length > 0).map(r => ({
+    level: 'warn', trap: 'I6', where: r.label,
+    message: r.results.quality.left_out.model_failed.length + ' model call(s) failed in this run; its numbers reflect those failures, not the workflow. Rerun it before comparing.',
+  }));
 }
 
 // Two runs, and optionally repeated runs of identical code to judge them against.
@@ -84,7 +94,8 @@ function compareRun({ config, keyPath, beforePath, afterPath, noisePaths = [], m
   const before = scoreRun({ config, predPath: beforePath, keyPath, mode });
   const after = scoreRun({ config, predPath: afterPath, keyPath, mode });
   const noise = noisePaths.length ? varianceRun({ config, keyPath, predPaths: noisePaths, mode }) : null;
-  return { inputs: { key: keyPath, before: beforePath, after: afterPath, noise: noisePaths, mode }, ...compareOf(before, after, noise), problems: noise ? noise.problems : [] };
+  const problems = [...failedCallNotes([{ label: beforePath, results: before }, { label: afterPath, results: after }]), ...(noise ? noise.problems : [])];
+  return { inputs: { key: keyPath, before: beforePath, after: afterPath, noise: noisePaths, mode }, ...compareOf(before, after, noise), problems };
 }
 
 module.exports = { scoreRun, scoreRecords, varianceRun, compareRun };

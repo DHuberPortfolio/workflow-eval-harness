@@ -55,3 +55,41 @@ the violation codes are the reasons for a verdict, not content that is published
   `TESTIMONIAL_NO_DISCLAIMER`, so those claims count as wrong in calibration.
 - The key lists one or two codes per document; the LLM often finds a further plausible one
   (E11's STATISTIC_NO_CONTEXT). Whether those are errors or gaps in the key is a key decision.
+
+## Experiment: prompt v2 (2026-09-23)
+
+The finding above says the model *found* the violations but stated them below the
+threshold, so the fix is the model, not the threshold. The v1 prompt told the model to
+"be conservative", and it hedged the confidence of findings it did report.
+
+**Change** (n8n workflow version "Prompt v2", LLM prompt only; every deterministic rule
+verified unchanged on 18 edge-case documents first):
+- anchored the confidence scale (0.90+ = most reviewers would flag it on sight, and so on)
+- kept conservatism for *whether* to report, and said not to hedge the confidence of a report
+- renamed `TESTIMONIAL_ISSUE` to the key's `TESTIMONIAL_NO_DISCLAIMER`
+
+**Result**: runs 50-52 (v1) against 56-58 (v2), `compare --noise` with the v1 runs as noise:
+
+| | v1 (50-52) | v2 (56-58) | verdict |
+|---|---|---|---|
+| silent error rate, if notes go live | 22.2-30.0% | **6.7% in all three** | beyond noise |
+| violations reaching a person | 20-22 of 26 | **25 of 26** | 5 routes fixed, 0 broken |
+| false alarms on the 14 clean documents | 0 | 0 | unchanged |
+| code recall | 77.4-83.9% | **93.5%** | beyond noise |
+| code precision | 80.0-89.7% | 65.9-72.5% | beyond noise, **worse** |
+
+- The one remaining note is **E38** (an award listing, 0.65-0.75 against Florida's 0.90).
+  Tuning the prompt for one of 40 documents would fit the golden set rather than the problem;
+  it needs more award-claim documents in the golden set first.
+- Precision fell because v2 states secondary codes with confidence (RESULTS_NO_DISCLAIMER next
+  to an implied guarantee). No route changed because of it here: every document it adds codes
+  to is already a violation. Whether those codes are errors or gaps in the key is a key decision.
+- 14 clean documents is a small base: 0 false alarms in 14 is consistent with a rate up to
+  21.5%. More clean documents (especially near-misses) would show whether v2 over-flags real copy.
+
+**Discarded runs 53-55**: started at the same time, they hit the API together and 20-47.5% of
+their model calls failed. Every failed call routed to a person (the workflow failed safe), but
+those runs measured the failures, not the prompt. They were rerun one at a time as 56-58. The
+harness now tracks `model calls failed` per run and warns (trap I6) before comparing such a run.
+
+To undo v2: restore n8n workflow version `d167d897-989f-44a1-b8fa-d3784cadd2cb`.
