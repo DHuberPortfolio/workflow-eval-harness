@@ -71,6 +71,7 @@ The record went through (route class auto), and it needed a human.
 | SP-WRONG | **Wrong value** | Applied value not in the key | high |
 | SP-MISSING-REJECTED | **Correct value thrown away**: proposed, but not applied (the floor dropped it) | Key value present in predictions with `applied: false` | medium |
 | SP-MISSING | **Correct value never proposed** | Key value absent from predictions | medium |
+| SP-NEAR-MISS | **Near miss on an ordered scale**: off by no more than `near_miss_steps` (a 4 for a 5) | Ordinal outputs | low |
 
 An output that is also the route (a verdict label read from `routing.field`) is judged by
 the route types only: a wrong verdict *is* the routing error, and counting it again as a
@@ -82,6 +83,13 @@ Not silent errors, and not in the silent error rate, but reported beside it at c
 severity: a record went through although one of the workflow's own safeguards should have
 held it. The content may happen to be right; the process is still broken, and the next
 record through the same hole may not be so lucky.
+
+Every safeguard failure is a bug to find and fix:
+1. Find the branch that routed the record and why it skipped the check (a path around the
+   gate, a threshold read from the wrong place, a confidence parsed as text).
+2. If the key says the record *should* go through, the fix is not a lower threshold: it is a
+   model (prompt, examples) that states enough confidence on correct records while staying
+   right on everything else. `wfeval compare --noise` tells whether a change actually did that.
 
 | Code | Type | How the tool detects it |
 |---|---|---|

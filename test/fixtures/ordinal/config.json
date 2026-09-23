@@ -1,0 +1,11 @@
+{
+  "id_field": "id",
+  "outputs": {
+    "band": { "type": "ordinal", "labels": [1, 2, 3, 4, 5] }
+  },
+  "routing": {
+    "field": "route",
+    "gold_field": "expected_route",
+    "map": { "INCLUDE": "auto", "ESCALATE": "review", "DROP": "block" }
+  }
+}

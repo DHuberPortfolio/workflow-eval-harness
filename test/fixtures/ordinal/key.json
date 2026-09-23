@@ -1,0 +1,8 @@
+[
+  { "id": "C1", "expected_route": "INCLUDE",  "band": 5 },
+  { "id": "C2", "expected_route": "INCLUDE",  "band": 5 },
+  { "id": "C3", "expected_route": "INCLUDE",  "band": 3 },
+  { "id": "C4", "expected_route": "INCLUDE",  "band": 2 },
+  { "id": "C5", "expected_route": "ESCALATE", "band": 4 },
+  { "id": "C6", "expected_route": "ESCALATE", "band": 2 }
+]

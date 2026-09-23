@@ -59,12 +59,49 @@ function scoreLabel(pop, name, labels) {
   return { type: 'label', accuracy: rate(correct, pop.length), per_label, confusion };
 }
 
+// Ordered labels (bands 1-5, low/medium/high): everything a label gets, plus how FAR off
+// each miss was, because a 4 for a 5 is a near miss and a 1 for a 5 is not.
+//   exact            - scored on exactly the right step
+//   within_one       - at most one step off
+//   mean_distance    - how many steps off, on average (0 = always exact)
+//   mean_signed      - the same with direction: above 0, predictions lean higher on the scale
+//                      than the key; below 0, lower
+//   closeness        - 1 minus each miss's distance as a share of the whole scale, averaged:
+//                      1 is always exact, a one-step miss on a 5-step scale scores 0.75, a miss
+//                      from one end to the other scores 0
+//   miss_distances   - how many misses were 1 step off, 2 steps off, ...
+function scoreOrdinal(pop, name, labels) {
+  const base = scoreLabel(pop, name, labels);
+  const span = labels.length - 1;
+  const signed = [];
+  for (const r of pop) {
+    if (!r.pred[name]) continue;
+    signed.push(labels.indexOf(r.pred[name].value) - labels.indexOf(r.key[name]));
+  }
+  const n = signed.length;
+  const dist = signed.map(Math.abs);
+  const round = (x, d) => (n === 0 ? null : Number(x.toFixed(d)));
+  const missDistances = {};
+  for (const d of dist) if (d > 0) missDistances[d] = (missDistances[d] || 0) + 1;
+  return {
+    ...base,
+    type: 'ordinal',
+    within_one: rate(dist.filter(d => d <= 1).length, n),
+    mean_distance: round(dist.reduce((s, d) => s + d, 0) / n, 2),
+    mean_signed: round(signed.reduce((s, d) => s + d, 0) / n, 2),
+    closeness: round(dist.reduce((s, d) => s + (1 - d / span), 0) / n, 3),
+    predicted_higher: signed.filter(d => d > 0).length,
+    predicted_lower: signed.filter(d => d < 0).length,
+    miss_distances: missDistances,
+  };
+}
+
 function scoreQuality(records, config) {
   const pop = scorePopulation(records);
   const outputs = {};
   let tp = 0, fp = 0, fn = 0, anySet = false;
   for (const [name, o] of Object.entries(config.outputs)) {
-    outputs[name] = o.type === 'set' ? scoreSet(pop, name) : scoreLabel(pop, name, o.labels);
+    outputs[name] = o.type === 'set' ? scoreSet(pop, name) : o.type === 'ordinal' ? scoreOrdinal(pop, name, o.labels) : scoreLabel(pop, name, o.labels);
     if (o.type === 'set') { anySet = true; tp += outputs[name].tp; fp += outputs[name].fp; fn += outputs[name].fn; }
   }
   return {

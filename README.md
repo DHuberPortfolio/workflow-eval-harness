@@ -79,6 +79,10 @@ content may happen to be right, but the next record through the same hole may no
 
 **Precision, recall, F1** per output, per value and overall; for labels, accuracy,
 per-label scores and a confusion matrix. Only applied values count as predicted.
+For ordered labels (a 1-5 band), how far off each miss was: within one step, average
+distance, whether scores lean high or low, and a closeness score where a near miss loses a
+little and a miss across the scale loses everything. A near miss that goes out is a
+low-severity silent error; a far miss is a high one.
 Duplicates and records whose model call failed are left out, and named.
 
 **Per trap.** A golden set is built from traps: records designed to provoke a specific
@@ -185,8 +189,8 @@ See `docs/CONFIG.md`. A minimal config:
 
 ## Limits
 
-- Scores sets of values and single labels. Ordered labels (a 1-5 band, where 4-for-5 is
-  a near miss and 1-for-5 is not) and free text are not supported yet.
+- Scores sets of values, single labels and ordered labels. Free text is not supported:
+  it needs a reviewer to grade each field first, and the grades can then be scored as labels.
 - The floor what-if does not re-add broader terms or re-apply per-output caps; records
   whose route could depend on those are marked "needs replay" rather than guessed.
 - Calibration and every rate are only as strong as the golden set is large. The ranges

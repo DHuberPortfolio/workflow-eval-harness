@@ -48,13 +48,14 @@ A field literally named with a dot is used first, because spreadsheet exports fl
 
 | Key | Default | Meaning |
 |---|---|---|
-| `type` | required | `set`: zero or more values per record (tags, violation codes). `label`: exactly one value from `labels`. |
-| `labels` | - | Label outputs: every allowed label. |
+| `type` | required | `set`: zero or more values per record (tags, violation codes). `label`: exactly one value from `labels`. `ordinal`: one value from `labels` in order (bands 1-5), where a near miss counts less than a far one. |
+| `labels` | - | Label and ordinal outputs: every allowed label (for ordinal, lowest to highest). Numbers are accepted and compared as text. |
+| `near_miss_steps` | `1` | Ordinal: a miss by this many steps or fewer is SP-NEAR-MISS (low severity) instead of SP-WRONG. `0` makes every miss a full miss. |
 | `field` | the output's name | Where the workflow's values are. |
 | `key_field` | same as `field` | Where the answer key's values are. Different when predictions and answers share one file. |
 | `value_key` / `confidence_key` | `"value"` / `"confidence"` | Inside a value object, which fields hold the value and its confidence. |
 | `rejected_field` | - | Sets: a separate field listing values proposed but not applied; read as `applied: false`. |
-| `confidence_field` | - | Labels: a separate field holding the label's confidence. |
+| `confidence_field` | - | Labels and ordinals: a separate field holding the label's confidence. |
 
 A value is written as `"text"` or `{ "value": "text", "confidence": 0.9, "applied": true, "inherited_from": "..." }`.
 `applied` must be a real `true`/`false`; `inherited_from` marks a value copied from another

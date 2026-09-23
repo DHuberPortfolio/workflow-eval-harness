@@ -11,7 +11,7 @@ const unique = list => [...new Set(list)];
 // (a verdict read from routing.field) is left out: a wrong verdict is a routing error,
 // and the route types already describe it (SP-FORBIDDEN, SP-SHOULD-REVIEW, ...).
 function contentOutputs(config) {
-  return Object.entries(config.outputs).filter(([, o]) => !(o.type === 'label' && o.field === config.routing.field));
+  return Object.entries(config.outputs).filter(([, o]) => !(o.type !== 'set' && o.field === config.routing.field));
 }
 
 // A label output as a list of one, so sets and labels are compared the same way.
@@ -23,9 +23,25 @@ const keyValues = (r, name, o) => (o.type === 'set' ? r.key[name] : r.key[name] 
 //   missing_rejected - in the key, proposed by the model, not applied (the floor dropped it)
 //   missing          - in the key, never proposed
 //   invalid          - applied, not in the output's allowed_values
+//   near_miss        - ordinal outputs: off by no more than near_miss_steps ("4 for 5")
+// A single-value output (label, ordinal) that is wrong is listed as wrong only: "the right
+// label was never proposed" adds nothing when there is exactly one label.
 function valueFindings(r, config) {
-  const f = { wrong: {}, missing_rejected: {}, missing: {}, invalid: {} };
+  const f = { wrong: {}, missing_rejected: {}, missing: {}, invalid: {}, near_miss: {} };
   for (const [name, o] of contentOutputs(config)) {
+    if (o.type !== 'set') {
+      const p = r.pred[name];
+      const k = r.key[name];
+      if (k == null) continue;
+      if (!p) { f.missing[name] = [k]; continue; }
+      const allowed = config.allowed_values[name];
+      if (Array.isArray(allowed) && !allowed.includes(p.value)) f.invalid[name] = [p.value];
+      if (p.value === k) continue;
+      const steps = o.type === 'ordinal' ? Math.abs(o.labels.indexOf(p.value) - o.labels.indexOf(k)) : null;
+      if (steps !== null && steps <= o.near_miss_steps) f.near_miss[name] = [p.value + ' for ' + k];
+      else f.wrong[name] = [p.value + (o.type === 'ordinal' ? ' for ' + k : '')];
+      continue;
+    }
     const pv = predValues(r, name, o);
     const kv = keyValues(r, name, o);
     const applied = pv.filter(v => v.applied).map(v => v.value);
@@ -79,7 +95,7 @@ const ordered = (types, config) => unique(types).sort((a, b) => Object.keys(conf
 function judgeRecord(r, config, ctx) {
   const gold = r.gold_class;   // null without a gold route
   const values = valueFindings(r, config);
-  const mismatch = nonEmpty(values.wrong) || nonEmpty(values.missing_rejected) || nonEmpty(values.missing);
+  const mismatch = nonEmpty(values.wrong) || nonEmpty(values.missing_rejected) || nonEmpty(values.missing) || nonEmpty(values.near_miss);
 
   // Which evidence decides that a record needed a human (config: wrong_when).
   const useGold = gold !== null && config.wrong_when !== 'any_mismatch';
@@ -99,6 +115,7 @@ function judgeRecord(r, config, ctx) {
   if (nonEmpty(values.wrong)) valueTypes.push('SP-WRONG');
   if (nonEmpty(values.missing_rejected)) valueTypes.push('SP-MISSING-REJECTED');
   if (nonEmpty(values.missing)) valueTypes.push('SP-MISSING');
+  if (nonEmpty(values.near_miss)) valueTypes.push('SP-NEAR-MISS');
 
   let silent = null;
   const safeguards = [];

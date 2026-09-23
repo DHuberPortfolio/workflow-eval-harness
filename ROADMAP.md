@@ -58,8 +58,9 @@ the design is wrong.
 - [x] Metadata enrichment: adapter + reproduce run 49's facet and routing figures (`examples/metadata-enrichment/`)
 - [x] Compliance reviewer: adapter, three live runs from n8n (executions 50-52), variance (`examples/compliance-reviewer/`)
 - [ ] Competitor registry: needs "declined to classify" handled as its own outcome
-- [ ] Competitor watch: needs **ordinal labels** (bands 1-5, where near-misses count less than
-      far misses)
+- [x] Ordinal labels (bands 1-5: near misses count less than far misses), with a hand-worked
+      fixture (`test/fixtures/ordinal/`). Competitor watch's own runs not scored: running it writes
+      to its snapshot tables
 
 ## Out of scope for now
 - Free-text outputs (assessment template). Scoring them needs a reviewer to grade each field

@@ -27,6 +27,10 @@ function metricList(results) {
       list.push({ name: name + ' F1', unit: 'F1', get: r => r.quality.outputs[name].f1 });
     } else {
       list.push({ name: name + ' accuracy', unit: 'points', get: r => exact(r.quality.outputs[name].accuracy) });
+      if (o.type === 'ordinal') {
+        list.push({ name: name + ' within one step', unit: 'points', get: r => exact(r.quality.outputs[name].within_one) });
+        list.push({ name: name + ' closeness', unit: 'F1', get: r => r.quality.outputs[name].closeness });
+      }
     }
   }
   list.push({ name: 'average calibration gap', unit: 'gap', get: r => r.calibration.overall.ece });

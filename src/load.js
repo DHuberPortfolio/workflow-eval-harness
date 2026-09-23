@@ -252,6 +252,9 @@ function readSet(raw, name, o, where, p, isKey, gated) {
 // extConf: the confidence from a separate field (confidence_field), if the config has one.
 function readLabel(raw, name, o, where, p, isKey, gated, extConf) {
   if (raw === undefined || raw === null) { p.stop(isKey ? 'F4' : 'F3', where, name + ' has no label'); return null; }
+  // Bands are often written as numbers (5, not "5"). Labels are compared as text.
+  if (typeof raw === 'number' && Number.isFinite(raw)) raw = String(raw);
+  else if (isObj(raw) && typeof raw[o.value_key] === 'number' && Number.isFinite(raw[o.value_key])) raw = { ...raw, [o.value_key]: String(raw[o.value_key]) };
   if (Array.isArray(raw)) { p.stop('F2', where, name + ' must be one label, got a list'); return null; }
   const v = readValue(raw, o, where + ' ' + name, p, isKey);
   if (v === null) return null;

@@ -1,0 +1,8 @@
+[
+  { "id": "C1", "route": "INCLUDE",  "band": 5 },
+  { "id": "C2", "route": "INCLUDE",  "band": 4 },
+  { "id": "C3", "route": "DROP",     "band": 1 },
+  { "id": "C4", "route": "INCLUDE",  "band": 2 },
+  { "id": "C5", "route": "INCLUDE",  "band": 1 },
+  { "id": "C6", "route": "ESCALATE", "band": 3 }
+]

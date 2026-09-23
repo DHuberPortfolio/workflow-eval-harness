@@ -58,13 +58,13 @@ function routeClass(value, map, where, p, label, missingTrap, unknownTrap) {
 // True if a prediction's applied values are exactly the key's, for every output.
 function sameAsKey(pred, key, config) {
   return Object.entries(config.outputs).every(([name, o]) => {
-    if (o.type === 'label') return pred[name] !== null && pred[name].value === key[name];
+    if (o.type !== 'set') return pred[name] !== null && pred[name].value === key[name];
     const applied = pred[name].filter(v => v.applied).map(v => v.value).sort();
     return applied.join('\u0000') === [...key[name]].sort().join('\u0000');
   });
 }
 const hasNoConfidence = (pred, config) => Object.entries(config.outputs).every(([name, o]) =>
-  o.type === 'label' ? pred[name] === null || pred[name].confidence === null : pred[name].every(v => v.confidence === null));
+  o.type !== 'set' ? pred[name] === null || pred[name].confidence === null : pred[name].every(v => v.confidence === null));
 
 // opts: { predSource, keySource } for messages; sameFile when both came from one file.
 function align(predictions, key, config, p, opts = {}) {

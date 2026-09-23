@@ -26,7 +26,7 @@ test('minimal config gets every default filled in', () => {
   assert.equal(config.id_field, 'id');
   assert.equal(config.routing.field, 'route');
   assert.deepEqual(config.outputs.SUBJECT, {
-    type: 'set', field: 'SUBJECT', key_field: 'SUBJECT', labels: null, value_key: 'value', confidence_key: 'confidence',
+    type: 'set', field: 'SUBJECT', key_field: 'SUBJECT', labels: null, near_miss_steps: null, value_key: 'value', confidence_key: 'confidence',
     rejected_field: null, confidence_field: null,
   });
   const noInput = { format: null, records_at: null, unwrap: null, delimiter: null, list_separator: '|', confidence_separator: '@' };

@@ -13,7 +13,7 @@ const WRONG_WHEN = {
 function differenceLines(d) {
   const labels = {
     wrong: 'applied, not in key', missing_rejected: 'in key, proposed but not applied',
-    missing: 'in key, never proposed', invalid: 'not an allowed value',
+    missing: 'in key, never proposed', invalid: 'not an allowed value', near_miss: 'near miss',
   };
   const out = [];
   for (const [bucket, label] of Object.entries(labels)) {
@@ -63,8 +63,15 @@ function quality(results) {
     if (q.overall && sets.length > 1) rows.push(['overall', pct(q.overall.precision), pct(q.overall.recall), num(q.overall.f1), '', q.overall.tp + '/' + q.overall.fp + '/' + q.overall.fn]);
     lines.push(table(rows, [1, 2, 3, 4]));
   }
-  for (const [name, o] of Object.entries(q.outputs).filter(([, x]) => x.type === 'label')) {
-    lines.push('  ' + name + ' (label): accuracy ' + pct(o.accuracy) + ' (' + count(o.accuracy) + ')');
+  for (const [name, o] of Object.entries(q.outputs).filter(([, x]) => x.type !== 'set')) {
+    lines.push('  ' + name + ' (' + o.type + '): accuracy ' + pct(o.accuracy) + ' (' + count(o.accuracy) + ')');
+    if (o.type === 'ordinal') {
+      const lean = o.mean_signed === null || o.mean_signed === 0 ? 'no lean' : o.mean_signed > 0 ? 'leans higher than the key' : 'leans lower than the key';
+      lines.push('    within one step ' + pct(o.within_one) + ' · average distance ' + num(o.mean_distance, 2) + ' steps · closeness ' + num(o.closeness) +
+        ' · ' + lean + ' (' + o.predicted_higher + ' higher, ' + o.predicted_lower + ' lower)');
+      const md = Object.entries(o.miss_distances);
+      if (md.length) lines.push('    misses by distance: ' + md.map(([d, c]) => d + ' step' + (d === '1' ? '' : 's') + ': ' + c).join(' · '));
+    }
     const labels = Object.keys(o.per_label);
     const rows = [['', ...labels.map(l => 'as ' + l), '', 'precision', 'recall', 'F1']];
     for (const k of labels) {
@@ -118,7 +125,13 @@ function renderTerminal(results) {
   parts.push(silentSection('SILENT ERRORS', r.silent_errors, true));
   if (r.silent_omissions) parts.push(silentSection('SILENT OMISSIONS', r.silent_omissions, false));
   parts.push(r.safeguard_failures.records === 0 ? 'SAFEGUARD FAILURES  none'
-    : 'SAFEGUARD FAILURES  ' + r.safeguard_failures.detail.map(d => d.id + ' (' + d.types.join(', ') + ')').join('  '));
+    : 'SAFEGUARD FAILURES  ' + r.safeguard_failures.detail.map(d => d.id + ' (' + d.types.join(', ') + ')').join('  ') +
+      '
+  Critical, and a workflow bug even when the content is right: find the branch that routed these records
+' +
+      '  and why it did not apply the check (SG-GATE: lead confidence below the gate; SG-FLOOR: a value below the floor was applied).
+' +
+      '  If the key agrees with the record, the fix is a model that clears the threshold, not a lower threshold.');
   parts.push('WASTED REVIEWS  ' + list(r.review_queue.wasted) + (r.block && r.block.wrongly_blocked.length ? '\nWRONGLY BLOCKED  ' + list(r.block.wrongly_blocked) : ''));
   const classes = by => ['auto', 'review', 'block', 'exclude'].map(k => k + ' ' + by[k]).join(' · ');
   const should = { auto: 0, review: 0, block: 0, exclude: 0 };

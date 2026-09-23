@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ROUTE_CLASSES = ['auto', 'review', 'block', 'exclude'];
-const OUTPUT_TYPES = ['set', 'label'];
+const OUTPUT_TYPES = ['set', 'label', 'ordinal'];
 const WRONG_WHEN = ['either', 'gold_route', 'any_mismatch'];
 const GATE_USES = ['lead', 'weakest'];
 const FORMATS = ['json', 'jsonl', 'csv'];
@@ -21,9 +21,9 @@ const ERROR_TYPES = {
   'SP-FORBIDDEN': 'critical', 'SP-INVALID': 'critical', 'SP-WRONG': 'high', 'SP-SHOULD-REVIEW': 'medium',
   'SP-MISSING-REJECTED': 'medium', 'SP-MISSING': 'medium', 'SP-WRONG-PRIMARY': 'medium', 'SP-DUPLICATE': 'low',
   'SO-FALSE-DUPLICATE': 'high', 'SO-PRIMARY-SUPPRESSED': 'medium', 'SO-FALSE-BLOCK': 'medium',
-  'SG-GATE': 'critical', 'SG-FLOOR': 'critical',
+  'SG-GATE': 'critical', 'SG-FLOOR': 'critical', 'SP-NEAR-MISS': 'low',
 };
-const OUTPUT_KEYS = ['type', 'field', 'key_field', 'labels', 'value_key', 'confidence_key', 'rejected_field', 'confidence_field'];
+const OUTPUT_KEYS = ['type', 'field', 'key_field', 'labels', 'value_key', 'confidence_key', 'rejected_field', 'confidence_field', 'near_miss_steps'];
 const INPUT_KEYS = ['format', 'records_at', 'unwrap', 'delimiter', 'list_separator', 'confidence_separator'];
 
 const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -89,7 +89,9 @@ function validateConfig(raw) {
   }
 
   // outputs: what the workflow assigns. "set" = zero or more values per record
-  // (tags, violation codes); "label" = exactly one value from a fixed list (pass/elevate/fail).
+  // (tags, violation codes); "label" = exactly one value from a fixed list (pass/elevate/fail);
+  // "ordinal" = one value from an ORDERED list (bands 1-5, low/medium/high), where a miss by one
+  // step is nearer than a miss across the scale.
   //   field          - where the workflow's values are (default: the output's name)
   //   key_field      - where the answer key's values are (default: same as field). Differs when
   //                    predictions and answers share one file, e.g. "output.x" vs "expected.x"
@@ -99,6 +101,8 @@ function validateConfig(raw) {
   //                    not apply; read as applied: false
   //   confidence_field - (labels) a separate field holding the label's confidence, e.g. a
   //                    "confidence" column next to a "verdict" column
+  //   near_miss_steps - (ordinal) a miss by this many steps or fewer is a near miss: its own,
+  //                    low-severity error type (SP-NEAR-MISS). Default 1; 0 makes every miss a full miss.
   const outputs = {};
   if (!isObj(raw.outputs) || Object.keys(raw.outputs).length === 0) {
     errors.push('outputs must be an object with at least one entry');
@@ -118,23 +122,28 @@ function validateConfig(raw) {
         if (!isPath(o.rejected_field)) errors.push(at + '.rejected_field ' + PATH_RULE);
         if (o.type !== 'set') errors.push(at + '.rejected_field only applies to type "set"');
       }
+      if (o.near_miss_steps !== undefined) {
+        if (o.type !== 'ordinal') errors.push(at + '.near_miss_steps only applies to type "ordinal"');
+        else if (!(Number.isInteger(o.near_miss_steps) && o.near_miss_steps >= 0)) errors.push(at + '.near_miss_steps must be a whole number of 0 or more');
+      }
       if (o.confidence_field !== undefined) {
         if (!isPath(o.confidence_field)) errors.push(at + '.confidence_field ' + PATH_RULE);
-        if (o.type !== 'label') errors.push(at + '.confidence_field only applies to type "label"');
+        if (o.type === 'set') errors.push(at + '.confidence_field only applies to type "label" or "ordinal"');
       }
-      if (o.type === 'label') {
-        if (!Array.isArray(o.labels) || o.labels.length < 2 || !o.labels.every(isName)) {
+      if (o.type === 'label' || o.type === 'ordinal') {
+        if (!Array.isArray(o.labels) || o.labels.length < 2 || !o.labels.every(l => isName(l) || Number.isFinite(l))) {
           errors.push(at + '.labels must list at least two label names');
         }
       } else if (o.labels !== undefined) {
-        errors.push(at + '.labels only applies to type "label"');
+        errors.push(at + '.labels only applies to type "label" or "ordinal"');
       }
       const field = o.field || name;
       outputs[name] = {
         type: o.type,
         field,
         key_field: o.key_field || field,
-        labels: o.type === 'label' ? o.labels : null,
+        labels: o.type === 'set' || !Array.isArray(o.labels) ? null : o.labels.map(String),
+        near_miss_steps: o.type === 'ordinal' ? (o.near_miss_steps ?? 1) : null,
         value_key: o.value_key || 'value',
         confidence_key: o.confidence_key || 'confidence',
         rejected_field: o.rejected_field || null,

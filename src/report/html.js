@@ -22,7 +22,7 @@ function table(head, rows, numeric = []) {
 }
 
 function differences(d) {
-  const labels = { wrong: 'applied, not in key', missing_rejected: 'proposed, not applied', missing: 'never proposed', invalid: 'not an allowed value' };
+  const labels = { wrong: 'applied, not in key', missing_rejected: 'proposed, not applied', missing: 'never proposed', invalid: 'not an allowed value', near_miss: 'near miss' };
   const out = [];
   for (const [bucket, label] of Object.entries(labels)) {
     for (const [output, values] of Object.entries(d[bucket] || {})) out.push(esc(output) + ' ' + label + ': <code>' + values.map(esc).join(', ') + '</code>');
@@ -207,7 +207,8 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
   }
   s.push('<h3>Safeguard failures</h3>');
   s.push(r.safeguard_failures.records === 0 ? '<p>None.</p>'
-    : '<p>Went through although a safeguard should have held them. Not counted in the silent error rate; the content may be right, the process is not.</p>' +
+    : '<p>Went through although a safeguard should have held them. Not counted in the silent error rate, but critical: each is a workflow bug to find, even when the content is right. ' +
+      'Find the branch that routed these records and why it skipped the check. If the key agrees with the record, the fix is a model that clears the threshold, not a lower threshold.</p>' +
       table(['Record', 'Severity', 'Type'], r.safeguard_failures.detail.map(d => ['<code>' + esc(d.id) + '</code>', severity('critical'), d.types.map(esc).join(', ')])));
   s.push('<p>Wasted reviews: ' + ids(r.review_queue.wasted) + (r.block ? ' · Wrongly blocked: ' + ids(r.block.wrongly_blocked) : '') + '</p>');
 
@@ -221,9 +222,15 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
     if (q.overall && sets.length > 1) rows.push(['<strong>overall</strong>', pct(q.overall.precision), pct(q.overall.recall), num(q.overall.f1), '', q.overall.tp + ' / ' + q.overall.fp + ' / ' + q.overall.fn]);
     s.push(table(['Output', 'Precision', 'Recall', 'F1', 'Exact match', 'TP / FP / FN'], rows, [1, 2, 3, 4, 5]));
   }
-  for (const [n, o] of Object.entries(q.outputs).filter(([, x]) => x.type === 'label')) {
+  for (const [n, o] of Object.entries(q.outputs).filter(([, x]) => x.type !== 'set')) {
     const labels = Object.keys(o.per_label);
     s.push('<h3>' + esc(n) + ': accuracy ' + pct(o.accuracy) + ' (' + cnt(o.accuracy) + ')</h3>');
+    if (o.type === 'ordinal') {
+      const lean = o.mean_signed === null || o.mean_signed === 0 ? 'no lean' : o.mean_signed > 0 ? 'leans higher than the key' : 'leans lower than the key';
+      s.push('<p>Within one step: ' + pct(o.within_one) + ' · average distance ' + num(o.mean_distance, 2) + ' steps · closeness ' + num(o.closeness) +
+        ' (1 is always exact) · ' + lean + ' (' + o.predicted_higher + ' higher, ' + o.predicted_lower + ' lower)' +
+        (Object.keys(o.miss_distances).length ? ' · misses by distance: ' + Object.entries(o.miss_distances).map(([d, c]) => d + ': ' + c).join(', ') : '') + '</p>');
+    }
     s.push(table(['Key says', ...labels.map(l => 'predicted ' + esc(l)), 'Precision', 'Recall', 'F1'], labels.map(k => [
       esc(k), ...labels.map(p => String(o.confusion[k][p])), pct(o.per_label[k].precision), pct(o.per_label[k].recall), num(o.per_label[k].f1),
     ]), labels.map((_, i) => i + 1).concat([labels.length + 1, labels.length + 2, labels.length + 3])));
