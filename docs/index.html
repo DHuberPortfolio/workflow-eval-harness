@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>workflow-eval-harness: sample reports</title>
+<style>
+:root { color-scheme: light dark; --bg: #f8f8f6; --card: #ffffff; --ink: #1a1a1a; --ink-2: #555555; --line: #e2e2de; --link: #2a78d6; }
+@media (prefers-color-scheme: dark) { :root { --bg: #141414; --card: #1d1d1d; --ink: #ececec; --ink-2: #a8a8a8; --line: #333333; --link: #3987e5; } }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 720px; margin: 0 auto; padding: 48px 16px; }
+h1 { font-size: 28px; margin: 0 0 8px; }
+p { color: var(--ink-2); margin: 0 0 24px; }
+a { color: var(--link); }
+ul { list-style: none; padding: 0; margin: 0 0 32px; display: grid; gap: 12px; }
+li a { display: block; padding: 16px 20px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; text-decoration: none; }
+li a:hover, li a:focus-visible { border-color: var(--link); }
+.title { color: var(--ink); font-weight: 600; }
+.rate { font-variant-numeric: tabular-nums; }
+.detail { display: block; color: var(--ink-2); font-size: 14px; margin-top: 4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>workflow-eval-harness</h1>
+  <p>Sample reports from a real AI workflow: a compliance reviewer for law-firm advertising,
+  scored against its 40-document golden set before and after a prompt fix. Each report is one
+  self-contained HTML file, exactly as the tool writes it.</p>
+  <ul>
+    <li><a href="samples/compliance-before.html"><span class="title">Before the prompt fix: silent error rate <span class="rate">30.0%</span></span>
+      <span class="detail">6 of the 20 documents that went live without a person needed one</span></a></li>
+    <li><a href="samples/compliance-after.html"><span class="title">After the prompt fix: silent error rate <span class="rate">6.7%</span></span>
+      <span class="detail">1 of 15; the same in all four runs</span></a></li>
+  </ul>
+  <p><a href="https://github.com/DHuberPortfolio/workflow-eval-harness">The code, tests and notes on GitHub</a></p>
+</main>
+</body>
+</html>

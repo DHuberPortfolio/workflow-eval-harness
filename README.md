@@ -41,9 +41,9 @@ true rate up to 14% is still consistent with it, where one run's "0 of 7" allows
 
 ![The HTML report for the compliance reviewer before its prompt fix: silent error rate 30.0%, six silent errors listed](docs/samples/compliance-before.png)
 
-Sample reports, each one self-contained HTML file (download and open in any browser): the
-compliance reviewer [before](docs/samples/compliance-before.html) and
-[after](docs/samples/compliance-after.html) its prompt fix.
+Open the full reports, each one self-contained HTML file: the compliance reviewer
+[before](https://dhuberportfolio.github.io/workflow-eval-harness/samples/compliance-before.html) and
+[after](https://dhuberportfolio.github.io/workflow-eval-harness/samples/compliance-after.html) its prompt fix.
 
 ## Try it
 
