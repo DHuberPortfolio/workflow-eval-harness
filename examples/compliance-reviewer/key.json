@@ -20,7 +20,7 @@
   {"id":"E19","expected":{"verdict":"VIOLATION","violations":["IMPLIED_GUARANTEE","RESULTS_NO_DISCLAIMER"],"trap":"llm"}},
   {"id":"E20","expected":{"verdict":"VIOLATION","violations":["IMPLIED_SUPERIORITY","UNVERIFIABLE_COMPARISON"],"trap":"llm"}},
   {"id":"E21","expected":{"verdict":"VIOLATION","violations":["IMPLIED_SUPERIORITY","UNVERIFIABLE_COMPARISON","IMPLIED_GUARANTEE"],"trap":"llm"}},
-  {"id":"E22","expected":{"verdict":"VIOLATION","violations":["UNVERIFIABLE_COMPARISON","IMPLIED_SUPERIORITY"],"trap":"llm"}},
+  {"id":"E22","expected":{"verdict":"VIOLATION","violations":["UNVERIFIABLE_COMPARISON","IMPLIED_SUPERIORITY","IMPLIED_GUARANTEE"],"trap":"llm"}},
   {"id":"E23","expected":{"verdict":"VIOLATION","violations":["TESTIMONIAL_NO_DISCLAIMER"],"trap":"llm"}},
   {"id":"E24","expected":{"verdict":"CLEAN","violations":[],"trap":"none"}},
   {"id":"E25","expected":{"verdict":"VIOLATION","violations":["SUPERLATIVE","TESTIMONIAL_NO_DISCLAIMER"],"trap":"deterministic"}},

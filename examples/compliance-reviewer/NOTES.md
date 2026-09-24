@@ -17,7 +17,7 @@ after the adapter (`node adapter.js runs/exec-50.json > runs/exec-50.harness.jso
 | 56, 57, 58, 59 | prompt v2 (59 also writes the pass-with-notes log) |
 
 Each run carries the answer key it ran with (v1). `key.json` is **key v2**, the v1 key plus
-8 violations it was missing (see `KEY_GAPS.md`); score against it:
+9 violations it was missing (see `KEY_GAPS.md`); score against it:
 
 ```
 node bin/wfeval.js score --config examples/compliance-reviewer/config.json \
@@ -108,16 +108,17 @@ Codes are scored against key v2 (`key.json`); the v1 key's figures are in `KEY_G
 | silent error rate (notes go live) | 22.2-30.0% | **6.7% in all four** | beyond noise |
 | violations reaching a person | 20-22 of 26 | **25 of 26** | 5 routes fixed, 0 broken |
 | false alarms on the 14 clean documents | 0 | 0 | unchanged |
-| code recall | 64.1-69.2% | **87.2-92.3%** | beyond noise |
+| code recall | 62.5-67.5% | **87.5-90.0%** | beyond noise |
 | code precision | 89.3-90.0% | 81.8-87.5% | beyond noise, slightly worse |
-| code F1 | 0.746-0.783 | **0.850-0.889** | beyond noise |
+| code F1 | 0.735-0.771 | **0.857-0.878** | beyond noise |
 
 - The one remaining note is **E38** (an award listing, 0.65-0.75 against Florida's 0.90).
   Tuning the prompt for one of 40 documents would fit the golden set rather than the problem;
   it needs more award-claim documents in the golden set first.
 - Against the v1 key, precision looked 10-20 points worse, because v2 states secondary codes
   with confidence (RESULTS_NO_DISCLAIMER next to an implied guarantee). The owner ruled
-  those are gaps in the key; the 8 that hold up on reading are now in key v2 (`KEY_GAPS.md`).
+  those are gaps in the key; the 8 that hold up on reading, and 1 the owner
+  chose from the borderline ones, are now in key v2 (`KEY_GAPS.md`).
   What is left of the precision drop is the model naming a violation the key already has a
   second time, under its "implied" twin. No route changed because of it.
 - 14 clean documents is a small base: 0 false alarms in 14 is consistent with a rate up to

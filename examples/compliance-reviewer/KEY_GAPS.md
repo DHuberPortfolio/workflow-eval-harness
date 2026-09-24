@@ -17,6 +17,11 @@ different rule from the codes the key already lists; **don't add** it when it re
 already in the key under its "implied" twin (the same words counted twice); **ask** when the
 reading is arguable.
 
+The prompt v1 runs (50-52) were checked the same way against key v2, so that mining only
+prompt v2's runs could not tilt the key toward prompt v2. Every code v1 states in all three
+runs is already in a table below; its `TESTIMONIAL_ISSUE` on E23 and E25 is v1's old name for
+`TESTIMONIAL_NO_DISCLAIMER` (see NOTES.md).
+
 ## Added to the key (key v2)
 
 | doc | the copy at issue | added | model confidence, 4 runs |
@@ -29,13 +34,14 @@ reading is arguable.
 | E20 | "No other firm in the city handles retaliation claims the way we do. Others settle; we litigate." | UNVERIFIABLE_COMPARISON | 0.92 |
 | E21 | "you are settling for less than your case is worth" | IMPLIED_GUARANTEE | 0.85-0.90 |
 | E22 | "Most estate planning attorneys use templates. We do not." | IMPLIED_SUPERIORITY | 0.80-0.85 |
+| E22 | "That difference shows up when the will is contested" | IMPLIED_GUARANTEE | 0.75-0.85; moved here from the borderline list by the owner |
 
 E20 and E22 show the two comparison codes overlap: the v1 key lists both on E21, and on E20
 and E22 the key and the model each picked the other one.
 
 Where the change lives:
 - `key.json` in this folder: the key the harness scores against (all 40 documents)
-- n8n: the node **Answer Key v2 Additions**, right after the eval set, adds the same 8 as a
+- n8n: the node **Answer Key v2 Additions**, right after the eval set, adds the same 9 as a
   dated amendment. The eval set itself is unchanged, so the v1 key stays readable.
 
 ## Not gaps: the same rule counted twice
@@ -51,7 +57,11 @@ These are what prompt v2 still costs in precision. They change no route: every o
 copy that is blocked anyway. A later prompt change could target them ("do not re-code a
 violation the deterministic layer already names").
 
-## Borderline: the owner's call
+## Borderline: not added (the owner's decision, 2026-09-23)
+
+The owner ruled on each borderline code: E22's IMPLIED_GUARANTEE was added (first table),
+and every code below stays out of the key. The case for and against is kept, so a later
+review starts from the same reasoning.
 
 | doc | stated every run | the case for | the case against |
 |---|---|---|---|
@@ -61,11 +71,12 @@ violation the deterministic layer already names").
 | E16 | IMPLIED_SUPERIORITY (0.75) | "prosecutors know what is coming" | the model rates it only "probably", and never applied it |
 | E19 | STATISTIC_NO_CONTEXT (0.75-0.80) | implies every client gets the parenting time asked for | overlaps the RESULTS_NO_DISCLAIMER just added |
 | E20 | IMPLIED_GUARANTEE (0.55-0.65) | "Others settle; we litigate" as a promised approach | the model itself rates it arguable |
-| E22 | IMPLIED_GUARANTEE (0.75-0.85) | "That difference shows up when the will is contested" | an implied benefit, not a promised outcome |
 | E23, E25 | RESULTS_NO_DISCLAIMER (0.75-0.90) | testimonials describing results ("way more than I expected", "saved my family a fortune") | TESTIMONIAL_NO_DISCLAIMER's own definition already covers "implying typical results" |
 | E39 | RESULTS_NO_DISCLAIMER (0.80-0.85) | a statistic about case outcomes | STATISTIC_NO_CONTEXT is already in the key, and "resolve" is not "win" |
 
-To add one: put it in `key.json` and in the n8n node, and move its row to the first table.
+To add one later: put it in `key.json` and in the n8n node, and move its row to the first
+table. Until then, `variance` keeps listing these as possible key gaps; that is expected,
+and this table is the answer.
 
 ## What key v2 changes
 
@@ -76,10 +87,14 @@ the verdict (`wrong_when: gold_route`). Codes, over runs 50-52 (prompt v1) and 5
 | | v1 key | key v2 |
 |---|---|---|
 | prompt v1: precision | 80.0-89.7% | 89.3-90.0% |
-| prompt v1: recall | 77.4-83.9% | 64.1-69.2% |
+| prompt v1: recall | 77.4-83.9% | 62.5-67.5% |
 | prompt v2: precision | 65.9-72.5% | 81.8-87.5% |
-| prompt v2: recall | 90.3-93.5% | 87.2-92.3% |
-| F1, prompt v1 vs v2 | | 0.746-0.783 vs 0.850-0.889, beyond noise |
+| prompt v2: recall | 90.3-93.5% | 87.5-90.0% |
+| F1, prompt v1 vs v2 | | 0.735-0.771 vs 0.857-0.878, beyond noise |
+
+Prompt v1's recall falls under key v2 because the key now lists 9 more violations, which v1
+mostly stated below the client's threshold or not at all. That is v1's misses being counted
+for the first time, not v1 getting worse.
 
 With the v1 key, prompt v2 looked 10-20 points less precise. Most of that was the key, not
 the model: the codes it "invented" were real violations the key had not listed.
