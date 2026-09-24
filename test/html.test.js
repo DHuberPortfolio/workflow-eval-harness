@@ -18,7 +18,8 @@ test('the report is one file: no external scripts, styles, fonts or images', () 
 
 test('the headline and the silent error record are in the report', () => {
   assert.match(html, /<div class="hero-value">50\.0%<\/div>/);
-  assert.match(html, /1 of 2 records that went through/);
+  assert.match(html, /1 of the 2 records that went out without review should have had one/);
+  assert.match(html, /The true rate is likely between 9\.5% and 90\.5% \(95% range\)\. With 2 records, each one moves it by 50\.0 points\./);
   assert.match(html, /<code>R2<\/code>/);
   assert.match(html, /SUBJ-ANTI/);
 });

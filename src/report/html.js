@@ -14,6 +14,17 @@ const ids = list => (list.length ? list.map(esc).join(', ') : '<span class="mute
 
 const SEVERITY_CLASS = { critical: 'critical', high: 'serious', medium: 'warning', low: 'low' };
 const severity = s => '<span class="sev ' + SEVERITY_CLASS[s] + '"><span class="sev-dot" aria-hidden="true"></span>' + esc(s) + '</span>';
+// The two lines under the headline rate: what it counts, then how far to trust it.
+function heroNote(rate, moves) {
+  if (!rate || rate.d === 0) return 'Nothing went out without review, so there is nothing to measure yet.';
+  const what = rate.d === 1
+    ? 'The only record that went out without review ' + (rate.n ? 'should have had one' : 'did not need one')
+    : rate.n + ' of the ' + rate.d + ' records that went out without review should have had one';
+  if (rate.low_pct === null) return what;
+  return what + '<br>The true rate is likely between ' + rate.low_pct.toFixed(1) + '% and ' + rate.high_pct.toFixed(1) + '% (95% range).' +
+    (rate.d > 1 && moves !== null ? ' With ' + rate.d + ' records, each one moves it by ' + moves.toFixed(1) + ' points.' : '');
+}
+
 // An error type such as SP-SHOULD-REVIEW, kept on one line rather than broken at its hyphens.
 const typeTag = t => '<span class="type">' + esc(t) + '</span>';
 
@@ -188,9 +199,7 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
   // Headline
   const se = r.silent_errors;
   s.push('<section class="card hero"><div class="hero-label">Silent error rate</div><div class="hero-value">' + pct(se.rate) + '</div>' +
-    '<div class="hero-note">' + cnt(se.rate) + ' records that went through with no human needed one' +
-    (rng(se.rate) ? '<br>95% range ' + rng(se.rate) + (se.one_record_moves_pct !== null ? ' · one record moves this by ' + se.one_record_moves_pct.toFixed(1) + ' points' : '') : '') +
-    '</div></section>');
+    '<div class="hero-note">' + heroNote(se.rate, se.one_record_moves_pct) + '</div></section>');
   s.push(tiles(r));
 
   // Silent errors
