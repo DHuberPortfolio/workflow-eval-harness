@@ -66,9 +66,9 @@ A value is written as `"text"` or `{ "value": "text", "confidence": 0.9, "applie
 | Key | Default | Meaning |
 |---|---|---|
 | `routing.field` | `"route"` | The workflow's decision for the record. |
-| `routing.map` | required | Every decision name to a route class: `auto` (went through, no human), `review` (a person decides), `block` (never processed, no human), `exclude` (duplicate suppressed, no human). At least one must be `auto`. |
+| `routing.map` | required | Every decision name to a route class: `auto` (went out without review), `review` (a person decides), `block` (never processed, no person sees it), `exclude` (suppressed as a duplicate, no person sees it). At least one must be `auto`. |
 | `routing.gold_field` | - | The answer key's correct decision. Without it, route-based error types, silent omissions and block precision are "not measured". |
-| `wrong_when` | `either` with a gold field, else `any_mismatch` | What decides that a record needed a human: `either` (the key's route, or any wrong value), `gold_route` (only the key's route: right when outputs are reasons, not published content), `any_mismatch` (only the values). |
+| `wrong_when` | `either` with a gold field, else `any_mismatch` | What decides that a record needed a person: `either` (the answer key's route, or any wrong value), `gold_route` (only the answer key's route: right when outputs are reasons, not published content), `any_mismatch` (only the values). |
 
 ## Thresholds, what-if and calibration
 
@@ -76,17 +76,17 @@ A value is written as `"text"` or `{ "value": "text", "confidence": 0.9, "applie
 |---|---|---|
 | `thresholds.floor` | - | Values below it should never be applied. |
 | `thresholds.provisional_below` | - | A label on values, not a gate; reported in calibration. |
-| `thresholds.auto_publish` | - | `{ output: threshold }`. Only listed outputs gate. A record may go through only if each gated output's lead value is at or above its threshold. |
+| `thresholds.auto_publish` | - | `{ output: threshold }`. Only listed outputs gate. A record may go out without review only if each gated output's lead value is at or above its threshold. |
 | `thresholds.gate_uses` | `"lead"` | `lead`: the strongest applied value. `weakest`: every applied value (stricter; a weak but correct broader term holds back the record). |
-| `whatif.movable_field` / `movable_values` | - | The prediction field that says a record's route was decided by the gate (or that it went through), and its values for those records. Without it, what-if assumes every auto or review record is movable: an upper bound. |
+| `whatif.movable_field` / `movable_values` | - | The prediction field that says a record's route was decided by the gate (or that it went out without review), and its values for those records. Without it, what-if assumes every auto or review record is movable: an upper bound. |
 | `calibration.buckets` | `"auto"` | `distinct` (one group per stated value), a width such as `0.1`, or `auto` (distinct up to 12 values). |
 
 ## The answer key and traps
 
 | Key | Default | Meaning |
 |---|---|---|
-| `trap_field` | - | The key's field naming what each record is designed to test (text, or a list). Results are also broken down by trap. |
+| `trap_field` | - | The answer key's field naming what each record is designed to test (text, or a list). Results are also broken down by trap. |
 | `min_per_trap` | - | Every trap type must have at least this many records; below it stops in strict mode. |
-| `duplicate_of_field` | - | The key's field giving the id of the primary a duplicate repeats. Enables SP-WRONG-PRIMARY and SO-PRIMARY-SUPPRESSED. |
+| `duplicate_of_field` | - | The answer key's field giving the id of the primary a duplicate repeats. Enables SP-WRONG-PRIMARY and SO-PRIMARY-SUPPRESSED. |
 | `allowed_values` | - | `{ output: [values] }` or `{ output: { "file": "vocab.json", "field": "code" } }` (relative to the config). An applied value outside it is SP-INVALID. |
 | `severity` | see docs/SILENT_ERRORS.md | `{ "SP-DUPLICATE": "medium" }`: override any error type's severity. |

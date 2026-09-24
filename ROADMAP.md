@@ -60,6 +60,8 @@ the design is wrong.
 - [x] Compliance reviewer: adapter, three live runs from n8n (executions 50-52), variance (`examples/compliance-reviewer/`)
 - [x] Compliance reviewer: prompt v2 measured (runs 56-59), pass-with-notes log in n8n, answer key v2 from the key-gap review (`KEY_GAPS.md`)
 - [x] Metadata enrichment: Harness Export node in n8n (compact records, `decision_branch` emitted), three fresh runs (61-63) for variance
+- [x] Compliance reviewer: its own scorecard now leads with the silent error rate (a note is no longer a catch)
+- [x] Readability: one vocabulary across reports and docs ("went out without review", "answer key", "needed a person"); every error code explained where it appears; docs/READING_A_REPORT.md, docs/METRICS.md, docs/ARCHITECTURE.md; example notes in one shape
 - [ ] Competitor registry: needs "declined to classify" handled as its own outcome
 - [x] Ordinal labels (bands 1-5: near misses count less than far misses), with a hand-worked
       fixture (`test/fixtures/ordinal/`). Competitor watch's own runs not scored: running it writes
