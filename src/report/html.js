@@ -14,6 +14,8 @@ const ids = list => (list.length ? list.map(esc).join(', ') : '<span class="mute
 
 const SEVERITY_CLASS = { critical: 'critical', high: 'serious', medium: 'warning', low: 'low' };
 const severity = s => '<span class="sev ' + SEVERITY_CLASS[s] + '"><span class="sev-dot" aria-hidden="true"></span>' + esc(s) + '</span>';
+// An error type such as SP-SHOULD-REVIEW, kept on one line rather than broken at its hyphens.
+const typeTag = t => '<span class="type">' + esc(t) + '</span>';
 
 function table(head, rows, numeric = []) {
   const th = head.map((h, i) => '<th' + (numeric.includes(i) ? ' class="num"' : '') + '>' + h + '</th>').join('');
@@ -152,6 +154,7 @@ th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--gri
 th { color: var(--ink-2); font-weight: 600; white-space: nowrap; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .sev { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.type { white-space: nowrap; }
 .sev-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--low); }
 .sev.critical .sev-dot { background: var(--critical); }
 .sev.serious .sev-dot { background: var(--serious); }
@@ -195,21 +198,21 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
   if (se.records.length === 0) s.push('<p>None of the records that went through needed a human.</p>');
   else {
     s.push(table(['Record', 'Severity', 'Types', 'Went', 'Should', 'What differed', 'Trap'], se.records.map(x => [
-      '<code>' + esc(x.id) + '</code>', severity(x.severity), x.types.map(esc).join('<br>'), esc(x.route), esc(x.gold_route ?? ''),
+      '<code>' + esc(x.id) + '</code>', severity(x.severity), x.types.map(typeTag).join('<br>'), esc(x.route), esc(x.gold_route ?? ''),
       differences(x.differences) || '<span class="muted">values match</span>', x.traps.map(esc).join(', '),
     ])));
   }
   if (r.silent_omissions) {
     s.push('<h3>Silent omissions</h3>');
     s.push(r.silent_omissions.records.length === 0 ? '<p>None.</p>' : table(['Record', 'Severity', 'Type', 'Went', 'Should', 'Trap'], r.silent_omissions.records.map(x => [
-      '<code>' + esc(x.id) + '</code>', severity(x.severity), x.types.map(esc).join('<br>'), esc(x.route), esc(x.gold_route), x.traps.map(esc).join(', '),
+      '<code>' + esc(x.id) + '</code>', severity(x.severity), x.types.map(typeTag).join('<br>'), esc(x.route), esc(x.gold_route), x.traps.map(esc).join(', '),
     ])));
   }
   s.push('<h3>Safeguard failures</h3>');
   s.push(r.safeguard_failures.records === 0 ? '<p>None.</p>'
     : '<p>Went through although a safeguard should have held them. Not counted in the silent error rate, but critical: each is a workflow bug to find, even when the content is right. ' +
       'Find the branch that routed these records and why it skipped the check. If the key agrees with the record, the fix is a model that clears the threshold, not a lower threshold.</p>' +
-      table(['Record', 'Severity', 'Type'], r.safeguard_failures.detail.map(d => ['<code>' + esc(d.id) + '</code>', severity('critical'), d.types.map(esc).join(', ')])));
+      table(['Record', 'Severity', 'Type'], r.safeguard_failures.detail.map(d => ['<code>' + esc(d.id) + '</code>', severity('critical'), d.types.map(typeTag).join(', ')])));
   s.push('<p>Wasted reviews: ' + ids(r.review_queue.wasted) + (r.block ? ' · Wrongly blocked: ' + ids(r.block.wrongly_blocked) : '') + '</p>');
 
   // Quality

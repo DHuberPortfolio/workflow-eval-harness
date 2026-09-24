@@ -1,9 +1,51 @@
 # workflow-eval-harness
 
+[![tests](https://github.com/DHuberPortfolio/workflow-eval-harness/actions/workflows/test.yml/badge.svg)](https://github.com/DHuberPortfolio/workflow-eval-harness/actions/workflows/test.yml)
+
 Measures an AI workflow against a golden set, with one number in front: the
 **silent error rate**. That is the share of records the workflow let through with
 no human in front of them that needed one. Those are the only errors that reach
 anyone outside the building; everything else was caught by a person or a guard.
+
+## What it found in two real workflows
+
+Both are AI workflows built in n8n, each with its own golden set. The harness reads
+their exports through a config, the same way it reads a Zapier export, a script's log,
+an API response or a spreadsheet.
+
+**A compliance reviewer for law-firm advertising.** A regex layer catches banned words;
+an LLM catches implied violations, and its finding holds the copy for review only when its
+confidence clears the client's threshold. Below the threshold, the finding becomes a note
+and the copy goes live. The workflow's own scorecard counted a note as a catch, and
+reported a 100% catch rate.
+
+The harness counted what went live without a person: **6 of the 20 documents (30%)
+needed one**, and 22-30% across three runs of identical code. Every one was a violation
+the model had found and then stated below the threshold (0.55-0.85 against 0.80-0.90).
+So the fix belonged in the model, not the threshold. A prompt change that anchors what each
+confidence level means brought it to **6.7% in all four runs**, a drop well beyond the
+old prompt's run-to-run noise: 5 routes fixed, none broken, no new false alarms on clean
+copy. ([notes](examples/compliance-reviewer/NOTES.md))
+
+The same runs showed the answer key was incomplete. The new prompt named real violations
+the key had never listed, so it looked 10-20 points less precise than it was. The harness
+lists every value a model states in every run that the key lacks, for a person to rule on
+(the same mistake can repeat every run too); 9 of the 25 went into the key.
+([review](examples/compliance-reviewer/KEY_GAPS.md))
+
+**A news-metadata tagger** (24 articles, controlled-vocabulary codes on four facets). The
+harness reproduces the workflow's own scorecard figure for figure. Three fresh runs found
+0 silent errors in 23 auto-published articles, and the harness says what that is worth: a
+true rate up to 14% is still consistent with it, where one run's "0 of 7" allows up to 35%.
+([notes](examples/metadata-enrichment/NOTES.md))
+
+![The HTML report for the compliance reviewer before its prompt fix: silent error rate 30.0%, six silent errors listed](docs/samples/compliance-before.png)
+
+Sample reports, each one self-contained HTML file (download and open in any browser): the
+compliance reviewer [before](docs/samples/compliance-before.html) and
+[after](docs/samples/compliance-after.html) its prompt fix.
+
+## Try it
 
 ```
 node bin/wfeval.js score --config test/fixtures/tiny/config.json \
@@ -155,8 +197,13 @@ into warnings. A record that went in and never came out stops the run in both mo
 
 ## Testing
 
-`npm test` runs 160+ tests with Node's built-in runner. The metric tests are checked
-against answers worked out by hand before the code existed:
+`npm test` runs 170+ tests with Node's built-in runner. On every push, GitHub Actions
+runs them on Linux and Windows with Node 18, 22 and 24, runs the commands this README and
+the example notes show, checks that `--fail-on high` stops a build with a high-severity
+silent error, and rebuilds the sample reports (`node scripts/build-samples.js`), failing if
+they differ from the committed copies.
+
+The metric tests are checked against answers worked out by hand before the code existed:
 
 - `test/fixtures/tiny/`: six tagged records, each built to test one case. `EXPECTED.md`
   shows every number's working.
@@ -165,7 +212,10 @@ against answers worked out by hand before the code existed:
 - `test/fixtures/runs/`: three runs of the same workflow, for variance and compare.
 - `examples/metadata-enrichment/`: a real run. Through a small adapter, the harness
   reproduces that workflow's own scorecard figure for figure (straight-through 7/24,
-  silent errors 0/7, review-queue precision 14/15, every facet's precision, recall and F1).
+  silent errors 0/7, review-queue precision 14/15, every facet's precision, recall and F1),
+  and three fresh runs (61-63) for variance.
+- `examples/compliance-reviewer/`: seven real runs, before and after a prompt change, with
+  the answer key review that followed.
 
 The tests were checked for teeth by breaking the code on purpose (swapping precision and
 recall, ignoring `key_field`, weakening the "record never came out" stop) and confirming

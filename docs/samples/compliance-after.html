@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Workflow evaluation</title><style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10); --series: #2a78d6;
+  --critical: #d03b3b; --serious: #ec835a; --warning: #fab219; --low: #898781;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --series: #3987e5;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --series: #3987e5;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1040px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+h2 { font-size: 17px; margin: 40px 0 12px; }
+h3 { font-size: 15px; margin: 20px 0 8px; }
+p, .meta { color: var(--ink-2); margin: 0 0 12px; }
+.muted { color: var(--muted); }
+code { font: 13px ui-monospace, "Cascadia Mono", Consolas, monospace; overflow-wrap: anywhere; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+.hero { display: flex; flex-wrap: wrap; gap: 8px 32px; align-items: baseline; }
+.hero-label { font-weight: 600; width: 100%; }
+.hero-value { font-size: 56px; font-weight: 600; line-height: 1; }
+.hero-note { color: var(--ink-2); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 12px; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.tile-label { color: var(--ink-2); font-size: 13px; }
+.tile-value { font-size: 26px; font-weight: 600; }
+.tile-note { color: var(--muted); font-size: 12px; }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { color: var(--ink-2); font-weight: 600; white-space: nowrap; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sev { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.type { white-space: nowrap; }
+.sev-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--low); }
+.sev.critical .sev-dot { background: var(--critical); }
+.sev.serious .sev-dot { background: var(--serious); }
+.sev.warning .sev-dot { background: var(--warning); }
+.chart { position: relative; max-width: 560px; }
+.chart svg { width: 100%; height: auto; display: block; }
+.grid { stroke: var(--grid); stroke-width: 1; }
+.axis { stroke: var(--axis); stroke-width: 1; }
+.diagonal { stroke: var(--axis); stroke-width: 1; }
+.tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.axis-title { fill: var(--ink-2); font-size: 12px; }
+.range { stroke: var(--series); stroke-width: 2; stroke-linecap: round; opacity: 0.35; }
+.dot { fill: var(--series); stroke: var(--surface); stroke-width: 2; }
+.hit { fill: transparent; cursor: pointer; }
+.hit:focus { outline: none; stroke: var(--ink); stroke-width: 1; }
+.tooltip { position: absolute; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 13px; pointer-events: none; box-shadow: 0 4px 16px rgba(0,0,0,0.12); max-width: 260px; }
+.tooltip div { color: var(--ink-2); }
+.notes li { color: var(--ink-2); }
+@media (max-width: 560px) { .hero-value { font-size: 44px; } }
+</style></head><body><main><h1>Workflow evaluation</h1>
+<p class="meta">examples/compliance-reviewer/runs/exec-59.harness.json scored against examples/compliance-reviewer/key.json · 40 records · strict mode · generated 2026-09-23T00:00:00.000Z<br>A record needed a human if the key&#39;s route says so.</p>
+<section class="card hero"><div class="hero-label">Silent error rate</div><div class="hero-value">6.7%</div><div class="hero-note">1 of 15 records that went through with no human needed one<br>95% range 1.2–29.8% · one record moves this by 6.7 points</div></section>
+<div class="tiles"><div class="tile"><div class="tile-label">Straight-through</div><div class="tile-value">37.5%</div><div class="tile-note">15 of 40 · range 24.2–53.0%<br>went through with no human</div></div><div class="tile"><div class="tile-label">Silent omissions</div><div class="tile-value">0.0%</div><div class="tile-note">0 of 40 · range 0.0–8.8%<br>blocked or suppressed, but should be seen</div></div><div class="tile"><div class="tile-label">Review-queue precision</div><div class="tile-value">100.0%</div><div class="tile-note">25 of 25 · range 86.7–100.0%<br>reviews a human actually needed</div></div><div class="tile"><div class="tile-label">Safeguard failures</div><div class="tile-value">0</div><div class="tile-note">went through past a gate or floor</div></div></div>
+<h2>Silent errors</h2>
+<div class="table-wrap"><table><thead><tr><th>Record</th><th>Severity</th><th>Types</th><th>Went</th><th>Should</th><th>What differed</th><th>Trap</th></tr></thead><tbody><tr><td><code>E38</code></td><td><span class="sev warning"><span class="sev-dot" aria-hidden="true"></span>medium</span></td><td><span class="type">SP-SHOULD-REVIEW</span><br><span class="type">SP-MISSING-REJECTED</span></td><td>PASS_WITH_NOTES</td><td>VIOLATION</td><td>violations proposed, not applied: <code>AWARD_CLAIM_REVIEW</code></td><td>llm</td></tr></tbody></table></div>
+<h3>Silent omissions</h3>
+<p>None.</p>
+<h3>Safeguard failures</h3>
+<p>None.</p>
+<p>Wasted reviews: <span class="muted">none</span></p>
+<h2>Output quality</h2>
+<p>40 records. Only applied values count as predicted.</p>
+<div class="table-wrap"><table><thead><tr><th>Output</th><th class="num">Precision</th><th class="num">Recall</th><th class="num">F1</th><th class="num">Exact match</th><th class="num">TP / FP / FN</th></tr></thead><tbody><tr><td>violations</td><td class="num">85.4%</td><td class="num">87.5%</td><td class="num">0.864</td><td class="num">75.0%</td><td class="num">35 / 6 / 5</td></tr></tbody></table></div>
+<h2>Per trap</h2>
+<div class="table-wrap"><table><thead><tr><th>Trap</th><th class="num">Records</th><th class="num">Routed right</th><th>Silent errors</th><th>Omissions</th><th>Wasted reviews</th></tr></thead><tbody><tr><td>both</td><td class="num">1</td><td class="num">1 of 1</td><td><span class="muted">none</span></td><td><span class="muted">none</span></td><td><span class="muted">none</span></td></tr><tr><td>deterministic</td><td class="num">14</td><td class="num">14 of 14</td><td><span class="muted">none</span></td><td><span class="muted">none</span></td><td><span class="muted">none</span></td></tr><tr><td>llm</td><td class="num">11</td><td class="num">10 of 11</td><td>E38</td><td><span class="muted">none</span></td><td><span class="muted">none</span></td></tr><tr><td>none</td><td class="num">14</td><td class="num">14 of 14</td><td><span class="muted">none</span></td><td><span class="muted">none</span></td><td><span class="muted">none</span></td></tr></tbody></table></div>
+<h2>Calibration</h2>
+<p>Does a stated confidence mean what it says? 40 claims, one group per stated value. Average gap 0.330 (0 is perfectly calibrated). The grey diagonal is where stated equals actual; a dot above it was right more often than stated, below it less often. Each thin line is that dot's 95% range. With 40 claims, read the ranges, not the dots.</p>
+<section class="card"><div class="chart"><svg viewBox="0 0 520 340" role="img" aria-label="Calibration: stated confidence against how often claims were right"><line class="grid" x1="52" x2="500" y1="296.0" y2="296.0"/><text class="tick" x="44" y="300.0" text-anchor="end">0%</text><line class="grid" x1="52" x2="500" y1="240.0" y2="240.0"/><text class="tick" x="44" y="244.0" text-anchor="end">20%</text><line class="grid" x1="52" x2="500" y1="184.0" y2="184.0"/><text class="tick" x="44" y="188.0" text-anchor="end">40%</text><line class="grid" x1="52" x2="500" y1="128.0" y2="128.0"/><text class="tick" x="44" y="132.0" text-anchor="end">60%</text><line class="grid" x1="52" x2="500" y1="72.0" y2="72.0"/><text class="tick" x="44" y="76.0" text-anchor="end">80%</text><line class="grid" x1="52" x2="500" y1="16.0" y2="16.0"/><text class="tick" x="44" y="20.0" text-anchor="end">100%</text><text class="tick" x="52.0" y="314" text-anchor="middle">0.5</text><text class="tick" x="141.6" y="314" text-anchor="middle">0.6</text><text class="tick" x="231.2" y="314" text-anchor="middle">0.7</text><text class="tick" x="320.8" y="314" text-anchor="middle">0.8</text><text class="tick" x="410.4" y="314" text-anchor="middle">0.9</text><text class="tick" x="500.0" y="314" text-anchor="middle">1.0</text><line class="axis" x1="52" x2="500" y1="296" y2="296"/><line class="diagonal" x1="52.0" y1="156.0" x2="500.0" y2="16.0"/><text class="axis-title" x="276" y="334" text-anchor="middle">stated confidence</text><text class="axis-title" transform="translate(14 156) rotate(-90)" text-anchor="middle">actually right</text><line class="range" x1="141.6" x2="141.6" y1="74.0" y2="296.0"/><circle class="dot" cx="141.6" cy="296.0" r="5"/><circle class="hit" data-i="0" tabindex="0" cx="141.6" cy="296.0" r="12" aria-label="stated 0.60, 0 of 1 right"/><line class="range" x1="186.4" x2="186.4" y1="111.8" y2="296.0"/><circle class="dot" cx="186.4" cy="296.0" r="5"/><circle class="hit" data-i="1" tabindex="0" cx="186.4" cy="296.0" r="12" aria-label="stated 0.65, 0 of 2 right"/><line class="range" x1="249.1" x2="249.1" y1="74.0" y2="296.0"/><circle class="dot" cx="249.1" cy="296.0" r="5"/><circle class="hit" data-i="2" tabindex="0" cx="249.1" cy="296.0" r="12" aria-label="stated 0.72, 0 of 1 right"/><line class="range" x1="276.0" x2="276.0" y1="116.5" y2="273.0"/><circle class="dot" cx="276.0" cy="216.0" r="5"/><circle class="hit" data-i="3" tabindex="0" cx="276.0" cy="216.0" r="12" aria-label="stated 0.75, 2 of 7 right"/><line class="range" x1="320.8" x2="320.8" y1="28.9" y2="211.7"/><circle class="dot" cx="320.8" cy="86.0" r="5"/><circle class="hit" data-i="4" tabindex="0" cx="320.8" cy="86.0" r="12" aria-label="stated 0.80, 3 of 4 right"/><line class="range" x1="365.6" x2="365.6" y1="87.1" y2="224.9"/><circle class="dot" cx="365.6" cy="156.0" r="5"/><circle class="hit" data-i="5" tabindex="0" cx="365.6" cy="156.0" r="12" aria-label="stated 0.85, 6 of 12 right"/><line class="range" x1="392.5" x2="392.5" y1="16.0" y2="200.2"/><circle class="dot" cx="392.5" cy="16.0" r="5"/><circle class="hit" data-i="6" tabindex="0" cx="392.5" cy="16.0" r="12" aria-label="stated 0.88, 2 of 2 right"/><line class="range" x1="410.4" x2="410.4" y1="28.9" y2="211.7"/><circle class="dot" cx="410.4" cy="86.0" r="5"/><circle class="hit" data-i="7" tabindex="0" cx="410.4" cy="86.0" r="12" aria-label="stated 0.90, 3 of 4 right"/><line class="range" x1="428.3" x2="428.3" y1="16.0" y2="200.2"/><circle class="dot" cx="428.3" cy="16.0" r="5"/><circle class="hit" data-i="8" tabindex="0" cx="428.3" cy="16.0" r="12" aria-label="stated 0.92, 2 of 2 right"/><line class="range" x1="455.2" x2="455.2" y1="16.0" y2="238.0"/><circle class="dot" cx="455.2" cy="16.0" r="5"/><circle class="hit" data-i="9" tabindex="0" cx="455.2" cy="16.0" r="12" aria-label="stated 0.95, 1 of 1 right"/><line class="range" x1="473.1" x2="473.1" y1="58.0" y2="254.0"/><circle class="dot" cx="473.1" cy="156.0" r="5"/><circle class="hit" data-i="10" tabindex="0" cx="473.1" cy="156.0" r="12" aria-label="stated 0.97, 2 of 4 right"/></svg><div class="tooltip" role="status" hidden></div><script type="application/json" class="chart-data">[{"stated":"0.60","right":"0 of 1","accuracy":"0.0%","range":"0.0–79.3%"},{"stated":"0.65","right":"0 of 2","accuracy":"0.0%","range":"0.0–65.8%"},{"stated":"0.72","right":"0 of 1","accuracy":"0.0%","range":"0.0–79.3%"},{"stated":"0.75","right":"2 of 7","accuracy":"28.6%","range":"8.2–64.1%"},{"stated":"0.80","right":"3 of 4","accuracy":"75.0%","range":"30.1–95.4%"},{"stated":"0.85","right":"6 of 12","accuracy":"50.0%","range":"25.4–74.6%"},{"stated":"0.88","right":"2 of 2","accuracy":"100.0%","range":"34.2–100.0%"},{"stated":"0.90","right":"3 of 4","accuracy":"75.0%","range":"30.1–95.4%"},{"stated":"0.92","right":"2 of 2","accuracy":"100.0%","range":"34.2–100.0%"},{"stated":"0.95","right":"1 of 1","accuracy":"100.0%","range":"20.7–100.0%"},{"stated":"0.97","right":"2 of 4","accuracy":"50.0%","range":"15.0–85.0%"}]</script></div></section>
+<div class="table-wrap"><table><thead><tr><th class="num">Stated</th><th class="num">Claims</th><th class="num">Right</th><th class="num">Accuracy</th><th class="num">Gap</th><th class="num">95% range</th></tr></thead><tbody><tr><td class="num">0.60</td><td class="num">1</td><td class="num">0</td><td class="num">0.0%</td><td class="num">-0.60</td><td class="num">0.0–79.3%</td></tr><tr><td class="num">0.65</td><td class="num">2</td><td class="num">0</td><td class="num">0.0%</td><td class="num">-0.65</td><td class="num">0.0–65.8%</td></tr><tr><td class="num">0.72</td><td class="num">1</td><td class="num">0</td><td class="num">0.0%</td><td class="num">-0.72</td><td class="num">0.0–79.3%</td></tr><tr><td class="num">0.75</td><td class="num">7</td><td class="num">2</td><td class="num">28.6%</td><td class="num">-0.46</td><td class="num">8.2–64.1%</td></tr><tr><td class="num">0.80</td><td class="num">4</td><td class="num">3</td><td class="num">75.0%</td><td class="num">-0.05</td><td class="num">30.1–95.4%</td></tr><tr><td class="num">0.85</td><td class="num">12</td><td class="num">6</td><td class="num">50.0%</td><td class="num">-0.35</td><td class="num">25.4–74.6%</td></tr><tr><td class="num">0.88</td><td class="num">2</td><td class="num">2</td><td class="num">100.0%</td><td class="num">+0.12</td><td class="num">34.2–100.0%</td></tr><tr><td class="num">0.90</td><td class="num">4</td><td class="num">3</td><td class="num">75.0%</td><td class="num">-0.15</td><td class="num">30.1–95.4%</td></tr><tr><td class="num">0.92</td><td class="num">2</td><td class="num">2</td><td class="num">100.0%</td><td class="num">+0.08</td><td class="num">34.2–100.0%</td></tr><tr><td class="num">0.95</td><td class="num">1</td><td class="num">1</td><td class="num">100.0%</td><td class="num">+0.05</td><td class="num">20.7–100.0%</td></tr><tr><td class="num">0.97</td><td class="num">4</td><td class="num">2</td><td class="num">50.0%</td><td class="num">-0.47</td><td class="num">15.0–85.0%</td></tr></tbody></table></div>
+<h2>Every record</h2>
+<div class="table-wrap"><table><thead><tr><th>Record</th><th>Went</th><th>Should</th><th>Needed a human</th><th>Outcome</th><th>Trap</th></tr></thead><tbody><tr><td><code>E01</code></td><td>BLOCK</td><td>VIOLATION</td><td>yes</td><td><span class="muted">ok</span></td><td>deterministic</td></tr><tr><td><code>E02</code></td><td>BLOCK</td><td>VIOLATION</td><td>yes</td><td><span class="muted">ok</span></td><td>deterministic</td></tr><tr><td><code>E03</code></td><td>BLOCK</td><td>VIOLATION</td><td>yes</td><td><span class="muted">ok</span></td><td>deterministic</td></tr><tr><td><code>E04</code></td><td>BLOCK</td><td>VIOLATION</td><td>yes</td><td><span class="muted">ok</span></td><td>deterministic</td></tr><tr><td><code>E05</code></td><td>BLOCK</td><td>VIOLATION</td><td>yes</td><td><span class="muted">ok</span></td><td>deterministic</td></tr><tr><td><code>E06</code></td><td>BLOCK</td><td>VIOLATION</td><td>yes</td><td><span class="muted">ok</span></td><td>deterministic</td></tr><tr><td><code>E07</code></td><td>BLOCK</td><td>VIOLATION</td><td>yes</td><td><span class="muted">ok</span></td><td>deterministic</td></tr><tr><td><code>E08</code></td><td>BLOCK</td><td>VIOLATION</td><td>yes</td><td><span class="muted">ok</span></td><td>both</td></tr><tr><td><code>E09</code></td><td>BLOCK</td><td>VIOLATION</td><td>yes</td><td><span class="muted">ok</span></td><td>deterministic</td></tr><tr><td><code>E10</code></td><td>BLOCK</td><td>VIOLATION</td><td>yes</td><td><span class="muted">ok</span></td><td>deterministic</td></tr><tr><td><code>E11</code></td><td>BLOCK</td><td>VIOLATION</td><td>yes</td><td><span class="muted">ok</span></td><td>deterministic</td></tr><tr><td><code>E12</code></td><td>REVIEW_REQUIRED</td><td>VIOLATION</td><td>yes</td><td><span class="muted">ok</span></td><td>deterministic</td></tr><tr><td><code>E13</code></td><td>REVIEW_REQUIRED</td><td>VIOLATION</td><td>yes</td><td><span class="muted">ok</span></td><td>deterministic</td></tr><tr><td><code>E14</code></td><td>PASS</td><td>CLEAN</td><td>no</td><td><span class="muted">ok</span></td><td>none</td></tr><tr><td><code>E15</code></td><td>REVIEW_REQUIRED</td><td>VIOLATION</td><td>yes</td><td><span class="muted">ok</span></td><td>llm</td></tr><tr><td><code>E16</code></td><td>REVIEW_REQUIRED</td><td>VIOLATION</td><td>yes</td><td><span class="muted">ok</span></td><td>llm</td></tr><tr><td><code>E17</code></td><td>REVIEW_REQUIRED</td><td>VIOLATION</td><td>yes</td><td><span class="muted">ok</span></td><td>llm</td></tr><tr><td><code>E18</code></td><td>REVIEW_REQUIRED</td><td>VIOLATION</td><td>yes</td><td><span class="muted">ok</span></td><td>llm</td></tr><tr><td><code>E19</code></td><td>REVIEW_REQUIRED</td><td>VIOLATION</td><td>yes</td><td><span class="muted">ok</span></td><td>llm</td></tr><tr><td><code>E20</code></td><td>REVIEW_REQUIRED</td><td>VIOLATION</td><td>yes</td><td><span class="muted">ok</span></td><td>llm</td></tr><tr><td><code>E21</code></td><td>REVIEW_REQUIRED</td><td>VIOLATION</td><td>yes</td><td><span class="muted">ok</span></td><td>llm</td></tr><tr><td><code>E22</code></td><td>REVIEW_REQUIRED</td><td>VIOLATION</td><td>yes</td><td><span class="muted">ok</span></td><td>llm</td></tr><tr><td><code>E23</code></td><td>REVIEW_REQUIRED</td><td>VIOLATION</td><td>yes</td><td><span class="muted">ok</span></td><td>llm</td></tr><tr><td><code>E24</code></td><td>PASS</td><td>CLEAN</td><td>no</td><td><span class="muted">ok</span></td><td>none</td></tr><tr><td><code>E25</code></td><td>BLOCK</td><td>VIOLATION</td><td>yes</td><td><span class="muted">ok</span></td><td>deterministic</td></tr><tr><td><code>E26</code></td><td>BLOCK</td><td>VIOLATION</td><td>yes</td><td><span class="muted">ok</span></td><td>deterministic</td></tr><tr><td><code>E27</code></td><td>PASS</td><td>CLEAN</td><td>no</td><td><span class="muted">ok</span></td><td>none</td></tr><tr><td><code>E28</code></td><td>PASS</td><td>CLEAN</td><td>no</td><td><span class="muted">ok</span></td><td>none</td></tr><tr><td><code>E29</code></td><td>PASS</td><td>CLEAN</td><td>no</td><td><span class="muted">ok</span></td><td>none</td></tr><tr><td><code>E30</code></td><td>PASS</td><td>CLEAN</td><td>no</td><td><span class="muted">ok</span></td><td>none</td></tr><tr><td><code>E31</code></td><td>PASS</td><td>CLEAN</td><td>no</td><td><span class="muted">ok</span></td><td>none</td></tr><tr><td><code>E32</code></td><td>PASS</td><td>CLEAN</td><td>no</td><td><span class="muted">ok</span></td><td>none</td></tr><tr><td><code>E33</code></td><td>PASS</td><td>CLEAN</td><td>no</td><td><span class="muted">ok</span></td><td>none</td></tr><tr><td><code>E34</code></td><td>PASS</td><td>CLEAN</td><td>no</td><td><span class="muted">ok</span></td><td>none</td></tr><tr><td><code>E35</code></td><td>PASS</td><td>CLEAN</td><td>no</td><td><span class="muted">ok</span></td><td>none</td></tr><tr><td><code>E36</code></td><td>PASS</td><td>CLEAN</td><td>no</td><td><span class="muted">ok</span></td><td>none</td></tr><tr><td><code>E37</code></td><td>PASS</td><td>CLEAN</td><td>no</td><td><span class="muted">ok</span></td><td>none</td></tr><tr><td><code>E38</code></td><td>PASS_WITH_NOTES</td><td>VIOLATION</td><td>yes</td><td><span class="sev warning"><span class="sev-dot" aria-hidden="true"></span>medium</span> silent error</td><td>llm</td></tr><tr><td><code>E39</code></td><td>REVIEW_REQUIRED</td><td>VIOLATION</td><td>yes</td><td><span class="muted">ok</span></td><td>llm</td></tr><tr><td><code>E40</code></td><td>PASS</td><td>CLEAN</td><td>no</td><td><span class="muted">ok</span></td><td>none</td></tr></tbody></table></div>
+<h2>Not measured</h2><ul class="notes"><li>block precision: no decision maps to block</li><li>SP-INVALID: no allowed_values list</li><li>SG-GATE: no thresholds.auto_publish</li><li>SG-FLOOR: no thresholds.floor</li></ul></main><script>
+document.querySelectorAll('.chart').forEach(chart => {
+  const data = JSON.parse(chart.querySelector('.chart-data').textContent);
+  const tip = chart.querySelector('.tooltip');
+  const show = (el, evt) => {
+    const d = data[Number(el.getAttribute('data-i'))];
+    tip.replaceChildren();
+    const v = document.createElement('strong'); v.textContent = d.accuracy + ' right (' + d.right + ')';
+    const s = document.createElement('div'); s.textContent = 'stated ' + d.stated + ' · 95% range ' + d.range;
+    tip.append(v, s);
+    const box = chart.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    tip.hidden = false;
+    const left = Math.min(Math.max(r.left - box.left + r.width / 2 - tip.offsetWidth / 2, 0), box.width - tip.offsetWidth);
+    tip.style.left = left + 'px';
+    tip.style.top = Math.max(r.top - box.top - tip.offsetHeight - 8, 0) + 'px';
+  };
+  chart.querySelectorAll('.hit').forEach(el => {
+    el.addEventListener('pointerenter', e => show(el, e));
+    el.addEventListener('focus', e => show(el, e));
+    el.addEventListener('pointerleave', () => { tip.hidden = true; });
+    el.addEventListener('blur', () => { tip.hidden = true; });
+  });
+});</script></body></html>

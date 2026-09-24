@@ -1,0 +1,65 @@
+# Runs on every push and pull request.
+#   tests:   the whole suite, on Linux and Windows, on the oldest supported Node (18) and
+#            two current ones; then the commands the README and example notes show,
+#            including --fail-on, which must stop a build that has a high-severity silent error.
+#   samples: rebuilds the sample reports the README links to and fails if they differ from
+#            the committed copies, so the samples always show what the tool produces today.
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    name: node ${{ matrix.node }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ['18', '22', '24']
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+      - run: node --test
+      - name: The documented commands run
+        shell: bash
+        run: |
+          set -e
+          out="$RUNNER_TEMP"
+          node bin/wfeval.js score --config test/fixtures/tiny/config.json \
+            --pred test/fixtures/tiny/predictions.json --key test/fixtures/tiny/key.json \
+            --json "$out/tiny.json" --html "$out/tiny.html"
+          C=examples/compliance-reviewer
+          node bin/wfeval.js score --config $C/config.json --pred $C/runs/exec-59.harness.json --key $C/key.json
+          node bin/wfeval.js variance --config $C/config.json --key $C/key.json $C/runs/exec-5{6,7,8,9}.harness.json
+          node bin/wfeval.js compare --config $C/config.json --key $C/key.json \
+            --before $C/runs/exec-50.harness.json --after $C/runs/exec-56.harness.json \
+            --noise $C/runs/exec-50.harness.json --noise $C/runs/exec-51.harness.json --noise $C/runs/exec-52.harness.json
+          M=examples/metadata-enrichment
+          node bin/wfeval.js score --config $M/config.json --pred $M/run49.json --key $M/run49.json
+          node bin/wfeval.js variance --config $M/config.json --key $M/runs/exec-61.json $M/runs/exec-6{1,2,3}.json
+          node bin/wfeval.js whatif --config $M/config.json --pred $M/run49.json --key $M/run49.json --gate
+      - name: --fail-on stops a build with a high-severity silent error
+        shell: bash
+        run: |
+          set +e
+          node bin/wfeval.js score --config test/fixtures/tiny/config.json \
+            --pred test/fixtures/tiny/predictions.json --key test/fixtures/tiny/key.json --quiet --fail-on high
+          code=$?
+          echo "exit code $code (expected 3)"
+          test "$code" -eq 3
+
+  samples:
+    name: sample reports are up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - run: node scripts/build-samples.js
+      - run: git diff --exit-code docs/samples

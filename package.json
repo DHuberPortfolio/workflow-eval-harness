@@ -6,7 +6,8 @@
     "wfeval": "bin/wfeval.js"
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "samples": "node scripts/build-samples.js"
   },
   "engines": {
     "node": ">=18.3"
