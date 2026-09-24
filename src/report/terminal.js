@@ -1,19 +1,13 @@
-// The score report as plain text for the terminal. Headline first: what reached
-// people without a human, how sure we can be of that number, then everything else.
+// The score report as plain text for the terminal. Headline first: what went out without
+// review but needed a person, how sure we can be of that number, then everything else.
 
-const { pct, count, range, num, signed, list, table } = require('./format.js');
+const { pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, typesIn } = require('./format.js');
 
-const WRONG_WHEN = {
-  either: "the key's route says so, or its values are wrong",
-  gold_route: "the key's route says so",
-  any_mismatch: 'its values are wrong',
-};
-
-// "SUBJECT  applied, not in key: SUBJ-ANTI" lines for one record's differences.
+// "SUBJECT  applied, not in the answer key: SUBJ-ANTI" lines for one record's differences.
 function differenceLines(d) {
   const labels = {
-    wrong: 'applied, not in key', missing_rejected: 'in key, proposed but not applied',
-    missing: 'in key, never proposed', invalid: 'not an allowed value', near_miss: 'near miss',
+    wrong: 'applied, not in the answer key', missing_rejected: 'in the answer key, found but set aside',
+    missing: 'in the answer key, never found', invalid: 'not an allowed value', near_miss: 'near miss',
   };
   const out = [];
   for (const [bucket, label] of Object.entries(labels)) {
@@ -24,29 +18,39 @@ function differenceLines(d) {
 
 function headline(results) {
   const r = results.routing;
-  const rows = [['', 'rate', 'count', '95% range']];
-  rows.push(['Silent error rate', pct(r.silent_errors.rate), count(r.silent_errors.rate), range(r.silent_errors.rate)]);
-  rows.push(['Straight-through', pct(r.straight_through), count(r.straight_through), range(r.straight_through)]);
-  if (r.silent_omissions) rows.push(['Silent omissions', pct(r.silent_omissions.rate), count(r.silent_omissions.rate), range(r.silent_omissions.rate)]);
-  rows.push(['Review-queue precision', pct(r.review_queue.precision), count(r.review_queue.precision), range(r.review_queue.precision)]);
-  if (r.block) rows.push(['Block precision', pct(r.block.precision), count(r.block.precision), range(r.block.precision)]);
-  rows.push(['Safeguard failures', '', r.safeguard_failures.records + ' record(s)', '']);
+  const rows = [['', 'rate', 'count', 'likely range', 'what it counts']];
+  const row = (name, rate, what) => rows.push([name, pct(rate), count(rate), range(rate), what]);
+  row('Silent error rate', r.silent_errors.rate, 'went out without review, but needed a person');
+  row('Straight-through', r.straight_through, 'went out without review');
+  if (r.silent_omissions) row('Silent omissions', r.silent_omissions.rate, 'blocked or suppressed, but should have gone out or to a person');
+  row('Review precision', r.review_queue.precision, 'sent to a person, and needed one');
+  if (r.block) row('Block precision', r.block.precision, 'blocked, and the answer key agrees');
+  rows.push(['Safeguard failures', '', r.safeguard_failures.records + ' record(s)', '', "went out past the workflow's own confidence gate or floor"]);
   const lines = ['HEADLINE', table(rows, [1, 2])];
-  if (r.silent_errors.one_record_moves_pct !== null) {
-    lines.push('  At this size one record moves the silent error rate by ' + r.silent_errors.one_record_moves_pct.toFixed(1) + ' points.');
+  const se = r.silent_errors;
+  if (se.one_record_moves_pct !== null && se.rate.d > 1) {
+    lines.push('  The likely range is where the true rate probably sits (95%). With ' + se.rate.d +
+      ' records out without review, each one moves the silent error rate by ' + se.one_record_moves_pct.toFixed(1) + ' points.');
   }
   return lines.join('\n');
 }
 
-function silentSection(title, block, showDiffs) {
+// "  SP-SHOULD-REVIEW   went out, but should have gone to a person" for each type used.
+function typeLegend(types) {
+  if (!types.length) return [];
+  return ['  what the types mean', table(types.map(t => [t, TYPE_LABELS[t] || '']), [], '    ')];
+}
+
+function silentSection(title, what, block, showDiffs) {
   if (!block || block.records.length === 0) return title + '  none';
   const sev = Object.entries(block.by_severity || {}).filter(([, n]) => n > 0).map(([s, n]) => s + ' ' + n).join(' · ');
-  const lines = [title + '  ' + block.records.length + ' record(s)' + (sev ? '  (' + sev + ')' : '')];
+  const lines = [title + '  ' + block.records.length + ' record(s)' + (sev ? '  (' + sev + ')' : '') + ': ' + what];
   for (const x of block.records) {
     lines.push('  ' + x.id.padEnd(8) + x.severity.padEnd(10) + x.types.join(', ') + (x.traps.length ? '   [' + x.traps.join(', ') + ']' : ''));
-    lines.push('  ' + ''.padEnd(8) + 'went: ' + x.route + '   should: ' + x.gold_route);
+    lines.push('  ' + ''.padEnd(8) + 'went: ' + x.route + '   answer key: ' + x.gold_route);
     if (showDiffs) for (const d of differenceLines(x.differences)) lines.push('  ' + ''.padEnd(8) + d);
   }
+  lines.push(...typeLegend(typesIn(block.records)));
   return lines.join('\n');
 }
 
@@ -66,7 +70,7 @@ function quality(results) {
   for (const [name, o] of Object.entries(q.outputs).filter(([, x]) => x.type !== 'set')) {
     lines.push('  ' + name + ' (' + o.type + '): accuracy ' + pct(o.accuracy) + ' (' + count(o.accuracy) + ')');
     if (o.type === 'ordinal') {
-      const lean = o.mean_signed === null || o.mean_signed === 0 ? 'no lean' : o.mean_signed > 0 ? 'leans higher than the key' : 'leans lower than the key';
+      const lean = o.mean_signed === null || o.mean_signed === 0 ? 'no lean' : o.mean_signed > 0 ? 'leans higher than the answer key' : 'leans lower than the answer key';
       lines.push('    within one step ' + pct(o.within_one) + ' · average distance ' + num(o.mean_distance, 2) + ' steps · closeness ' + num(o.closeness) +
         ' · ' + lean + ' (' + o.predicted_higher + ' higher, ' + o.predicted_lower + ' lower)');
       const md = Object.entries(o.miss_distances);
@@ -86,7 +90,7 @@ function quality(results) {
 function traps(results) {
   const t = results.traps;
   if (!t) return null;
-  const rows = [['trap', 'records', 'routed right', 'silent errors', 'omissions', 'wasted reviews']];
+  const rows = [['trap', 'records', 'routed right', 'silent errors', 'omissions', 'unnecessary reviews']];
   for (const g of t.groups) {
     rows.push([g.trap, g.records.length, count(g.routed_correctly) || 'n/a', list(g.silent_errors), list(g.silent_omissions), list(g.wasted_reviews)]);
   }
@@ -99,9 +103,9 @@ function traps(results) {
 function calibration(results) {
   const c = results.calibration;
   if (c.overall.n === 0) return 'CALIBRATION  no values with a confidence';
-  const lines = ['CALIBRATION  ' + c.overall.n + ' claims, ' + (c.buckets === 'distinct' ? 'one bucket per stated value' : 'buckets of ' + c.buckets.replace('width ', '')) +
+  const lines = ['CALIBRATION  does a stated confidence mean what it says? ' + c.overall.n + ' claims, ' + (c.buckets === 'distinct' ? 'one bucket per stated value' : 'buckets of ' + c.buckets.replace('width ', '')) +
     ' · average gap ' + num(c.overall.ece)];
-  const rows = [['stated', 'claims', 'right', 'accuracy', 'gap', '95% range']];
+  const rows = [['stated', 'claims', 'right', 'accuracy', 'gap', 'likely range']];
   for (const b of c.overall.buckets) {
     rows.push([b.from === b.to ? num(b.from, 2) : num(b.from, 2) + '-' + num(b.to, 2), b.n, b.correct, pct(b.accuracy), signed(b.gap), range(b.accuracy)]);
   }
@@ -120,20 +124,23 @@ function renderTerminal(results) {
   const r = results.routing;
   const parts = [];
   parts.push('SCORE  ' + results.inputs.predictions + '  vs  ' + results.inputs.key);
-  parts.push(r.total + ' records · ' + results.inputs.mode + ' mode · a record needed a human if ' + WRONG_WHEN[results.inputs.wrong_when]);
+  parts.push(r.total + ' records · ' + results.inputs.mode + ' mode · a record needed a person if ' + WRONG_WHEN[results.inputs.wrong_when]);
   parts.push(headline(results));
-  parts.push(silentSection('SILENT ERRORS', r.silent_errors, true));
-  if (r.silent_omissions) parts.push(silentSection('SILENT OMISSIONS', r.silent_omissions, false));
+  parts.push(silentSection('SILENT ERRORS', 'went out without review, but needed a person', r.silent_errors, true));
+  if (r.silent_omissions) parts.push(silentSection('SILENT OMISSIONS', 'blocked or suppressed, but should have gone out or to a person', r.silent_omissions, false));
   parts.push(r.safeguard_failures.records === 0 ? 'SAFEGUARD FAILURES  none'
     : 'SAFEGUARD FAILURES  ' + r.safeguard_failures.detail.map(d => d.id + ' (' + d.types.join(', ') + ')').join('  ') +
       '\n  Critical, and a workflow bug even when the content is right: find the branch that routed these records\n' +
       '  and why it did not apply the check (SG-GATE: lead confidence below the gate; SG-FLOOR: a value below the floor was applied).\n' +
-      '  If the key agrees with the record, the fix is a model that clears the threshold, not a lower threshold.');
-  parts.push('WASTED REVIEWS  ' + list(r.review_queue.wasted) + (r.block && r.block.wrongly_blocked.length ? '\nWRONGLY BLOCKED  ' + list(r.block.wrongly_blocked) : ''));
-  const classes = by => ['auto', 'review', 'block', 'exclude'].map(k => k + ' ' + by[k]).join(' · ');
+      '  If the answer key agrees with the record, the fix is a model that clears the threshold, not a lower threshold.');
+  parts.push('UNNECESSARY REVIEWS  ' + list(r.review_queue.wasted) + (r.review_queue.wasted.length ? '   (sent to a person, but could have gone out)' : '') +
+    (r.block && r.block.wrongly_blocked.length ? '\nWRONGLY BLOCKED  ' + list(r.block.wrongly_blocked) : ''));
+  const CLASSES = ['auto', 'review', 'block', 'exclude'];
   const should = { auto: 0, review: 0, block: 0, exclude: 0 };
   for (const x of results.records) if (x.gold_class) should[x.gold_class]++;
-  parts.push('ROUTES  went:   ' + classes(r.by_class) + (results.records.some(x => x.gold_class) ? '\n        should: ' + classes(should) : ''));
+  const routeRows = [['ROUTES', ...CLASSES.map(k => CLASS_LABELS[k])], ['  this run', ...CLASSES.map(k => r.by_class[k])]];
+  if (results.records.some(x => x.gold_class)) routeRows.push(['  answer key', ...CLASSES.map(k => should[k])]);
+  parts.push(table(routeRows, [1, 2, 3, 4], ''));
   parts.push(quality(results));
   const t = traps(results);
   if (t) parts.push(t);
@@ -170,12 +177,12 @@ function renderVariance(v) {
   parts.push('RECORDS THAT CHANGED ROUTE  ' + (rc.length ? '' : 'none') +
     rc.map(r => '\n  ' + r.id.padEnd(8) + r.routes.join(' / ') + (r.should ? '   (should: ' + r.should + ')' : '')).join(''));
   const sc = v.records.silent_changed;
-  parts.push('RECORDS SILENT IN SOME RUNS ONLY  ' + (sc.length ? '' : 'none') +
+  parts.push('RECORDS THAT WERE SILENT ERRORS IN SOME RUNS ONLY  ' + (sc.length ? '' : 'none') +
     sc.map(r => '\n  ' + r.id.padEnd(8) + r.silent.map(s => (s ? 'silent' : 'ok')).join(' / ')).join(''));
   const gaps = v.records.key_gap_candidates;
   const every = gaps.filter(g => g.runs === g.of);
   const lines = ['POSSIBLE KEY GAPS  ' + (every.length
-    ? 'stated in every run, not in the key: the same mistake every time, or a value the key is missing. A person decides which.'
+    ? 'stated in every run, not in the answer key: the same mistake every time, or a value the answer key is missing. A person decides which.'
     : 'none stated in every run')];
   const conf = c => (c === null ? '' : ' · confidence ' + (c.min === c.max ? c.min.toFixed(2) : c.min.toFixed(2) + '-' + c.max.toFixed(2)));
   for (const g of every) lines.push('  ' + g.id.padEnd(8) + g.output + '  ' + g.value + '   applied in ' + g.applied + ' of ' + g.of + conf(g.confidence));
@@ -209,14 +216,14 @@ function renderCompare(c) {
 
 // ---------- What-if ----------
 
-const frac = r => (r === null ? 'n/a' : r.d === 0 ? 'none through' : pct(r) + ' (' + r.n + '/' + r.d + ')');
+const frac = r => (r === null ? 'n/a' : r.d === 0 ? 'none went out' : pct(r) + ' (' + r.n + '/' + r.d + ')');
 
 function renderWhatif(w) {
   const parts = [];
   if (w.kind === 'gate') {
     parts.push('WHAT-IF: CONFIDENCE GATE  sweeping ' + w.outputs.join(', '));
     parts.push('Assumption: ' + w.assumption + '.');
-    const rows = [['gate', 'through', 'straight-through', 'silent errors', 'silent error rate', 'moved in', 'moved out', 'wasted reviews', '']];
+    const rows = [['gate', 'went out', 'straight-through', 'silent errors', 'silent error rate', 'moved in', 'moved out', 'unnecessary reviews', '']];
     for (const r of w.rows) {
       rows.push([r.threshold.toFixed(2), r.through.length, pct(r.straight_through), list(r.silent_errors, 6), frac(r.silent_error_rate),
         list(r.moved_in, 6), list(r.moved_out, 6), r.wasted_reviews.length, r.current ? '<- current' : '']);
@@ -244,4 +251,4 @@ function renderWhatif(w) {
   return parts.join('\n\n') + '\n';
 }
 
-module.exports = { renderTerminal, renderVariance, renderCompare, renderWhatif, WRONG_WHEN };
+module.exports = { renderTerminal, renderVariance, renderCompare, renderWhatif };

@@ -20,11 +20,11 @@ test('variance: silent error rate per run, mean, spread, range', () => {
   assert.deepEqual([m.mean, m.sd, m.min, m.max, m.range], [27.8, 25.5, 0, 50, 50]);
 });
 
-test('variance: straight-through and review-queue precision per run', () => {
+test('variance: straight-through and review precision per run', () => {
   const st = metric(V, 'straight-through');
   assert.deepEqual(st.values, [33.3, 16.7, 50]);
   assert.deepEqual([st.mean, st.sd, st.range], [33.3, 16.7, 33.3]);
-  assert.deepEqual(metric(V, 'review-queue precision').values, [50, 66.7, 100]);
+  assert.deepEqual(metric(V, 'review precision').values, [50, 66.7, 100]);
 });
 
 test('variance: the records that behave differently from run to run', () => {

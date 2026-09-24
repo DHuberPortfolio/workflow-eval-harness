@@ -97,12 +97,12 @@ function judgeRecord(r, config, ctx) {
   const values = valueFindings(r, config);
   const mismatch = nonEmpty(values.wrong) || nonEmpty(values.missing_rejected) || nonEmpty(values.missing) || nonEmpty(values.near_miss);
 
-  // Which evidence decides that a record needed a human (config: wrong_when).
+  // Which evidence decides that a record needed a person (config: wrong_when).
   const useGold = gold !== null && config.wrong_when !== 'any_mismatch';
   const useValues = config.wrong_when !== 'gold_route';
   const needsHuman = (useGold && gold !== 'auto') || (useValues && mismatch);
 
-  // What would be wrong if this record went through.
+  // What would be wrong if this record went out without review.
   const routeTypes = [];
   if (gold === 'block') routeTypes.push('SP-FORBIDDEN');
   if (gold === 'review') routeTypes.push('SP-SHOULD-REVIEW');

@@ -3,7 +3,7 @@
 // report. Every value that came from an input file is HTML-escaped: a record id is data,
 // and data must never be able to run as code in the report.
 
-const { WRONG_WHEN } = require('./terminal.js');
+const { WRONG_WHEN, TYPE_LABELS, typesIn } = require('./format.js');
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const pct = r => (!r || r.pct === null ? 'n/a' : r.pct.toFixed(1) + '%');
@@ -26,7 +26,14 @@ function heroNote(rate, moves) {
 }
 
 // An error type such as SP-SHOULD-REVIEW, kept on one line rather than broken at its hyphens.
-const typeTag = t => '<span class="type">' + esc(t) + '</span>';
+const typeTag = t => '<span class="type" title="' + esc(TYPE_LABELS[t] || '') + '">' + esc(t) + '</span>';
+
+// What each type in a table means, in plain words: only the types that appear.
+function typeLegend(records) {
+  const types = typesIn(records);
+  if (!types.length) return '';
+  return '<div class="legend-title">What the types mean</div><dl class="legend">' + types.map(t => '<div><dt>' + typeTag(t) + '</dt><dd>' + esc(TYPE_LABELS[t] || '') + '</dd></div>').join('') + '</dl>';
+}
 
 function table(head, rows, numeric = []) {
   const th = head.map((h, i) => '<th' + (numeric.includes(i) ? ' class="num"' : '') + '>' + h + '</th>').join('');
@@ -35,7 +42,7 @@ function table(head, rows, numeric = []) {
 }
 
 function differences(d) {
-  const labels = { wrong: 'applied, not in key', missing_rejected: 'proposed, not applied', missing: 'never proposed', invalid: 'not an allowed value', near_miss: 'near miss' };
+  const labels = { wrong: 'applied, not in the answer key', missing_rejected: 'found, but set aside', missing: 'never found', invalid: 'not an allowed value', near_miss: 'near miss' };
   const out = [];
   for (const [bucket, label] of Object.entries(labels)) {
     for (const [output, values] of Object.entries(d[bucket] || {})) out.push(esc(output) + ' ' + label + ': <code>' + values.map(esc).join(', ') + '</code>');
@@ -45,13 +52,13 @@ function differences(d) {
 
 function tiles(r) {
   const tile = (label, rate, note) => '<div class="tile"><div class="tile-label">' + label + '</div><div class="tile-value">' + pct(rate) +
-    '</div><div class="tile-note">' + cnt(rate) + (rng(rate) ? ' · range ' + rng(rate) : '') + (note ? '<br>' + note : '') + '</div></div>';
-  const out = [tile('Straight-through', r.straight_through, 'went through with no human')];
-  if (r.silent_omissions) out.push(tile('Silent omissions', r.silent_omissions.rate, 'blocked or suppressed, but should be seen'));
-  out.push(tile('Review-queue precision', r.review_queue.precision, 'reviews a human actually needed'));
-  if (r.block) out.push(tile('Block precision', r.block.precision, 'blocks the key agrees with'));
+    '</div><div class="tile-note">' + (note ? note + '<br>' : '') + cnt(rate) + (rng(rate) ? ' · likely ' + rng(rate) : '') + '</div></div>';
+  const out = [tile('Straight-through', r.straight_through, 'went out without review')];
+  if (r.silent_omissions) out.push(tile('Silent omissions', r.silent_omissions.rate, 'blocked or suppressed, but should have gone out or to a person'));
+  out.push(tile('Review precision', r.review_queue.precision, 'sent to a person, and needed one'));
+  if (r.block) out.push(tile('Block precision', r.block.precision, 'blocked, and the answer key agrees'));
   out.push('<div class="tile"><div class="tile-label">Safeguard failures</div><div class="tile-value">' + r.safeguard_failures.records +
-    '</div><div class="tile-note">went through past a gate or floor</div></div>');
+    '</div><div class="tile-note">went out past the workflow\'s own confidence gate or floor</div></div>');
   return '<div class="tiles">' + out.join('') + '</div>';
 }
 
@@ -104,7 +111,7 @@ document.querySelectorAll('.chart').forEach(chart => {
     const d = data[Number(el.getAttribute('data-i'))];
     tip.replaceChildren();
     const v = document.createElement('strong'); v.textContent = d.accuracy + ' right (' + d.right + ')';
-    const s = document.createElement('div'); s.textContent = 'stated ' + d.stated + ' · 95% range ' + d.range;
+    const s = document.createElement('div'); s.textContent = 'stated ' + d.stated + ' · likely range ' + d.range;
     tip.append(v, s);
     const box = chart.getBoundingClientRect();
     const r = el.getBoundingClientRect();
@@ -184,6 +191,11 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .tooltip { position: absolute; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 13px; pointer-events: none; box-shadow: 0 4px 16px rgba(0,0,0,0.12); max-width: 260px; }
 .tooltip div { color: var(--ink-2); }
 .notes li { color: var(--ink-2); }
+.legend-title { margin: 12px 0 6px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.legend { display: grid; gap: 4px; margin: 4px 0 16px; font-size: 14px; }
+.legend div { display: flex; gap: 12px; align-items: baseline; }
+.legend dt { min-width: 190px; font: 13px ui-monospace, "Cascadia Mono", Consolas, monospace; }
+.legend dd { margin: 0; color: var(--ink-2); }
 @media (max-width: 560px) { .hero-value { font-size: 44px; } }
 `;
 
@@ -194,7 +206,7 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
 
   s.push('<h1>Workflow evaluation</h1>');
   s.push('<p class="meta">' + esc(results.inputs.predictions) + ' scored against ' + esc(results.inputs.key) + ' · ' + r.total + ' records · ' +
-    esc(results.inputs.mode) + ' mode · generated ' + esc(generatedAt) + '<br>A record needed a human if ' + esc(WRONG_WHEN[results.inputs.wrong_when]) + '.</p>');
+    esc(results.inputs.mode) + ' mode · generated ' + esc(generatedAt) + '<br>A record needed a person if ' + esc(WRONG_WHEN[results.inputs.wrong_when]) + '.</p>');
 
   // Headline
   const se = r.silent_errors;
@@ -204,30 +216,34 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
 
   // Silent errors
   s.push('<h2>Silent errors</h2>');
-  if (se.records.length === 0) s.push('<p>None of the records that went through needed a human.</p>');
+  if (se.records.length === 0) s.push('<p>None of the records that went out without review needed a person.</p>');
   else {
-    s.push(table(['Record', 'Severity', 'Types', 'Went', 'Should', 'What differed', 'Trap'], se.records.map(x => [
+    s.push('<p>Records that went out without review, but needed a person.</p>');
+    s.push(table(['Record', 'Severity', 'Types', 'Went', 'Answer key', 'What differed', 'Trap'], se.records.map(x => [
       '<code>' + esc(x.id) + '</code>', severity(x.severity), x.types.map(typeTag).join('<br>'), esc(x.route), esc(x.gold_route ?? ''),
       differences(x.differences) || '<span class="muted">values match</span>', x.traps.map(esc).join(', '),
     ])));
+    s.push(typeLegend(se.records));
   }
   if (r.silent_omissions) {
     s.push('<h3>Silent omissions</h3>');
-    s.push(r.silent_omissions.records.length === 0 ? '<p>None.</p>' : table(['Record', 'Severity', 'Type', 'Went', 'Should', 'Trap'], r.silent_omissions.records.map(x => [
+    s.push(r.silent_omissions.records.length === 0 ? '<p>None.</p>' : '<p>Records blocked or suppressed as duplicates that should have gone out or to a person. Nobody sees these either.</p>' + table(['Record', 'Severity', 'Type', 'Went', 'Answer key', 'Trap'], r.silent_omissions.records.map(x => [
       '<code>' + esc(x.id) + '</code>', severity(x.severity), x.types.map(typeTag).join('<br>'), esc(x.route), esc(x.gold_route), x.traps.map(esc).join(', '),
-    ])));
+    ])) + typeLegend(r.silent_omissions.records));
   }
   s.push('<h3>Safeguard failures</h3>');
   s.push(r.safeguard_failures.records === 0 ? '<p>None.</p>'
-    : '<p>Went through although a safeguard should have held them. Not counted in the silent error rate, but critical: each is a workflow bug to find, even when the content is right. ' +
-      'Find the branch that routed these records and why it skipped the check. If the key agrees with the record, the fix is a model that clears the threshold, not a lower threshold.</p>' +
+    : '<p>Went out without review although one of the safeguards built into the workflow should have held them. Not counted in the silent error rate, but critical: each is a workflow bug to find, even when the content is right. ' +
+      'Find the branch that routed these records and why it skipped the check. If the answer key agrees with the record, the fix is a model that clears the threshold, not a lower threshold.</p>' +
       table(['Record', 'Severity', 'Type'], r.safeguard_failures.detail.map(d => ['<code>' + esc(d.id) + '</code>', severity('critical'), d.types.map(typeTag).join(', ')])));
-  s.push('<p>Wasted reviews: ' + ids(r.review_queue.wasted) + (r.block ? ' · Wrongly blocked: ' + ids(r.block.wrongly_blocked) : '') + '</p>');
+  s.push('<p>Unnecessary reviews (sent to a person, but could have gone out): ' + ids(r.review_queue.wasted) + (r.block ? ' · Wrongly blocked: ' + ids(r.block.wrongly_blocked) : '') + '</p>');
 
   // Quality
   s.push('<h2>Output quality</h2>');
   const left = [...q.left_out.model_failed.map(i => esc(i) + ' (model failed)'), ...q.left_out.suppressed_duplicates.map(i => esc(i) + ' (suppressed duplicate)')];
-  s.push('<p>' + q.population + ' records' + (left.length ? '; left out: ' + left.join(', ') : '') + '. Only applied values count as predicted.</p>');
+  s.push('<p>' + q.population + ' records' + (left.length ? '; left out: ' + left.join(', ') : '') + '. <strong>Precision</strong>: of the values the workflow applied, the share the answer key lists. ' +
+    '<strong>Recall</strong>: of the values the answer key lists, the share the workflow applied. <strong>F1</strong> balances the two (1 is perfect). ' +
+    'A value the workflow found but set aside does not count as applied.</p>');
   const sets = Object.entries(q.outputs).filter(([, o]) => o.type === 'set');
   if (sets.length) {
     const rows = sets.map(([n, o]) => [esc(n), pct(o.precision), pct(o.recall), num(o.f1), pct(o.exact_match), o.tp + ' / ' + o.fp + ' / ' + o.fn]);
@@ -238,12 +254,12 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
     const labels = Object.keys(o.per_label);
     s.push('<h3>' + esc(n) + ': accuracy ' + pct(o.accuracy) + ' (' + cnt(o.accuracy) + ')</h3>');
     if (o.type === 'ordinal') {
-      const lean = o.mean_signed === null || o.mean_signed === 0 ? 'no lean' : o.mean_signed > 0 ? 'leans higher than the key' : 'leans lower than the key';
+      const lean = o.mean_signed === null || o.mean_signed === 0 ? 'no lean' : o.mean_signed > 0 ? 'leans higher than the answer key' : 'leans lower than the answer key';
       s.push('<p>Within one step: ' + pct(o.within_one) + ' · average distance ' + num(o.mean_distance, 2) + ' steps · closeness ' + num(o.closeness) +
         ' (1 is always exact) · ' + lean + ' (' + o.predicted_higher + ' higher, ' + o.predicted_lower + ' lower)' +
         (Object.keys(o.miss_distances).length ? ' · misses by distance: ' + Object.entries(o.miss_distances).map(([d, c]) => d + ': ' + c).join(', ') : '') + '</p>');
     }
-    s.push(table(['Key says', ...labels.map(l => 'predicted ' + esc(l)), 'Precision', 'Recall', 'F1'], labels.map(k => [
+    s.push(table(['Answer key says', ...labels.map(l => 'predicted ' + esc(l)), 'Precision', 'Recall', 'F1'], labels.map(k => [
       esc(k), ...labels.map(p => String(o.confusion[k][p])), pct(o.per_label[k].precision), pct(o.per_label[k].recall), num(o.per_label[k].f1),
     ]), labels.map((_, i) => i + 1).concat([labels.length + 1, labels.length + 2, labels.length + 3])));
   }
@@ -251,7 +267,8 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
   // Traps
   if (results.traps) {
     s.push('<h2>Per trap</h2>');
-    s.push(table(['Trap', 'Records', 'Routed right', 'Silent errors', 'Omissions', 'Wasted reviews'], results.traps.groups.map(g => [
+    s.push('<p>A trap is a record built to provoke one kind of mistake. Each row shows how the records of one trap were handled.</p>');
+    s.push(table(['Trap', 'Records', 'Routed right', 'Silent errors', 'Omissions', 'Unnecessary reviews'], results.traps.groups.map(g => [
       esc(g.trap), String(g.records.length), g.routed_correctly.d ? cnt(g.routed_correctly) : 'n/a', ids(g.silent_errors), ids(g.silent_omissions), ids(g.wasted_reviews),
     ]), [1, 2]));
     if (results.traps.coverage.below.length) s.push('<p>Below min_per_trap (' + results.traps.coverage.min_per_trap + '): ' + results.traps.coverage.below.map(b => esc(b.trap) + ' (' + b.records + ')').join(', ') + '</p>');
@@ -264,10 +281,10 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
   else {
     s.push('<p>Does a stated confidence mean what it says? ' + c.overall.n + ' claims, ' + (c.buckets === 'distinct' ? 'one group per stated value' : 'groups of ' + esc(c.buckets.replace('width ', ''))) +
       '. Average gap ' + num(c.overall.ece) + ' (0 is perfectly calibrated). The grey diagonal is where stated equals actual; ' +
-      'a dot above it was right more often than stated, below it less often. Each thin line is that dot\'s 95% range.' +
+      'a dot above it was right more often than stated, below it less often. Each thin line is the likely range (95%) for that dot.' +
       (c.overall.n < 100 ? ' With ' + c.overall.n + ' claims, read the ranges, not the dots.' : '') + '</p>');
     s.push('<section class="card">' + calibrationChart(c) + '</section>');
-    s.push(table(['Stated', 'Claims', 'Right', 'Accuracy', 'Gap', '95% range'], c.overall.buckets.map(b => [
+    s.push(table(['Stated', 'Claims', 'Right', 'Accuracy', 'Gap', 'Likely range'], c.overall.buckets.map(b => [
       b.from === b.to ? num(b.from, 2) : num(b.from, 2) + '–' + num(b.to, 2), String(b.n), String(b.correct), pct(b.accuracy), (b.gap > 0 ? '+' : '') + b.gap.toFixed(2), rng(b.accuracy),
     ]), [0, 1, 2, 3, 4, 5]));
     if (c.thresholds.length) {
@@ -279,9 +296,9 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
 
   // Every record
   s.push('<h2>Every record</h2>');
-  s.push(table(['Record', 'Went', 'Should', 'Needed a human', 'Outcome', 'Trap'], results.records.map(x => {
+  s.push(table(['Record', 'Went', 'Answer key', 'Needed a person', 'Outcome', 'Trap'], results.records.map(x => {
     const outcome = x.silent ? severity(x.silent.severity) + ' silent error' : x.omission ? severity(x.omission.severity) + ' silent omission'
-      : x.safeguards.length ? 'safeguard failure' : x.wasted_review ? 'wasted review' : '<span class="muted">ok</span>';
+      : x.safeguards.length ? 'safeguard failure' : x.wasted_review ? 'unnecessary review' : '<span class="muted">ok</span>';
     return ['<code>' + esc(x.id) + '</code>', esc(x.route), esc(x.gold_route ?? ''), x.needs_human ? 'yes' : 'no', outcome, x.traps.map(esc).join(', ')];
   })));
 

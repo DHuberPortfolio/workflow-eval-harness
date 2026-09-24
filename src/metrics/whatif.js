@@ -92,7 +92,7 @@ function gateSweep(records, config, { outputs = null, from = 0.5, to = 1, step =
     kind: 'gate',
     outputs: swept,
     assumption: config.whatif ? 'records marked movable by ' + config.whatif.movable_field
-      : 'no whatif.movable_field: every record that went through or was reviewed is assumed routed by the gate alone (an upper bound)',
+      : 'no whatif.movable_field: every record that went out without review or was sent to a person is assumed routed by the gate alone (an upper bound)',
     as_run: summarize(records, config, { threshold: null, current: false, moved_in: [], moved_out: [] }),
     rows,
     check,

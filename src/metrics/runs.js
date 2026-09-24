@@ -17,7 +17,7 @@ function metricList(results) {
     { name: 'straight-through', unit: 'points', get: r => exact(r.routing.straight_through) },
   ];
   if (results.routing.silent_omissions) list.push({ name: 'silent omissions', unit: 'points', get: r => exact(r.routing.silent_omissions.rate) });
-  list.push({ name: 'review-queue precision', unit: 'points', get: r => exact(r.routing.review_queue.precision) });
+  list.push({ name: 'review precision', unit: 'points', get: r => exact(r.routing.review_queue.precision) });
   if (results.routing.block) list.push({ name: 'block precision', unit: 'points', get: r => exact(r.routing.block.precision) });
   list.push({ name: 'safeguard failures', unit: 'records', get: r => r.routing.safeguard_failures.records });
   list.push({ name: 'model calls failed', unit: 'records', get: r => r.quality.left_out.model_failed.length });

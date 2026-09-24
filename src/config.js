@@ -175,7 +175,7 @@ function validateConfig(raw) {
     routing = { field, map: isObj(r.map) ? r.map : {}, gold_field: r.gold_field || null };
   }
 
-  // wrong_when: what decides that a record needed a human (so letting it through
+  // wrong_when: what decides that a record needed a person (so letting it through
   // was a silent error, and reviewing it was worth it).
   //   gold_route   - only the answer key's route. Right when the outputs are reasons
   //                  rather than published content (a compliance reviewer's violation codes).

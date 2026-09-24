@@ -6,7 +6,7 @@
 //                            Meaningless alone: sending everything through scores 100%.
 //   silent omissions       - of the records that should have gone through or to a person,
 //                            the share blocked or suppressed with nobody told.
-//   review-queue precision - of the records sent to a person, the share that needed one. A
+//   review precision - of the records sent to a person, the share that needed one. A
 //                            queue full of records nobody changes teaches reviewers to rubber-stamp.
 //   block precision        - of the records blocked, the share the key also blocks.
 //   safeguard failures     - records that went through although a safeguard (the confidence

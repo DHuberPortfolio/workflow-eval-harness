@@ -48,3 +48,10 @@ test('the chart data cannot close its own script tag', () => {
   const data = out.match(/class="chart-data">([^]*?)<\/script>/)[1];
   assert.doesNotMatch(data, /</);
 });
+
+test('every error type has a plain-language label, and the report explains the types it shows', () => {
+  const { ERROR_TYPES } = require('../src/config.js');
+  const { TYPE_LABELS } = require('../src/report/format.js');
+  assert.deepEqual(Object.keys(ERROR_TYPES).filter(t => !TYPE_LABELS[t]), []);
+  assert.match(html, /<dt><span class="type" title="went out, but should have gone to a person">SP-SHOULD-REVIEW<\/span><\/dt><dd>went out, but should have gone to a person<\/dd>/);
+});
