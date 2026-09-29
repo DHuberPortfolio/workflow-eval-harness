@@ -60,6 +60,37 @@ and both workflows on 500 records:
 [compliance reviewer](https://dhuberportfolio.github.io/workflow-eval-harness/samples/compliance-golden500.html),
 [metadata tagger](https://dhuberportfolio.github.io/workflow-eval-harness/samples/metadata-golden500.html).
 
+## Why a harness, if you already have a golden set?
+
+The golden set is the exam and its answer key; the harness is the grader. A golden set says
+nothing until something marks it, and the marking is where the two workflows above went wrong.
+
+1. **The workflow graded its own exam.** The compliance reviewer had a golden set and its own
+   scorecard, which reported a 100% catch rate because it counted "went out with a note" as
+   caught. The harness counted what actually happened: 30% of the copy that went out unseen
+   needed a person.
+2. **It counts the mistakes that matter.** In the metadata tagger's first 500-article run, 99%
+   of the tags it applied were correct, yet 27% of the articles it published without review
+   had an error. An average hides that; the silent error rate does not.
+3. **It says how far to trust a number.** "0 errors in 23" looked perfect; the real rate was
+   27%. Three identical runs gave 6.3%, 6.5% and 8.6%. Likely ranges and repeated runs tell a
+   real improvement from luck, and `compare` says whether a change is beyond noise.
+4. **It says why, not just how often.** The model had found the violations and understated its
+   confidence, so the fix was the prompt, not the threshold. 15 of 25 misses were award claims.
+   Regex rules, not the AI, caused most unnecessary reviews. A pass/fail count points at none
+   of that.
+5. **It answers "what if" for free.** Capping thresholds at 0.85 and sending award claims to a
+   person: 1.3%, computed from the recorded answers without running the workflow again.
+6. **It checks the answer key too.** It surfaced 9 real violations the compliance answer key
+   had missed, and it stops rather than count anything it cannot read correctly.
+7. **One yardstick for every workflow.** Each workflow's home-made scorecard measures in its own
+   way. The harness measures n8n, Zapier or custom-code workflows identically, on every change,
+   and `--fail-on` can stop a build that lets a serious error through.
+
+If a workflow never decides what goes out unseen, rarely changes, and all you need is how many
+it got right, a spreadsheet is enough. The harness earns its keep when a workflow decides what
+goes out without review, keeps changing, and has to be trusted.
+
 ## Try it
 
 Node 18.3 or later. No dependencies, no network, no API key.
