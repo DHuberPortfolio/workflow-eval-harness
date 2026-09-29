@@ -92,3 +92,18 @@ test('Golden 500, metadata: v3 below 10% in three identical runs, beyond the noi
   const v1 = scoreRun({ config: cfg, predPath: run(68), keyPath: run(68) });
   assert.deepEqual([v1.routing.silent_errors.rate.n, v1.routing.silent_errors.rate.d], [54, 200]);
 });
+
+test('Golden 500, metadata: the pooled v3 rate, and v1 articles missing a regulation or litigation subject', () => {
+  const G = path.join(dir, 'golden500');
+  const cfg = loadConfig(path.join(G, 'config.json'));
+  const run = n => path.join(G, 'exec-' + n + '.json');
+  // Pooled over the three v3 runs: counts added, never the three rates averaged (7.1%).
+  let n = 0, d = 0;
+  for (const r of [70, 71, 72]) { const s = scoreRun({ config: cfg, predPath: run(r), keyPath: run(r) }).routing.silent_errors.rate; n += s.n; d += s.d; }
+  assert.deepEqual([n, d, Number((100 * n / d).toFixed(1))], [44, 615, 7.2]);
+  // v1: count articles, not problems. B223 is missing both subjects.
+  const silent = scoreRun({ config: cfg, predPath: run(68), keyPath: run(68) }).records.filter(r => r.silent);
+  const missing = (r, code) => ['missing', 'missing_rejected'].some(b => ((r.differences[b] || {}).SUBJECT || []).includes(code));
+  assert.equal(silent.filter(r => missing(r, 'SUBJ-REG') || missing(r, 'SUBJ-LIT')).length, 36);
+  assert.deepEqual(silent.filter(r => missing(r, 'SUBJ-REG') && missing(r, 'SUBJ-LIT')).map(r => r.id), ['B223']);
+});

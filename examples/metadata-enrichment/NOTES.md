@@ -144,8 +144,9 @@ The workflow's own scorecard gives the same silent error rates.
   up to about 14%; on 500 articles v1's was 27% (likely 21.3-33.5%). A likely range covers the
   chance in which records a golden set happens to hold, not a golden set that leaves out the
   hard cases.
-- **v1's silent errors were mostly one gap**: 37 of 54 were a missing regulation (SUBJ-REG, 29)
-  or litigation (SUBJ-LIT, 8) subject beside the main one. The prompt told the model not to tag
+- **v1's silent errors were mostly one gap**: 36 of the 54 articles were missing a regulation
+  (SUBJ-REG, 29 articles) or litigation (SUBJ-LIT, 8) subject beside the main one; B223 was
+  missing both, so the two counts overlap by one. The prompt told the model not to tag
   broader terms, and those two are not broader terms of anything the model did tag, so the
   roll-up never added them. The v2 prompt fixed it: SUBJECT recall 82.8% to 94.7%.
 - **v3 is below 10% in every run**: pooled over its three runs, 44 of 615 (7.2%, likely

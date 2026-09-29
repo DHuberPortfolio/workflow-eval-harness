@@ -45,8 +45,8 @@ said still allowed a true rate up to 14%. On 500 articles it was **27%**. The sm
 not representative, and a likely range only covers chance, not an unrepresentative golden set.
 
 Two prompt fixes and a new guard (a tag the model proposed but set aside goes to an editor)
-brought it to **7.1% across three runs of identical code** (6.3%, 6.5%, 8.6%; pooled 44 of
-615, likely 5.4-9.5%), a drop beyond run-to-run noise. On the half of the articles the
+brought it to **7.2% across three runs of identical code** (44 of 615, likely 5.4-9.5%; the
+runs gave 6.3%, 6.5% and 8.6%), a drop beyond run-to-run noise. On the half of the articles the
 guard's threshold was not tuned on, it is 6.6%. The price: 41% of articles now go out without
 review, down from 47%, and more than half of the reviews are ones an editor did not need.
 ([notes](examples/metadata-enrichment/NOTES.md))
