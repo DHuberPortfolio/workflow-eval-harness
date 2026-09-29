@@ -18,8 +18,9 @@ It reviews law-firm advertising copy against attorney advertising rules, in two 
 | REVIEW_REQUIRED | a person reviews it | review |
 | BLOCK | a person signs off (the workflow's rule: "anything blocked or flagged, a person signs off") | review |
 
-The golden set is 40 documents built into the workflow: 26 with violations, 14 clean. The
-answer key gives each one's violation codes, and which layer should catch them
+Two golden sets: the first 40 documents, built into the workflow (26 with violations, 14
+clean), and the Golden 500 (243 with violations, 257 clean), which contains the 40. The answer
+key gives each document's violation codes, and which layer should catch them
 (`detectable_by`: deterministic, llm, both or none).
 
 ## How it is measured
@@ -52,11 +53,28 @@ node bin/wfeval.js variance --config examples/compliance-reviewer/config.json \
 | 56, 57, 58, 59 | prompt v2 (59 also writes the pass-with-notes log) | yes |
 | 60 | prompt v2, answer key v2 | no: one model call failed |
 
+**Golden 500.** A test copy of the workflow runs the same pipeline (prompt v2) on a
+500-document golden set held in an n8n data table: the original 40 (with key v2 folded in)
+and 460 more, 243 violations and 257 clean. Each document carries a one-sentence trap note
+and a label confidence (476 high, 24 medium). Every row's fingerprint was recorded when the
+answer key was frozen, and a run stops if any row has changed since.
+`golden500/exec-67.json` keeps the trap note and label confidence beside each result.
+
+```
+node bin/wfeval.js score --config examples/compliance-reviewer/config.json \
+  --pred examples/compliance-reviewer/golden500/exec-67.harness.json --key examples/compliance-reviewer/golden500/exec-67.harness.json
+```
+
+| Golden 500 run | Kept? |
+|---|---|
+| 65 | no: started together with a 500-article metadata run; 309 of 500 model calls failed (trap I6). The workflow now sends its model calls two at a time |
+| 67 | yes |
+
 ## What we found
 
 ### The model found the violations, then understated its confidence
 
-With prompt v1, on the current golden set:
+With prompt v1, on the first 40 documents:
 
 | | Notes go out without review (the workflow) | A person reads every note |
 |---|---|---|
@@ -73,6 +91,53 @@ With prompt v1, on the current golden set:
 - **The 14 clean documents drew no LLM finding in any run.** On this set the thresholds
   prevented no false alarm; they only set true findings aside. (0 of 14 is still consistent
   with a false alarm rate up to 21.5%.)
+
+### On 500 documents (run 67, prompt v2)
+
+| | 40 documents (runs 56-59) | 500 documents (run 67) |
+|---|---|---|
+| Silent error rate | 6.7% (1 of 15; likely 1.2-29.8%) | **9.8%** (25 of 256; likely 6.7-14.0%) |
+| Violations that reached a person | 25 of 26 | 218 of 243 (89.7%) |
+| Clean copy sent to a person anyway | 0 of 14 | 26 of 257 (10.1%) |
+| Review precision | 100% | 89.3% |
+| Straight-through | 37.5% | 51.2% |
+
+The 40-document figures sit inside their own likely ranges; the 500 show what was behind them.
+The workflow's own scorecard gives the same figures.
+
+- **Award claims are 15 of the 25 silent errors.** Of 31 documents with an award, rating or
+  list claim ("Named to the 2025 Super Lawyers list", "Rated 10.0 Superb on Avvo"), 15 went out
+  with only a note. The model states AWARD_CLAIM_REVIEW at 0.75 in 27 of its 36 findings and
+  never above 0.80, so on its own it holds none back; the 16 that reached a person got there
+  because a regex rule caught "Best" or "Top" in the award's name. E38 was the first sign; 31
+  documents make it a pattern.
+- **Comparisons and statistics at 0.85 against a 0.90 threshold** are most of the rest (6 of
+  25), all for Florida and New York clients.
+- **The model is more reliable than the thresholds assume.** On the 350 documents the regex
+  layer did not stop, when the model found nothing (211 documents) none was a violation, and
+  when its strongest finding was 0.85, 21 of 22 were.
+- **23 of the 26 unnecessary reviews come from the regex layer**, which cannot read context:
+  any dollar figure counts as a result, fees included (10); a board certification that names
+  its certifying body is flagged unless the words "certified by the" appear together (5); a
+  certified specialist with the body named, or "toxicology experts" who are opposing
+  witnesses, read as specialist claims (3); "We cannot guarantee" and "We don't promise
+  results" read as guarantees (3). The model caused 3.
+- **Of 112 hard negatives** (clean copy built to look like a violation), 18 were sent to a person.
+- **The LLM earns its cost**: of the 218 violations that reached a person, 91 were found by the
+  LLM alone.
+- **2 model calls failed** (0.4%); both went to a person, as designed.
+
+**What-if**: the model's findings are recorded, so the routes under another policy can be
+recomputed exactly, with no new run. Measured on the same 500 documents the policies would be
+tuned on, so a fresh run should confirm them:
+
+| Policy | Silent error rate | Unnecessary reviews |
+|---|---|---|
+| As run (client thresholds 0.80-0.90) | 9.8% (25 of 256) | 26 |
+| Cap every client's threshold at 0.85 | 7.2% (18 of 249) | 26 |
+| Award claims always go to a person | 4.1% (10 of 241) | 26 |
+| Both | **1.3%** (3 of 234) | 26 |
+| Every note goes to a person | 0% (0 of 211) | 46 |
 
 ### The answer key was missing violations
 
@@ -148,11 +213,18 @@ Every earlier version of the workflow is in its n8n version history.
 
 ## What's left
 
-- **E38, the award claim**, is the one remaining silent error: the model finds it at
-  0.65-0.75 against Florida's 0.90. Tuning the prompt for one of 40 documents would fit the
-  golden set rather than the problem; it needs more award-claim documents first.
-- **14 clean documents is a small base.** 0 false alarms in 14 still allows a real rate up to
-  21.5%. More clean copy, especially copy that is nearly a violation, would show whether
-  prompt v2 over-flags. (A larger golden set is being built.)
-- **Precision**: a prompt v3 could stop the model re-coding violations the regex layer
-  already names.
+- **Award claims** are now a clear pattern (31 documents, 15 silent errors), so fixing them no
+  longer means fitting one document: either the model's confidence for them, or a rule that
+  sends every award, rating or list claim to a person.
+- **The 0.90 thresholds** sit above where the model is reliable: its 0.85 findings were right
+  21 times out of 22. Capping thresholds at 0.85 plus an award rule would bring the silent error
+  rate to 1.3% on these 500 documents with no new unnecessary review (the what-if above); a
+  fresh run should confirm it.
+- **Four regex rules** cause 21 of the 26 unnecessary reviews: dollar figures that are fees,
+  certifications that name the certifying body, certified specialists and expert witnesses,
+  and denials of a guarantee.
+- **The answer key's own consistency**: E25 counts "Best decision I ever made" in a testimonial
+  as a superlative; G409 (with a disclaimer) does not. 24 labels are marked medium confidence,
+  and 7 of the 51 mistakes (25 silent errors, 26 unnecessary reviews) involve one of them.
+- **Precision**: a prompt v3 could stop the model re-coding violations the regex layer already
+  names.

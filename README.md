@@ -9,42 +9,56 @@ reach the outside world unseen; every other mistake was caught by a person or a 
 
 ## What it found in two real workflows
 
-Both are AI workflows built in n8n, each scored on its current golden set. The harness
-reads their exports through a config, the same way it reads a Zapier export, a script's log,
-an API response or a spreadsheet.
+Both are AI workflows built in n8n. Each was scored first on a small golden set, then on a
+500-record golden set built to cover its traps. The harness reads their exports through a
+config, the same way it reads a Zapier export, a script's log, an API response or a spreadsheet.
 
-**A compliance reviewer for law-firm advertising** (40 documents). A regex layer catches
-banned words; an LLM catches implied violations, and holds the copy for a person only when
-its confidence clears the client's threshold. Below the threshold, the finding becomes a
-note and the copy goes out without review. The workflow's own scorecard counted a note as a
-catch, and reported a 100% catch rate.
+**A compliance reviewer for law-firm advertising.** A regex layer catches banned words; an
+LLM catches implied violations, and holds the copy for a person only when its confidence
+clears the client's threshold. Below the threshold, the finding becomes a note and the copy
+goes out without review. The workflow's own scorecard counted a note as a catch, and
+reported a 100% catch rate.
 
-The harness counted what went out without review: 20 of the 40 documents, and **6 of them
-(30%) needed a person**; 22-30% across three runs of identical code. In every one, the model had found
-the violation and then stated its confidence below the threshold (0.55-0.85 against
-0.80-0.90). So the fix belonged in the model, not the threshold. A prompt change that anchors
-what each confidence level means brought it to **6.7% in all four runs**, a drop well beyond
-the old prompt's run-to-run noise: 5 routes fixed, none broken, no new false alarms on clean
-copy. The workflow's scorecard now reports the silent error rate too.
-([notes](examples/compliance-reviewer/NOTES.md))
+On its first 40 documents, the harness counted what went out without review: 20, and
+**6 of them (30%) needed a person**. In every one, the model had found the violation and then
+stated its confidence below the threshold. So the fix belonged in the model, not the
+threshold: a prompt that anchors what each confidence level means brought it to 6.7% in four
+runs out of four, a drop well beyond the old prompt's run-to-run noise. The workflow's
+scorecard now reports the silent error rate too.
 
-The same runs showed the answer key was incomplete. The new prompt named real violations
-the answer key had never listed, so it looked 10-20 points less precise than it was. The
-harness lists every value a model states in every run that the answer key lacks, for a
-person to rule on (the same mistake can repeat every run too); 9 of the 25 went into the
-answer key. ([review](examples/compliance-reviewer/KEY_GAPS.md))
+On 500 documents (243 violations; 257 clean, 112 of them built to look like violations) the
+silent error rate is **9.8%** (25 of 256; likely 6.7-14.0%), with 89.7% of violations reaching
+a person. The larger set shows where the rest is: 15 of the 25 silent errors are award claims
+("Named to Super Lawyers"), which the model rates 0.75 almost every time, under every client's
+threshold; and 23 of the 26 clean documents sent to a person anyway were flagged by regex
+rules that cannot read context (a fee counted as a result, "We cannot guarantee" read as a
+guarantee). ([notes](examples/compliance-reviewer/NOTES.md))
 
-**A news-metadata tagger** (24 articles, controlled-vocabulary codes on four facets). The
-harness reproduces the workflow's own scorecard figure for figure. Three fresh runs found 0
-silent errors in the 23 articles that went out without review, and the harness says what
-that is worth: a true rate up to 14% is still consistent with it, where one run's "0 of 7"
-allows up to 35%. ([notes](examples/metadata-enrichment/NOTES.md))
+The same runs showed the answer key was incomplete: the new prompt named real violations the
+answer key had never listed. The harness lists every value a model states in every run that
+the answer key lacks, for a person to rule on (the same mistake can repeat every run too).
+([review](examples/compliance-reviewer/KEY_GAPS.md))
+
+**A news-metadata tagger** (controlled-vocabulary codes on four facets). On 24 articles,
+three runs found 0 silent errors in the 23 that went out without review, which the harness
+said still allowed a true rate up to 14%. On 500 articles it was **27%**. The small set was
+not representative, and a likely range only covers chance, not an unrepresentative golden set.
+
+Two prompt fixes and a new guard (a tag the model proposed but set aside goes to an editor)
+brought it to **7.1% across three runs of identical code** (6.3%, 6.5%, 8.6%; pooled 44 of
+615, likely 5.4-9.5%), a drop beyond run-to-run noise. On the half of the articles the
+guard's threshold was not tuned on, it is 6.6%. The price: 41% of articles now go out without
+review, down from 47%, and more than half of the reviews are ones an editor did not need.
+([notes](examples/metadata-enrichment/NOTES.md))
 
 ![The HTML report for the compliance reviewer before its prompt fix: silent error rate 30.0%, six silent errors listed](docs/samples/compliance-before.png)
 
 Open the full reports, each one self-contained HTML file: the compliance reviewer
 [before](https://dhuberportfolio.github.io/workflow-eval-harness/samples/compliance-before.html) and
-[after](https://dhuberportfolio.github.io/workflow-eval-harness/samples/compliance-after.html) its prompt fix.
+[after](https://dhuberportfolio.github.io/workflow-eval-harness/samples/compliance-after.html) its prompt fix on 40 documents,
+and both workflows on 500 records:
+[compliance reviewer](https://dhuberportfolio.github.io/workflow-eval-harness/samples/compliance-golden500.html),
+[metadata tagger](https://dhuberportfolio.github.io/workflow-eval-harness/samples/metadata-golden500.html).
 
 ## Try it
 

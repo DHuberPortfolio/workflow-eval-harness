@@ -28,12 +28,15 @@ The guard's routing ladder, first match wins:
 | empty-required | a required facet came back empty | EDITOR_REVIEW | no; the floor can empty a facet |
 | completeness | a cue in the text (a regulator, a place name) has no matching code | EDITOR_REVIEW | no; the floor can leave a cued value unapplied |
 | salience | a secondary subject is below the subject gate | EDITOR_REVIEW | no; confidence decides it, but not the lead gate |
+| doubt (v3, Golden 500 copy) | the model proposed a code at 0.40 or more that the floor set aside | EDITOR_REVIEW | no |
 | gate | a required facet's strongest value is below its gate (SUBJECT 0.85, INDUSTRY 0.70) | EDITOR_REVIEW | **yes** |
 | auto | everything passed | AUTO_PUBLISH | **yes** |
 
-The golden set is 24 articles, each built as a trap (a sentence per article says what it
-tests). The answer key gives every article's correct codes on every facet, broader terms
-included.
+Two golden sets: the first 24 articles, built into the workflow, and the Golden 500 (the 24
+plus 476 more, 34 of them duplicates of another article), held in an n8n data table whose
+rows are fingerprinted so a run stops if the answer key changes. Each article is built as a
+trap (a sentence says what it tests). The answer key gives every article's correct codes on
+every facet, broader terms included, and for a duplicate, the article it repeats.
 
 ## How it is measured
 
@@ -48,6 +51,24 @@ included.
 |---|---|
 | `run49.json` | run 49, replayed from the showcase repo's saved run by `export-run49.js` through `adapter.js` |
 | `runs/exec-61.json` to `exec-63.json` | three fresh runs, saved from the workflow's Harness Export node by `save-run.js` |
+| `golden500/exec-68.json` to `exec-72.json` | the Golden 500 test copy of the workflow, saved the same way, with each duplicate's primary from the answer key added (`expected.duplicate_of`); scored with `golden500/config.json` |
+
+| Golden 500 run | Workflow version | Kept? |
+|---|---|---|
+| 66 | v1 | no: started together with a 500-document compliance run; 117 of 500 model calls failed (trap I6). The workflow now sends its model calls two at a time |
+| 68 | v1 (the demo's pipeline) | yes |
+| 69 | v2 prompt | yes |
+| 70, 71, 72 | v3 guard | yes: three runs of identical code |
+
+```
+node bin/wfeval.js variance --config examples/metadata-enrichment/golden500/config.json \
+  --key examples/metadata-enrichment/golden500/exec-70.json examples/metadata-enrichment/golden500/exec-7{0,1,2}.json
+node bin/wfeval.js compare --config examples/metadata-enrichment/golden500/config.json \
+  --key examples/metadata-enrichment/golden500/exec-70.json \
+  --before examples/metadata-enrichment/golden500/exec-69.json --after examples/metadata-enrichment/golden500/exec-71.json \
+  --noise examples/metadata-enrichment/golden500/exec-70.json --noise examples/metadata-enrichment/golden500/exec-71.json \
+  --noise examples/metadata-enrichment/golden500/exec-72.json
+```
 
 ```
 node bin/wfeval.js score --config examples/metadata-enrichment/config.json \
@@ -107,6 +128,49 @@ One at a time, about $0.33 each by the workflow's own estimate:
   (the same story from another outlet drew 0.40), and the salience check sends it to an
   editor every time. The same value in every run, and still not a gap (trap I7).
 
+### On 500 articles (Golden 500)
+
+| | 24 articles (61-63) | v1 (68) | v2 prompt (69) | v3 guard (70, 71, 72) |
+|---|---|---|---|---|
+| Silent error rate | 0 of 23 (likely up to ~14%) | **27.0%** (54 of 200) | 11.6% (27 of 233) | **6.5%, 6.3%, 8.6%** |
+| Straight-through | 29-33% | 40.0% | 46.6% | 39.8-42.0% |
+| Review precision | 86-93% | 61.7% | 47.4% | 40.8-44.0% |
+| SUBJECT recall | 71-76% | 82.8% | 94.7% | 95.2-95.8% |
+| Model calls failed | 0 | 0 | 5 | 1, 0, 1 |
+
+The workflow's own scorecard gives the same silent error rates.
+
+- **The 24 articles were not representative.** Their 0 silent errors in 23 allowed a true rate
+  up to about 14%; on 500 articles v1's was 27% (likely 21.3-33.5%). A likely range covers the
+  chance in which records a golden set happens to hold, not a golden set that leaves out the
+  hard cases.
+- **v1's silent errors were mostly one gap**: 37 of 54 were a missing regulation (SUBJ-REG, 29)
+  or litigation (SUBJ-LIT, 8) subject beside the main one. The prompt told the model not to tag
+  broader terms, and those two are not broader terms of anything the model did tag, so the
+  roll-up never added them. The v2 prompt fixed it: SUBJECT recall 82.8% to 94.7%.
+- **v3 is below 10% in every run**: pooled over its three runs, 44 of 615 (7.2%, likely
+  5.4-9.5%). Compared with v2 against the spread of the three identical runs, the drop is
+  beyond noise (5.3 points against a 2.3-point range).
+- **It holds on articles it was not tuned on.** The guard's 0.40 was chosen on the articles
+  whose id's CRC-32 is even, and checked on the rest. Pooled over v3's runs: 7.7% (24 of 312)
+  on the tuning half, 6.6% (20 of 303; likely 4.3-10.0%) on the held-out half. (The v2 prompt
+  fixes were written from v1's mistakes across all 500.)
+- **The price is reviews.** v3 sends 21-27 articles per run to an editor on the new rung, about
+  half of which needed one; straight-through falls from 46.6% to about 41%. Across the ladder,
+  148-154 of v3's 256-268 reviews are ones the answer key says an editor did not need: the
+  confidence gate (43-49), the salience check (35-38), the completeness check (28), empty
+  required facets (21-24, which go to an editor by design as possible taxonomy gaps), and the
+  new rung (11-15).
+- **The confidence gate is now a mild trade-off.** On run 70, lowering the INDUSTRY gate from
+  0.70 to 0.60 would let 25 more articles go out, 3 of them silent errors (6.5% to 7.1%);
+  raising it to 0.80 would send 48 more to an editor to catch 4.
+- **Duplicates are handled almost perfectly**: every run suppressed 33-34 of the 34 duplicates
+  and never suppressed a real article, and the harness finds no wrong copy kept (SP-WRONG-PRIMARY)
+  and no primary suppressed (SO-PRIMARY-SUPPRESSED). The only misses, B224 in runs 69 and 70,
+  had a failed model call and went to a specialist, which the routing ladder checks first.
+- **5 articles are silent errors in all three v3 runs** (B299, B413, B424, B427, B460); 22 more
+  in some runs only.
+
 ## What we changed
 
 ### Harness Export node (2026-09-23)
@@ -114,22 +178,36 @@ One at a time, about $0.33 each by the workflow's own estimate:
 A side branch after the guard emits each article already in the harness's shape: the same
 translation as `adapter.js`, plus the routing branch and the article's trap sentence. The
 guard's own items carry the whole vocabulary, which made a run slow to pull; the export is
-about 15 KB per run.
+about 15 KB per 24-article run.
+
+### Golden 500 test copy (2026-09-29)
+
+In a test copy of the workflow, scored on the Golden 500; the demo workflow is unchanged.
+
+- **Model calls two at a time**, two seconds apart. Two 500-record runs at once hit the
+  account's concurrency limit, and because the request node never raises an error, a refused
+  call was not retried: it failed safe to a person (run 66).
+- **v2 prompt**: the rule against tagging broader terms now says what a broader term is, and
+  two new rules say when a regulation (SUBJ-REG) or litigation (SUBJ-LIT) subject is tagged
+  beside the main one. The company note for Elevance (formerly Anthem) says it is filed under
+  both health and insurance; without it the model set IND-HEALTH aside.
+- **v3 guard**: a new rung on the routing ladder, after salience, sends an article to an editor
+  when the model proposed a code at 0.40 or more that the 0.60 floor set aside. In v2, 13 of
+  the 27 silent errors were codes of that kind. The 0.40 was chosen on half the articles and
+  checked on the other half (above).
 
 ## What's left
 
-- **A04's unnecessary review** is the INDUSTRY gate holding back a correct tag. Lowering the
-  gate is not a free fix: at 0.60, A21 would go out wrong.
-- **SUBJECT recall (70.7-75.6%)** is the weak facet: the model under-proposes regulator
-  codes (SUBJ-REG), and the completeness check is catching them for it. The workflow's own
-  run brief named A09, A12, A20 and A24.
+- **Reviews**: more than half of v3's reviews are ones an editor did not need. The confidence
+  gate and the salience check send the most; the gate's trade-off is measured above.
+- **5 articles are silent errors in every v3 run** (B299, B413, B424, B427, B460): the next
+  place to look.
 - **Per-trap results** need short trap categories in the answer key (`trap_types: [...]`)
   beside the trap sentence, which is prose.
-- **24 articles is a small base.** A larger golden set is being built.
-- **Other suggested workflow changes**: the guard emits its routing branch itself (today the
-  export derives it from the reason's wording); rejected values keep their evidence; the
-  answer key carries each article's correct route and, for duplicates, its primary, so silent
-  omissions and route types can be measured.
+- **A correct route per article** in the answer key would let silent omissions and route types
+  be measured; duplicates are now measured through `duplicate_of`.
+- **The guard should emit its routing branch itself**: the export derives it from the reason's
+  wording, so a reworded reason stops the run.
 - **The floor what-if** re-admits or sets aside values, but does not re-apply this workflow's
   cap of 4 proposed values per facet or re-add broader terms. Articles whose route could depend
   on those are marked "needs replay" rather than guessed.

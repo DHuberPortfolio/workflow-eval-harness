@@ -66,3 +66,29 @@ test('runs 61-63: identical code, the numbers that moved and the one value state
   assert.deepEqual(v.records.key_gap_candidates.filter(g => g.runs === g.of).map(g => [g.id, g.value]), [['A01', 'SUBJ-ANTI']]);
   assert.deepEqual(v.problems, []);
 });
+
+// Real data: both workflows on their 500-record golden sets. These pin the figures the README
+// and the example notes publish.
+test('Golden 500, compliance run 67: 25 silent errors in 256, 15 of them award claims', () => {
+  const C = path.join(__dirname, '..', 'examples', 'compliance-reviewer');
+  const run = path.join(C, 'golden500', 'exec-67.harness.json');
+  const r = scoreRun({ config: loadConfig(path.join(C, 'config.json')), predPath: run, keyPath: run });
+  assert.deepEqual([r.routing.silent_errors.rate.n, r.routing.silent_errors.rate.d], [25, 256]);
+  assert.deepEqual([r.routing.silent_errors.rate.low_pct, r.routing.silent_errors.rate.high_pct], [6.7, 14]);
+  assert.equal(r.routing.review_queue.wasted.length, 26);
+  const award = r.records.filter(x => x.silent && (x.differences.missing_rejected.violations || []).includes('AWARD_CLAIM_REVIEW'));
+  assert.equal(award.length, 15);
+});
+
+test('Golden 500, metadata: v3 below 10% in three identical runs, beyond the noise of v2', () => {
+  const { varianceRun, compareRun } = require('../src/score.js');
+  const G = path.join(dir, 'golden500');
+  const cfg = loadConfig(path.join(G, 'config.json'));
+  const run = n => path.join(G, 'exec-' + n + '.json');
+  const v = varianceRun({ config: cfg, keyPath: run(70), predPaths: [run(70), run(71), run(72)] });
+  assert.deepEqual(v.metrics.find(m => m.name === 'silent error rate').values, [6.5, 6.3, 8.6]);
+  const c = compareRun({ config: cfg, keyPath: run(70), beforePath: run(69), afterPath: run(71), noisePaths: [run(70), run(71), run(72)] });
+  assert.equal(c.metrics.find(m => m.name === 'silent error rate').verdict, 'beyond noise');
+  const v1 = scoreRun({ config: cfg, predPath: run(68), keyPath: run(68) });
+  assert.deepEqual([v1.routing.silent_errors.rate.n, v1.routing.silent_errors.rate.d], [54, 200]);
+});

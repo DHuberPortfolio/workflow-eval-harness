@@ -43,6 +43,11 @@ jobs:
           node bin/wfeval.js score --config $M/config.json --pred $M/run49.json --key $M/run49.json
           node bin/wfeval.js variance --config $M/config.json --key $M/runs/exec-61.json $M/runs/exec-6{1,2,3}.json
           node bin/wfeval.js whatif --config $M/config.json --pred $M/run49.json --key $M/run49.json --gate
+          node bin/wfeval.js score --config $C/config.json --pred $C/golden500/exec-67.harness.json --key $C/golden500/exec-67.harness.json
+          G=$M/golden500
+          node bin/wfeval.js variance --config $G/config.json --key $G/exec-70.json $G/exec-7{0,1,2}.json
+          node bin/wfeval.js compare --config $G/config.json --key $G/exec-70.json --before $G/exec-69.json --after $G/exec-71.json \
+            --noise $G/exec-70.json --noise $G/exec-71.json --noise $G/exec-72.json
       - name: --fail-on stops a build with a high-severity silent error
         shell: bash
         run: |

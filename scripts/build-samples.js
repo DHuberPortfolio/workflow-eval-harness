@@ -1,6 +1,8 @@
-// Rebuilds the sample reports in docs/samples/ from the compliance reviewer's real runs:
-// one before its prompt fix (run 50, prompt v1) and one after (run 59, prompt v2), both
-// scored against answer key v2.
+// Rebuilds the sample reports in docs/samples/ from real runs:
+//   - the compliance reviewer before its prompt fix (run 50, prompt v1) and after (run 59,
+//     prompt v2), on its 40-document golden set, scored against answer key v2
+//   - both workflows on their 500-record golden sets: the compliance reviewer's run 67, and
+//     the metadata tagger's run 70 (the middle of its three runs of the current version)
 //
 //   node scripts/build-samples.js
 //
@@ -15,17 +17,18 @@ const { renderHtml } = require('../src/report/html.js');
 
 process.chdir(path.join(__dirname, '..'));   // so the file paths printed in the reports match everywhere
 
-const GENERATED = '2026-09-23T00:00:00.000Z';
-const E = 'examples/compliance-reviewer';
+const C = 'examples/compliance-reviewer';
+const M = 'examples/metadata-enrichment/golden500';
 const SAMPLES = [
-  { file: 'compliance-before.html', pred: E + '/runs/exec-50.harness.json' },
-  { file: 'compliance-after.html', pred: E + '/runs/exec-59.harness.json' },
+  { file: 'compliance-before.html', config: C + '/config.json', pred: C + '/runs/exec-50.harness.json', key: C + '/key.json', generated: '2026-09-23T00:00:00.000Z' },
+  { file: 'compliance-after.html', config: C + '/config.json', pred: C + '/runs/exec-59.harness.json', key: C + '/key.json', generated: '2026-09-23T00:00:00.000Z' },
+  { file: 'compliance-golden500.html', config: C + '/config.json', pred: C + '/golden500/exec-67.harness.json', key: C + '/golden500/exec-67.harness.json', generated: '2026-09-29T00:00:00.000Z' },
+  { file: 'metadata-golden500.html', config: M + '/config.json', pred: M + '/exec-70.json', key: M + '/exec-70.json', generated: '2026-09-29T00:00:00.000Z' },
 ];
 
-const config = loadConfig(E + '/config.json');
 fs.mkdirSync('docs/samples', { recursive: true });
 for (const s of SAMPLES) {
-  const results = scoreRun({ config, predPath: s.pred, keyPath: E + '/key.json' });
-  fs.writeFileSync('docs/samples/' + s.file, renderHtml(results, GENERATED));
+  const results = scoreRun({ config: loadConfig(s.config), predPath: s.pred, keyPath: s.key });
+  fs.writeFileSync('docs/samples/' + s.file, renderHtml(results, s.generated));
   console.log('wrote docs/samples/' + s.file);
 }
