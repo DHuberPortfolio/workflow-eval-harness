@@ -1,0 +1,12 @@
+[
+  { "id": "L1",  "url": "/results",     "category": "case_results" },
+  { "id": "L2",  "url": "/attorneys",   "category": "attorneys" },
+  { "id": "L3",  "url": "/recognition", "category": "awards" },
+  { "id": "L4",  "url": "/contact",     "category": "none" },
+  { "id": "L5",  "url": "/blog",        "category": "news" },
+  { "id": "L6",  "url": "/about",       "category": "none" },
+  { "id": "L7",  "url": "/verdicts",    "category": "case_results" },
+  { "id": "L8",  "url": "/press",       "category": "news" },
+  { "id": "L9",  "url": "/privacy",     "category": "none" },
+  { "id": "L10", "url": "/team",        "category": "attorneys" }
+]
