@@ -1,0 +1,129 @@
+{
+  "format": "wfeval-grades/1",
+  "title": "Assessment form v1: three synthetic visits",
+  "fingerprint": "sha256:5258ec52fe7604a62b99d572c51f3274dc183ac50c7b7e51820c7e06c7b83500",
+  "reviewer": "Reviewer A",
+  "saved_at": "2026-10-15T10:00:00.000Z",
+  "fields": [
+    {
+      "name": "type",
+      "section": "Is this a"
+    },
+    {
+      "name": "reason",
+      "section": "Reason for contacting"
+    },
+    {
+      "name": "enjoyed",
+      "section": "Unique strengths"
+    },
+    {
+      "name": "independence",
+      "section": "Unique strengths"
+    },
+    {
+      "name": "manage_now",
+      "section": "Unique strengths"
+    }
+  ],
+  "kinds": [
+    "figure altered",
+    "contradiction smoothed over",
+    "inferred a diagnosis, risk or eligibility",
+    "also leaves something out"
+  ],
+  "forms": [
+    "V1",
+    "V2",
+    "V3"
+  ],
+  "grades": [
+    {
+      "form": "V1",
+      "field": "type",
+      "grade": "faithful"
+    },
+    {
+      "form": "V1",
+      "field": "reason",
+      "grade": "invented",
+      "kinds": [
+        "figure altered"
+      ],
+      "note": "Adds a lunch visit (13:00, 15 minutes); he asked for two visits, morning and tea time. Copied from the template's example."
+    },
+    {
+      "form": "V1",
+      "field": "enjoyed",
+      "grade": "faithful"
+    },
+    {
+      "form": "V1",
+      "field": "independence",
+      "grade": "faithful"
+    },
+    {
+      "form": "V1",
+      "field": "manage_now",
+      "grade": "missing",
+      "note": "Leaves out that Joan has to help him with his socks."
+    },
+    {
+      "form": "V2",
+      "field": "type",
+      "grade": "faithful"
+    },
+    {
+      "form": "V2",
+      "field": "reason",
+      "grade": "invented",
+      "kinds": [
+        "contradiction smoothed over",
+        "also leaves something out"
+      ],
+      "note": "States the daughter's account as fact; Mrs Okafor said she eats fine and only dislikes the frozen dinners."
+    },
+    {
+      "form": "V2",
+      "field": "enjoyed",
+      "grade": "invented",
+      "note": "Says she was a nurse. She worked in the hospital canteen."
+    },
+    {
+      "form": "V2",
+      "field": "independence",
+      "grade": "faithful"
+    },
+    {
+      "form": "V2",
+      "field": "manage_now",
+      "grade": "faithful"
+    },
+    {
+      "form": "V3",
+      "field": "type",
+      "grade": "faithful"
+    },
+    {
+      "form": "V3",
+      "field": "reason",
+      "grade": "faithful"
+    },
+    {
+      "form": "V3",
+      "field": "enjoyed",
+      "grade": "faithful"
+    },
+    {
+      "form": "V3",
+      "field": "independence",
+      "grade": "missing",
+      "note": "Leaves out that he looked after his grandchildren every day after school."
+    },
+    {
+      "form": "V3",
+      "field": "manage_now",
+      "grade": "faithful"
+    }
+  ]
+}

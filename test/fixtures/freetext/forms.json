@@ -1,0 +1,35 @@
+[
+  {
+    "id": "V1",
+    "transcript": "Practitioner: This is your initial assessment, Mr Bennett. Can you tell me what happened?\nMr Bennett: I'm 82. I fell in the kitchen on the 3rd of March and ended up on ward 7 at the General for a week.\nJoan (wife): We've been married 54 years. I can't lift him any more.\nPractitioner: What support would help now you're home?\nMr Bennett: Two visits a day. A morning one around nine, half an hour, and one at tea time, about half five, fifteen minutes.\nPractitioner: What did you enjoy doing before?\nMr Bennett: I was a joiner for forty years. I still like making bird boxes in the shed.\nPractitioner: And before the fall, how did you manage?\nMr Bennett: I drove us to the shops every week and did all the garden myself.\nPractitioner: What can you do now?\nMr Bennett: I can get about the house with my frame and make my own breakfast. Joan has to help me with my socks.",
+    "form": {
+      "type": "Initial Assessment",
+      "reason": "Mr Bennett is 82 and lives with his wife Joan; they have been married 54 years. He fell in the kitchen on 3 March and was admitted to ward 7 at the General for a week. Joan reports she can no longer lift him.\n\nTimes requested as followed -\n\nMorning visit - Around 9am (30 minute visit)\nLunch visit - Around 13:00pm (15 minute visit)\nTea visit - Around 17:30pm (15 minutes)",
+      "enjoyed": "I was a joiner for forty years. I still like making bird boxes in the shed.",
+      "independence": "I drove us to the shops every week and did all the garden myself.",
+      "manage_now": "I can get about the house with my frame and make my own breakfast."
+    }
+  },
+  {
+    "id": "V2",
+    "transcript": "Practitioner: This is a review of your package of care, Mrs Okafor.\nDaughter: Mum isn't eating properly. Half her meals come back.\nMrs Okafor: That's not true, I eat fine. I just don't like the frozen dinners.\nPractitioner: What did you enjoy doing, what skills do you have?\nMrs Okafor: I worked in the hospital canteen for twenty years. I love cooking for the family.\nPractitioner: How independent were you before?\nMrs Okafor: I did everything myself, the cooking, the cleaning, the bus into town.\nPractitioner: And now?\nMrs Okafor: I can wash and dress myself if I take my time. My daughter does the shopping.",
+    "form": {
+      "type": "Review",
+      "reason": "Mrs Okafor's package of care was reviewed. Mrs Okafor is not eating well, and half of her meals are returned.",
+      "enjoyed": "I was a nurse for twenty years. I love cooking for the family.",
+      "independence": "I did everything myself, the cooking, the cleaning, the bus into town.",
+      "manage_now": "I can wash and dress myself if I take my time. My daughter does the shopping."
+    }
+  },
+  {
+    "id": "V3",
+    "transcript": "Practitioner: This is an initial assessment. What made you get in touch, Mr Price?\nMr Price: My breathing has got worse and the stairs are hard now.\nPractitioner: What did you enjoy, what skills do you have?\nMr Price: I sang in the male voice choir for thirty years.\nPractitioner: How did you manage before?\nMr Price: I looked after my grandchildren every day after school, and I walked the dog twice a day.\nPractitioner: What can you do now?\nMr Price: I can still walk to the end of the road with a rest. My son brings my shopping.",
+    "form": {
+      "type": "Initial Assessment",
+      "reason": "Mr Price got in touch because his breathing has got worse and he now finds the stairs hard.",
+      "enjoyed": "I sang in the male voice choir for thirty years.",
+      "independence": "I walked the dog twice a day.",
+      "manage_now": "I can still walk to the end of the road with a rest. My son brings my shopping."
+    }
+  }
+]
