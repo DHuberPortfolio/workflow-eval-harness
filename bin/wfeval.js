@@ -92,6 +92,11 @@ function check(args) {
     if (bits.length) console.log('  input       ' + which + ': ' + bits.join(', '));
   }
   console.log('  outputs     ' + outs);
+  for (const [n, o] of Object.entries(c.outputs).filter(([, x]) => x.decline)) {
+    const how = [o.decline.values.length ? 'value ' + o.decline.values.join(' or ') : null, o.decline.field ? 'field "' + o.decline.field + '" true' : null].filter(Boolean);
+    console.log('  declines    ' + n + ' declined when ' + how.join(', or ') +
+      (o.decline.values.length ? '; in the answer key, ' + o.decline.values.join(' or ') + ' means declining is correct' : '; the answer key cannot say to decline'));
+  }
   console.log('  routing     ' + routes);
   console.log('  wrong when  ' + c.wrong_when);
   console.log('  traps       ' + (c.trap_field ? 'read from key field "' + c.trap_field + '"' : 'not set'));

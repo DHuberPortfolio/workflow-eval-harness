@@ -122,6 +122,19 @@ Nothing is specific to a platform; where things are is declared in the config's
 | F3 | Label missing on a prediction | No verdict was made | STOP |
 | F4 | Label missing on the key | No right answer | STOP |
 
+**Declines** (`outputs.<name>.decline`: the workflow may decline to answer)
+
+| # | Trap | Why it's dangerous | Action |
+|---|---|---|---|
+| F5 | A decline value that is also a label, or a label spelled `(declined)` (what the harness reads a decline as) | One value would mean both "this answer" and "no answer" | STOP (config error) |
+| F6 | Label missing on a prediction, in a config with declines | Reading "nothing" as "declined" is a guess: it may be a crash or an export bug | RULE: still F3 (STOP) unless the decline field is `true`; a missing label is never a decline by default |
+| F7 | Decline field as text: `"declined": "false"` | The text "false" counts as true in JavaScript, so every record would read as declined | STOP |
+| F8 | A decline counted as a wrong label, or dropped from the counts | As wrong, a workflow that declines honestly looks worse than one that guesses; dropped, a workflow that declines everything hard looks perfect | RULE: accuracy is on what was answered, and coverage, the decline rate, unnecessary declines and answers that should have been declines are always reported beside it. Per label, a decline is a miss for recall and never a false positive. Calibration leaves declines out (they claim nothing) |
+| F9 | A label beside a decline field that is `true` (`"category": "news", "declined": true`) | Is it an answer or not? | RULE: declined; the label is kept as "set aside" for the report and never counted as an answer |
+| F10 | Decline value with different case or spaces: `"None "` | Same as F1 | FIX spaces; case is STOP with "did you mean" |
+| F11 | "Answers that should have been declines" when the answer key cannot say decline (only `decline.field`, no `decline.values`) | 0% would claim the workflow never answers when it should not | RULE: "not measured", never 0 |
+| F12 | Declines without a correct route: the silent omission rate has no "should have gone out" to count against | A rate with a guessed denominator | RULE: without `routing.gold_field`, only SO-DECLINED is counted, out of the records whose key has an answer for a declining output; every other omission type is "not measured" |
+
 ## G. Arithmetic (metric code, Day 1-2)
 
 | # | Trap | Why it's dangerous | Action |

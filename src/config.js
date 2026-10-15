@@ -16,14 +16,17 @@ const DELIMITERS = [',', ';', '\t', '|'];
 const TOP_LEVEL_KEYS = ['id_field', 'input', 'outputs', 'routing', 'wrong_when', 'thresholds', 'trap_field',
   'duplicate_of_field', 'allowed_values', 'severity', 'min_per_trap', 'calibration', 'whatif'];
 const SEVERITIES = ['critical', 'high', 'medium', 'low'];
+// What a declined label is read as on both sides (see outputs.<name>.decline below). In
+// parentheses so it can never be mistaken for a real label; no label may be this text.
+const DECLINED = '(declined)';
 // Every silent error type (docs/SILENT_ERRORS.md) and its default severity.
 const ERROR_TYPES = {
-  'SP-FORBIDDEN': 'critical', 'SP-INVALID': 'critical', 'SP-WRONG': 'high', 'SP-SHOULD-REVIEW': 'medium',
-  'SP-MISSING-REJECTED': 'medium', 'SP-MISSING': 'medium', 'SP-WRONG-PRIMARY': 'medium', 'SP-DUPLICATE': 'low',
-  'SO-FALSE-DUPLICATE': 'high', 'SO-PRIMARY-SUPPRESSED': 'medium', 'SO-FALSE-BLOCK': 'medium',
+  'SP-FORBIDDEN': 'critical', 'SP-INVALID': 'critical', 'SP-WRONG': 'high', 'SP-SHOULD-DECLINE': 'high', 'SP-SHOULD-REVIEW': 'medium',
+  'SP-MISSING-REJECTED': 'medium', 'SP-MISSING': 'medium', 'SP-DECLINED': 'medium', 'SP-WRONG-PRIMARY': 'medium', 'SP-DUPLICATE': 'low',
+  'SO-FALSE-DUPLICATE': 'high', 'SO-PRIMARY-SUPPRESSED': 'medium', 'SO-FALSE-BLOCK': 'medium', 'SO-DECLINED': 'medium',
   'SG-GATE': 'critical', 'SG-FLOOR': 'critical', 'SP-NEAR-MISS': 'low',
 };
-const OUTPUT_KEYS = ['type', 'field', 'key_field', 'labels', 'value_key', 'confidence_key', 'rejected_field', 'confidence_field', 'near_miss_steps'];
+const OUTPUT_KEYS = ['type', 'field', 'key_field', 'labels', 'value_key', 'confidence_key', 'rejected_field', 'confidence_field', 'near_miss_steps', 'decline'];
 const INPUT_KEYS = ['format', 'records_at', 'unwrap', 'delimiter', 'list_separator', 'confidence_separator'];
 
 const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -33,6 +36,34 @@ const isProb = v => typeof v === 'number' && v >= 0 && v <= 1;
 // "subject" field inside the "output" field.
 const isPath = v => isName(v) && v.split('.').every(part => part.length > 0);
 const PATH_RULE = 'must be a field name, or a dotted path like "output.subject"';
+
+// outputs.<name>.decline: which value or field means the workflow declined to answer.
+// Only single labels: an ordinal's distance and a set's values have no clean place for "no
+// answer" (an empty set is already a real answer, trap D14). Not on the output that is also
+// the route: the route map already says what each of its values does.
+function validateDecline(d, o, name, at, rawRouting, errors) {
+  at += '.decline';
+  if (o.type !== 'label') { errors.push(at + ' only applies to type "label"'); return null; }
+  if (!isObj(d) || Object.keys(d).length === 0) { errors.push(at + ' must be { "values": [...], "field": "..." } (either or both)'); return null; }
+  for (const k of Object.keys(d)) if (k !== 'values' && k !== 'field') errors.push('unknown key "' + at + '.' + k + '" (allowed: values, field)');
+  let values = [];
+  if (d.values !== undefined) {
+    if (!Array.isArray(d.values) || d.values.length === 0 || !d.values.every(isName)) errors.push(at + '.values must be a list of label values, such as ["none"]');
+    else {
+      values = d.values;
+      const labels = Array.isArray(o.labels) ? o.labels.map(String) : [];
+      for (const v of values) {
+        // One value cannot mean both "this category" and "no category".
+        if (labels.includes(v)) errors.push(at + '.values: "' + v + '" is also in ' + 'outputs.' + name + '.labels; a value cannot be an answer and a decline');
+        if (v === DECLINED) errors.push(at + '.values must not include "' + DECLINED + '"');
+      }
+    }
+  }
+  if (d.field !== undefined && !isPath(d.field)) errors.push(at + '.field ' + PATH_RULE);
+  const routeField = isObj(rawRouting) ? (rawRouting.field === undefined ? 'route' : rawRouting.field) : null;
+  if ((o.field || name) === routeField) errors.push(at + ': ' + 'outputs.' + name + ' is also the route (routing.field), and routing.map already says what each of its values does');
+  return { values, field: d.field === undefined ? null : d.field };
+}
 
 function validateConfig(raw) {
   const errors = [];
@@ -103,6 +134,14 @@ function validateConfig(raw) {
   //                    "confidence" column next to a "verdict" column
   //   near_miss_steps - (ordinal) a miss by this many steps or fewer is a near miss: its own,
   //                    low-severity error type (SP-NEAR-MISS). Default 1; 0 makes every miss a full miss.
+  //   decline        - (labels) the workflow may decline to answer, and a decline is its own
+  //                    outcome: neither a wrong label nor left out of the counts.
+  //                    { "values": ["none"], "field": "declined" }, either or both:
+  //                      values - label values that mean "declined". In the answer key, one of
+  //                               them means declining is the correct outcome.
+  //                      field  - a prediction field that is true when the workflow declined,
+  //                               whatever label sits beside it (the label it set aside is kept
+  //                               for the report, never counted as an answer).
   const outputs = {};
   if (!isObj(raw.outputs) || Object.keys(raw.outputs).length === 0) {
     errors.push('outputs must be an object with at least one entry');
@@ -133,10 +172,13 @@ function validateConfig(raw) {
       if (o.type === 'label' || o.type === 'ordinal') {
         if (!Array.isArray(o.labels) || o.labels.length < 2 || !o.labels.every(l => isName(l) || Number.isFinite(l))) {
           errors.push(at + '.labels must list at least two label names');
+        } else if (o.labels.map(String).includes(DECLINED)) {
+          errors.push(at + '.labels must not include "' + DECLINED + '": the harness uses it for a declined label');
         }
       } else if (o.labels !== undefined) {
         errors.push(at + '.labels only applies to type "label" or "ordinal"');
       }
+      const decline = o.decline === undefined ? null : validateDecline(o.decline, o, name, at, raw.routing, errors);
       const field = o.field || name;
       outputs[name] = {
         type: o.type,
@@ -148,6 +190,7 @@ function validateConfig(raw) {
         confidence_key: o.confidence_key || 'confidence',
         rejected_field: o.rejected_field || null,
         confidence_field: o.confidence_field || null,
+        decline,
       };
     }
   }
@@ -350,4 +393,4 @@ function loadConfig(configPath) {
   return resolveAllowedValues(config, configPath);
 }
 
-module.exports = { validateConfig, loadConfig, ROUTE_CLASSES, ERROR_TYPES, SEVERITIES };
+module.exports = { validateConfig, loadConfig, ROUTE_CLASSES, ERROR_TYPES, SEVERITIES, DECLINED };

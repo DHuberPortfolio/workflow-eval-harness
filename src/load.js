@@ -23,6 +23,7 @@ const nodePath = require('path');
 const { problems } = require('./problems.js');
 const { csvToRecords, decodeCsvRecords } = require('./csv.js');
 const { align } = require('./align.js');
+const { DECLINED } = require('./config.js');
 
 const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const describe = v => (v === null ? 'null' : v === undefined ? 'nothing' : Array.isArray(v) ? 'a list'
@@ -250,8 +251,26 @@ function readSet(raw, name, o, where, p, isKey, gated) {
 
 // Reads a label output: exactly one value from the declared list (F1-F4).
 // extConf: the confidence from a separate field (confidence_field), if the config has one.
-function readLabel(raw, name, o, where, p, isKey, gated, extConf) {
-  if (raw === undefined || raw === null) { p.stop(isKey ? 'F4' : 'F3', where, name + ' has no label'); return null; }
+// extDeclined: the prediction's decline field (outputs.<name>.decline.field), if the config has one.
+//
+// A declined label (decline.values, or the decline field set to true) comes back as
+// { value: DECLINED, declined: true, set_aside, confidence, applied: false } on predictions,
+// and as DECLINED in the key, where it means declining is the correct outcome (F5-F10).
+// applied is false because nothing was given to anyone: a gate has nothing to stand on.
+function readLabel(raw, name, o, where, p, isKey, gated, extConf, extDeclined) {
+  const d = o.decline;
+  let declinedByField = false;
+  if (!isKey && d && d.field && extDeclined !== undefined && extDeclined !== null) {
+    // F7: like "applied", the text "false" would count as true in JavaScript.
+    if (typeof extDeclined !== 'boolean') { p.stop('F7', where, d.field + ' must be true or false without quotes, got ' + describe(extDeclined)); return null; }
+    declinedByField = extDeclined;
+  }
+  if (raw === undefined || raw === null) {
+    if (declinedByField) return { value: DECLINED, declined: true, set_aside: null, confidence: null, applied: false, inherited: false };
+    // F6: a missing label is never read as a decline unless the config says how a decline looks.
+    p.stop(isKey ? 'F4' : 'F3', where, name + ' has no label' + (!isKey && d && d.field ? ' and ' + d.field + ' is not true' : ''));
+    return null;
+  }
   // Bands are often written as numbers (5, not "5"). Labels are compared as text.
   if (typeof raw === 'number' && Number.isFinite(raw)) raw = String(raw);
   else if (isObj(raw) && typeof raw[o.value_key] === 'number' && Number.isFinite(raw[o.value_key])) raw = { ...raw, [o.value_key]: String(raw[o.value_key]) };
@@ -259,13 +278,16 @@ function readLabel(raw, name, o, where, p, isKey, gated, extConf) {
   const v = readValue(raw, o, where + ' ' + name, p, isKey);
   if (v === null) return null;
   const label = isKey ? v : v.value;
-  if (!o.labels.includes(label)) {
-    const near = o.labels.find(l => l.toLowerCase() === label.toLowerCase());
+  const declineValues = d ? d.values : [];
+  const isDeclineValue = declineValues.includes(label);
+  if (!o.labels.includes(label) && !isDeclineValue) {
+    const known = [...o.labels, ...declineValues];
+    const near = known.find(l => l.toLowerCase() === label.toLowerCase());
     p.stop('F1', where, name + ' is ' + JSON.stringify(label) + ', which is not one of: ' + o.labels.join(', ') +
-      (near ? ' (did you mean "' + near + '"?)' : ''));
+      (declineValues.length ? ' (or a decline: ' + declineValues.join(', ') + ')' : '') + (near ? ' (did you mean "' + near + '"?)' : ''));
     return null;
   }
-  if (isKey) return v;
+  if (isKey) return isDeclineValue ? DECLINED : v;
 
   if (extConf !== undefined && extConf !== null) {
     // E8: the same confidence given in two places; which one would be right?
@@ -273,6 +295,10 @@ function readLabel(raw, name, o, where, p, isKey, gated, extConf) {
     const c = readConfidence(extConf, where + ' ' + o.confidence_field, p);
     if (c === undefined) return null;
     v.confidence = c;
+  }
+  if (isDeclineValue || declinedByField) {
+    // F9: a label beside a true decline field was set aside, not given: kept for the report only.
+    return { value: DECLINED, declined: true, set_aside: isDeclineValue ? null : label, confidence: v.confidence, applied: false, inherited: false };
   }
   if (gated && v.confidence === null) p.strict('E1', where + ' ' + name, 'the label has no confidence, but ' + name + ' has a confidence gate');
   return v;
@@ -311,7 +337,8 @@ function readOutputs(raw, config, where, p, isKey, scored = true) {
       outputs[name] = readSet(value, name, o, where, p, isKey, gated);
     } else {
       const extConf = !isKey && o.confidence_field ? getPath(raw, o.confidence_field) : undefined;
-      outputs[name] = readLabel(value, name, o, where, p, isKey, gated, extConf);
+      const extDeclined = !isKey && o.decline && o.decline.field ? getPath(raw, o.decline.field) : undefined;
+      outputs[name] = readLabel(value, name, o, where, p, isKey, gated, extConf, extDeclined);
     }
   }
   return outputs;

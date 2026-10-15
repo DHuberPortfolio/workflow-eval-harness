@@ -27,7 +27,7 @@ test('minimal config gets every default filled in', () => {
   assert.equal(config.routing.field, 'route');
   assert.deepEqual(config.outputs.SUBJECT, {
     type: 'set', field: 'SUBJECT', key_field: 'SUBJECT', labels: null, near_miss_steps: null, value_key: 'value', confidence_key: 'confidence',
-    rejected_field: null, confidence_field: null,
+    rejected_field: null, confidence_field: null, decline: null,
   });
   const noInput = { format: null, records_at: null, unwrap: null, delimiter: null, list_separator: '|', confidence_separator: '@' };
   assert.deepEqual(config.input, { predictions: noInput, key: noInput });
