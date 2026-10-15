@@ -98,4 +98,31 @@ function compareRun({ config, keyPath, beforePath, afterPath, noisePaths = [], m
   return { inputs: { key: keyPath, before: beforePath, after: afterPath, noise: noisePaths, mode }, ...compareOf(before, after, noise), problems };
 }
 
-module.exports = { scoreRun, scoreRecords, varianceRun, compareRun };
+// ---------- Free text, graded by a person ----------
+
+const { readGrades } = require('./grading.js');
+const { scoreGrades, agreementOf } = require('./metrics/grades.js');
+
+// A reviewer's grades file, and optionally a second reviewer's grades of the same forms.
+function scoreGradesRun({ gradesPath, secondPath = null, mode = 'strict' }) {
+  const p = problems(mode);
+  const first = readGrades(gradesPath, p);
+  const second = secondPath ? readGrades(secondPath, p) : null;
+  p.throwIfStopped();
+  let agreement = null;
+  if (second) {
+    // J7: agreement means something only if both graded exactly the same text.
+    if (second.fingerprint !== first.fingerprint) {
+      p.stop('J7', secondPath, 'graded different forms from ' + gradesPath + ' (their fingerprints differ: the forms or their text changed between the two gradings)');
+    } else if (JSON.stringify(second.fields.map(f => f.name)) !== JSON.stringify(first.fields.map(f => f.name)) || JSON.stringify(second.forms) !== JSON.stringify(first.forms)) {
+      p.stop('J7', secondPath, 'lists different forms or fields from ' + gradesPath);
+    }
+    // J8: the same file twice agrees with itself perfectly, and proves nothing.
+    if (fingerprint(gradesPath) === fingerprint(secondPath)) p.warn('J8', secondPath, 'has exactly the same content as ' + gradesPath + '; agreement with itself proves nothing');
+    p.throwIfStopped();
+    agreement = agreementOf(first, second);
+  }
+  return { kind: 'grades', inputs: { grades: gradesPath, second: secondPath, mode }, ...scoreGrades(first), agreement, problems: p.items };
+}
+
+module.exports = { scoreRun, scoreRecords, varianceRun, compareRun, scoreGradesRun };

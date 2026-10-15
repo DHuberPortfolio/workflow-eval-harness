@@ -5,8 +5,8 @@ const fs = require('node:fs');
 const { parseArgs } = require('node:util');
 const { loadConfig, SEVERITIES } = require('../src/config.js');
 const { loadRun } = require('../src/load.js');
-const { scoreRun, varianceRun, compareRun } = require('../src/score.js');
-const { renderTerminal, renderVariance, renderCompare, renderWhatif } = require('../src/report/terminal.js');
+const { scoreRun, varianceRun, compareRun, scoreGradesRun } = require('../src/score.js');
+const { renderTerminal, renderVariance, renderCompare, renderWhatif, renderGrades } = require('../src/report/terminal.js');
 const { resultsJson } = require('../src/report/json.js');
 
 const USAGE = `usage: wfeval <command> [options]
@@ -19,6 +19,13 @@ commands:
             [--json <file>] [--html <file>] [--quiet] [--fail-on <severity>]
             score one run. --fail-on critical|high|medium|low exits with code 3 when a
             silent error or safeguard failure at or above that severity is found (for CI)
+
+  score     --grades <file> [--second-reviewer <file>] [--lenient]
+            [--json <file>] [--quiet] [--fail-on <severity>]
+            score a person's grades of free-text fields: invented and missing rates per
+            field, per section and per form, and two reviewers' agreement. --fail-on high
+            trips on an invented field, medium on a missing one too
+
 
   variance  --config <file> --key <file> <run> <run> [<run> ...] [--lenient] [--json <file>]
             several runs of identical code: mean and spread of every metric, and the
@@ -50,10 +57,12 @@ function score(args) {
   const { values } = parseArgs({ args, options: {
     config: { type: 'string' }, pred: { type: 'string' }, key: { type: 'string' }, lenient: { type: 'boolean' },
     json: { type: 'string' }, html: { type: 'string' }, quiet: { type: 'boolean' }, 'fail-on': { type: 'string' },
+    grades: { type: 'string' }, 'second-reviewer': { type: 'string' },
   } });
-  need(values, ['config', 'pred', 'key'], 'score');
   const failOn = values['fail-on'];
   if (failOn !== undefined && !SEVERITIES.includes(failOn)) throw new Error('--fail-on must be one of: ' + SEVERITIES.join(', '));
+  if (values.grades || values['second-reviewer']) return scoreGrades(values, failOn);
+  need(values, ['config', 'pred', 'key'], 'score');
 
   const results = scoreRun({ config: loadConfig(values.config), predPath: values.pred, keyPath: values.key, mode: MODE(values) });
   if (!values.quiet) process.stdout.write(renderTerminal(results));
@@ -67,6 +76,23 @@ function score(args) {
       ...r.silent_errors.records.filter(x => SEVERITIES.indexOf(x.severity) <= limit).map(x => x.id + ' (' + x.severity + ')'),
       ...(SEVERITIES.indexOf('critical') <= limit ? r.safeguard_failures.detail.map(d => d.id + ' (safeguard)') : []),
     ];
+    if (hits.length) { console.error('fail-on ' + failOn + ': ' + hits.join(', ')); return 3; }
+  }
+  return 0;
+}
+
+// score --grades: a person's grades of free-text fields, scored as labels.
+function scoreGrades(values, failOn) {
+  if (!values.grades) throw new Error('--second-reviewer goes with --grades <file>');
+  const extra = ['config', 'pred', 'key', 'html'].filter(k => values[k]);
+  if (extra.length) throw new Error('score --grades reads everything from the grades file; it does not take ' + extra.map(k => '--' + k).join(' '));
+  const g = scoreGradesRun({ gradesPath: values.grades, secondPath: values['second-reviewer'] || null, mode: MODE(values) });
+  if (!values.quiet) process.stdout.write(renderGrades(g));
+  if (values.json) writeFile(values.json, JSON.stringify(resultsJson(g), null, 2) + '\n');
+  if (failOn) {
+    const limit = SEVERITIES.indexOf(failOn);
+    const hits = [...g.invented.map(x => ({ ...x, severity: g.severity.invented })), ...g.missing.map(x => ({ ...x, severity: g.severity.missing }))]
+      .filter(x => SEVERITIES.indexOf(x.severity) <= limit).map(x => x.form + ' ' + x.field + ' (' + x.severity + ')');
     if (hits.length) { console.error('fail-on ' + failOn + ': ' + hits.join(', ')); return 3; }
   }
   return 0;

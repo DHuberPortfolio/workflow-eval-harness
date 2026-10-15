@@ -449,4 +449,4 @@ function loadRun({ config, predPath, keyPath, mode = 'strict', p = problems(mode
   return { predictions, key, records, problems: p.items };
 }
 
-module.exports = { getPath, formatOf, parseRecords, readRecords, normalizePredictions, normalizeKey, loadRun };
+module.exports = { getPath, formatOf, parseRecords, readRecords, readId, normalizePredictions, normalizeKey, loadRun };

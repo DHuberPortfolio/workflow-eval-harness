@@ -33,4 +33,24 @@ function rate(n, d) {
   };
 }
 
-module.exports = { pct, wilson, rate };
+// Cohen's kappa: how much two people agree beyond what chance alone would give.
+//   kappa = (observed - expected) / (1 - expected)
+// observed: the share of items they put in the same category; expected: the share they would
+// agree on by chance, given how often each used each category. 1 is perfect agreement, 0 is
+// chance level, below 0 worse than chance. matrix[a][b] counts items the first person put in
+// category a and the second in b. null when nothing was compared, or when chance agreement is
+// already 1 (both used one category only): 0 / 0 is "not measurable", never 1 or 0.
+function cohensKappa(matrix, categories) {
+  const n = categories.reduce((s, a) => s + categories.reduce((t, b) => t + matrix[a][b], 0), 0);
+  if (n === 0) return null;
+  const observed = categories.reduce((s, c) => s + matrix[c][c], 0) / n;
+  const expected = categories.reduce((s, c) => {
+    const row = categories.reduce((t, b) => t + matrix[c][b], 0);
+    const col = categories.reduce((t, a) => t + matrix[a][c], 0);
+    return s + (row / n) * (col / n);
+  }, 0);
+  if (Math.abs(1 - expected) < 1e-12) return null;
+  return Number(((observed - expected) / (1 - expected)).toFixed(3));
+}
+
+module.exports = { pct, wilson, rate, cohensKappa };

@@ -173,6 +173,30 @@ Nothing is specific to a platform; where things are is declared in the config's
 | I6 | A run where model calls failed (rate limits, several runs started at once) | Every failed record goes to a person, so the run measures the failures, not the workflow | WARN, naming the run; `model calls failed` is tracked as a metric |
 | I7 | A value the model states in every run that the key does not list | Consistency is not correctness: it may be the same mistake every time (the tiny fixture's R2 states the wrong SUBJ-ANTI in all three runs), or a gap in the key. Adding it to the key automatically would fit the key to the model | RULE: `variance` lists these as possible key gaps for a person to decide; the key is never changed by the tool |
 
+## J. Free text graded by a person (`wfeval grade`, `wfeval score --grades`)
+
+A free-text field has no answer key; a reviewer grades each field faithful, invented or
+missing against its source, and the grades are scored as labels. These traps are about
+reading the forms, the page, and the grades file. The harness never grades anything itself:
+no model, no network.
+
+| # | Trap | Why it's dangerous | Action |
+|---|---|---|---|
+| J1 | A file passed as grades that is not one the grading page saved (another JSON, a hand-edited file missing its lists) | Scores something that is not grades | STOP |
+| J2 | A grade other than faithful / invented / missing: `"Invented"`, `"unsure"`, `" faithful "` | A grade nobody reports on, or a guess at what was meant | FIX spaces; otherwise STOP, with "did you mean" for case (grades are labels, F1) |
+| J3 | A grade for a form or field the file does not list | Graded against a different version of the form | STOP |
+| J4 | One field graded twice | Which grade is the reviewer's? | STOP |
+| J5 | A field left ungraded | Rates over a subset that looks like the whole; "no invented field" on a form that was not finished | STRICT. With `--lenient` it is left out of every rate and listed; a form not fully graded is left out of "forms with an invented field" rather than counted as clean. Checked only once every grade read cleanly, so one bad grade is not reported twice |
+| J6 | A kind not in the file's list, or kinds on a grade other than invented ("figure altered" on a faithful field) | The tags contradict the grade | Unknown kind: STOP. Kinds on another grade: STRICT |
+| J7 | Two reviewers' files that graded different text (the forms changed between gradings, or different forms or fields) | Agreement between people who read different things means nothing | STOP. Every grades file carries a fingerprint of exactly what was graded: ids, sources and every field's text |
+| J8 | The same grades file given as both reviewers | Perfect agreement with itself | WARN |
+| J9 | Kappa when both reviewers used one grade only | Chance agreement is 100%, so kappa is 0 / 0 | RULE: "not measurable", never 1 or 0 |
+| J10 | A field that both invents and leaves something out | Two grades for one field breaks the three-way label and kappa | RULE: graded invented (the worse), with the kind "also leaves something out"; it counts as invented only, and the report counts that kind |
+| J11 | A section's rate pooled over its fields | It counts fields, not forms: one bad form with three strengths fields counts three times | RULE: section rates say they count fields; the per-form rate ("forms with an invented field") is reported separately |
+| J12 | Hostile text in a transcript, a field, an id, or the grading config (`</script>`, `<img onerror>`, quotes) | The grading page would run it, offline or not | RULE: every value HTML-escaped; the page's data block escapes `<`; the page's own Content-Security-Policy forbids loading anything; the script builds grades from form controls and never writes input values as HTML |
+| J13 | A form field that is empty, not text (an object, a list), or a form without its source text | An empty field skipped hides a "missing"; an object would show as `[object Object]`; grading without the source is grading from memory | Empty: RULE, shown as "(empty)" and graded. Not text: STOP. No source text: STRICT |
+| J14 | Grades kept in the browser between sessions | A second reviewer on the same computer would open the first reviewer's grades, and their agreement would mean nothing | RULE: the page keeps nothing in browser storage; grades leave only as the downloaded file, and "Load saved grades" resumes from it |
+
 ## Note on duplicates
 
 "Duplicate" means a record that repeats one already kept, not necessarily an identical
