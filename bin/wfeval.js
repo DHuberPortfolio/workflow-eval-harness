@@ -22,10 +22,14 @@ commands:
 
   score     --grades <file> [--second-reviewer <file>] [--lenient]
             [--json <file>] [--quiet] [--fail-on <severity>]
-            score a person's grades of free-text fields: invented and missing rates per
-            field, per section and per form, and two reviewers' agreement. --fail-on high
-            trips on an invented field, medium on a missing one too
+            score a person's grades of free-text fields (saved by the page wfeval grade
+            writes): invented and missing rates per field, per section and per form, and
+            two reviewers' agreement. --fail-on high trips on an invented field, medium
+            on a missing one too
 
+  grade     --config <grading config> --pred <file> --out <page.html>
+            write one self-contained HTML page in which a person grades each free-text
+            field faithful, invented or missing against its source, and saves the grades
 
   variance  --config <file> --key <file> <run> <run> [<run> ...] [--lenient] [--json <file>]
             several runs of identical code: mean and spread of every metric, and the
@@ -200,7 +204,23 @@ function whatif(args) {
   if (values.json) writeFile(values.json, JSON.stringify(resultsJson({ inputs: { predictions: values.pred, key: values.key }, ...w }), null, 2) + '\n');
 }
 
-const COMMANDS = { check, score, variance, compare, whatif };
+// grade: the page in which a person grades free-text fields. Reads files, writes one file;
+// never calls a model or the network.
+function grade(args) {
+  const { values } = parseArgs({ args, options: {
+    config: { type: 'string' }, pred: { type: 'string' }, out: { type: 'string' }, lenient: { type: 'boolean' },
+  } });
+  need(values, ['config', 'pred', 'out'], 'grade');
+  const { loadGradingConfig, readForms } = require('../src/grading.js');
+  const { renderGradingPage } = require('../src/report/grading-page.js');
+  const config = loadGradingConfig(values.config);
+  const { forms, fingerprint, problems } = readForms({ config, predPath: values.pred, mode: MODE(values) });
+  for (const i of problems.filter(x => x.level !== 'stop')) console.error(i.level + ' [' + i.trap + '] ' + i.where + ': ' + i.message);
+  writeFile(values.out, renderGradingPage(forms, config, { fingerprint, forms_file: require('node:path').basename(values.pred) }));
+  console.error(forms.length + ' form(s), ' + forms.length * config.fields.length + ' field(s) to grade. Open the page in a browser; it saves a grades file for: wfeval score --grades <file>');
+}
+
+const COMMANDS = { check, score, variance, compare, whatif, grade };
 
 function main(argv) {
   const [cmd, ...rest] = argv;
