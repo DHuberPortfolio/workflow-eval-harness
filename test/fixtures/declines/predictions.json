@@ -1,0 +1,12 @@
+[
+  { "id": "L1",  "url": "/results",     "outcome": "WRITTEN",  "category": "case_results", "confidence": 0.9 },
+  { "id": "L2",  "url": "/attorneys",   "outcome": "WRITTEN",  "category": "attorneys",    "confidence": 0.9 },
+  { "id": "L3",  "url": "/recognition", "outcome": "WRITTEN",  "category": "news",         "confidence": 0.7 },
+  { "id": "L4",  "url": "/contact",     "outcome": "LEFT_OUT", "category": "none" },
+  { "id": "L5",  "url": "/blog",        "outcome": "LEFT_OUT", "category": "news",         "confidence": 0.4, "declined": true },
+  { "id": "L6",  "url": "/about",       "outcome": "WRITTEN",  "category": "awards",       "confidence": 0.6 },
+  { "id": "L7",  "url": "/verdicts",    "outcome": "WRITTEN",  "category": "case_results", "confidence": 0.9 },
+  { "id": "L8",  "url": "/press",       "outcome": "LEFT_OUT", "category": "none" },
+  { "id": "L9",  "url": "/privacy",     "outcome": "LEFT_OUT", "category": "none" },
+  { "id": "L10", "url": "/team",        "outcome": "WRITTEN",  "category": "attorneys",    "confidence": 0.9 }
+]
