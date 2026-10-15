@@ -329,4 +329,4 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
     '<title>Workflow evaluation</title><style>' + CSS + '</style></head><body><main>' + s.join('\n') + '</main><script>' + TOOLTIP_JS + '</script></body></html>\n';
 }
 
-module.exports = { renderHtml, esc };
+module.exports = { renderHtml, esc, CSS };
