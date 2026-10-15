@@ -36,8 +36,7 @@ function notMeasured(config) {
   if (!gold) {
     const omissions = declineOutputs(config).length ? 'silent omissions other than SO-DECLINED' : 'silent omissions';
     out.push({ what: 'SP-FORBIDDEN, SP-SHOULD-REVIEW, SP-DUPLICATE, ' + omissions + ', block precision', why: 'the answer key has no correct route (routing.gold_field)' });
-  }
-  else if (!Object.values(config.routing.map).includes('block')) out.push({ what: 'block precision', why: 'no decision maps to block' });
+  } else if (!Object.values(config.routing.map).includes('block')) out.push({ what: 'block precision', why: 'no decision maps to block' });
   if (Object.keys(config.allowed_values).length === 0) out.push({ what: 'SP-INVALID', why: 'no allowed_values list' });
   if (!config.duplicate_of_field && Object.values(config.routing.map).includes('exclude')) {
     out.push({ what: 'SP-WRONG-PRIMARY, SO-PRIMARY-SUPPRESSED', why: 'no duplicate_of_field, so duplicate groups are unknown' });
