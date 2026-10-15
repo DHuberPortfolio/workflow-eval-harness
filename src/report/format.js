@@ -27,15 +27,38 @@ const TYPE_LABELS = {
   'SP-DUPLICATE': 'a duplicate went out',
   'SP-INVALID': 'a value outside the allowed list went out',
   'SP-WRONG': 'a wrong value went out',
+  'SP-SHOULD-DECLINE': 'an answer went out where the answer key says to decline',
   'SP-MISSING-REJECTED': 'the model found a correct value, but it was set aside for low confidence',
   'SP-MISSING': 'a correct value was never found',
+  'SP-DECLINED': 'went out declined, but the answer key has an answer',
   'SP-NEAR-MISS': 'close, but not exact, on an ordered scale (a 4 for a 5)',
   'SO-FALSE-DUPLICATE': 'a real record was suppressed as a duplicate',
   'SO-PRIMARY-SUPPRESSED': 'the primary copy was suppressed and a duplicate kept',
   'SO-FALSE-BLOCK': 'a good record was blocked',
+  'SO-DECLINED': 'declined and left out, but the answer key has an answer',
   'SG-GATE': 'went out below the confidence gate',
   'SG-FLOOR': 'a value below the confidence floor was kept',
 };
+
+// What the silent omission rate counts. Without a correct route, only declines can show that
+// something was lost (routing.silent_omissions.basis); with one, declines join the list.
+function omissionWhat(results) {
+  const o = results.routing.silent_omissions;
+  const declines = Object.values(results.quality.outputs).some(x => x.declines);
+  if (o && o.basis === 'declines') return 'declined and left out, but the answer key has an answer';
+  return declines ? 'blocked, suppressed or declined, but should have gone out or to a person' : 'blocked or suppressed, but should have gone out or to a person';
+}
+
+// The rows of a label output's decline table: [name, rate, what it counts, ids].
+function declineRows(d) {
+  const rows = [
+    ['Coverage', d.coverage, 'answered, of all records', null],
+    ['Declined', d.declined, 'declined, of all records', null],
+    ['Unnecessary declines', d.unnecessary.rate, 'of the declines, the answer key has an answer', d.unnecessary.ids],
+  ];
+  if (d.should_have_declined) rows.push(['Answers that should have been declines', d.should_have_declined.rate, 'of the answers, the answer key says to decline', d.should_have_declined.ids]);
+  return rows;
+}
 
 // The distinct types used by a list of records, in first-seen order.
 const typesIn = records => [...new Set(records.flatMap(x => x.types))];
@@ -51,4 +74,4 @@ function table(rows, right = [], indent = '  ') {
   }).join('   ')).join('\n');
 }
 
-module.exports = { pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, typesIn };
+module.exports = { pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, typesIn, omissionWhat, declineRows };
