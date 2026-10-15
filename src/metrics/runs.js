@@ -26,6 +26,14 @@ function metricList(results) {
       list.push({ name: name + ' precision', unit: 'points', get: r => exact(r.quality.outputs[name].precision) });
       list.push({ name: name + ' recall', unit: 'points', get: r => exact(r.quality.outputs[name].recall) });
       list.push({ name: name + ' F1', unit: 'F1', get: r => r.quality.outputs[name].f1 });
+    } else if (o.declines) {
+      // A label that may decline: accuracy is on what was answered, so coverage goes beside it.
+      list.push({ name: name + ' accuracy when answered', unit: 'points', get: r => exact(r.quality.outputs[name].accuracy) });
+      list.push({ name: name + ' coverage', unit: 'points', get: r => exact(r.quality.outputs[name].declines.coverage) });
+      list.push({ name: name + ' unnecessary declines', unit: 'points', get: r => exact(r.quality.outputs[name].declines.unnecessary.rate) });
+      if (o.declines.should_have_declined) {
+        list.push({ name: name + ' answers that should have been declines', unit: 'points', get: r => exact(r.quality.outputs[name].declines.should_have_declined.rate) });
+      }
     } else {
       list.push({ name: name + ' accuracy', unit: 'points', get: r => exact(r.quality.outputs[name].accuracy) });
       if (o.type === 'ordinal') {

@@ -11,6 +11,7 @@
 // "unknown", when nothing was right (G4); it is null only when there was nothing at all (G3).
 
 const { rate } = require('./stats.js');
+const { DECLINED } = require('../config.js');
 
 const f1 = (tp, fp, fn) => (2 * tp + fp + fn === 0 ? null : Number(((2 * tp) / (2 * tp + fp + fn)).toFixed(3)));
 const scores = (tp, fp, fn) => ({ tp, fp, fn, precision: rate(tp, tp + fp), recall: rate(tp, tp + fn), f1: f1(tp, fp, fn) });
@@ -39,24 +40,61 @@ function scoreSet(pop, name) {
   return { type: 'set', ...scores(tp, fp, fn), exact_match: rate(exact, pop.length), by_value };
 }
 
-function scoreLabel(pop, name, labels) {
+// decline: the output's decline settings, or null. With it, the confusion matrix gains a
+// "(declined)" column (and a row, when the key can say declining is correct), and a decline is
+// neither a wrong label nor left out of the counts:
+//   accuracy  - on what was answered: right answers / answers
+//   per label - precision counts what was given (a decline gives nothing, so it is never a
+//               false positive); recall counts a decline as a miss (the answer was not given)
+//   declines  - coverage, the decline rate, unnecessary declines and answers that should have
+//               been declines (see scoreDeclines)
+function scoreLabel(pop, name, labels, decline = null) {
+  const cols = decline ? [...labels, DECLINED] : labels;
+  const rows = decline && decline.values.length ? cols : labels;   // the key can decline only through decline.values
   const confusion = {};   // confusion[key label][predicted label] = count
-  for (const k of labels) { confusion[k] = {}; for (const p of labels) confusion[k][p] = 0; }
+  for (const k of rows) { confusion[k] = {}; for (const p of cols) confusion[k][p] = 0; }
   let correct = 0;
+  let answered = 0;
   for (const r of pop) {
     const predicted = r.pred[name] ? r.pred[name].value : null;
     if (predicted === null) continue;
     confusion[r.key[name]][predicted]++;
+    if (predicted === DECLINED) continue;
+    answered++;
     if (predicted === r.key[name]) correct++;
   }
   const per_label = {};
   for (const l of labels) {
     const tp = confusion[l][l];
-    const fp = labels.reduce((s, k) => s + (k === l ? 0 : confusion[k][l]), 0);   // predicted l, key says otherwise
-    const fn = labels.reduce((s, p) => s + (p === l ? 0 : confusion[l][p]), 0);   // key says l, predicted otherwise
+    const fp = rows.reduce((s, k) => s + (k === l ? 0 : confusion[k][l]), 0);   // predicted l, key says otherwise
+    const fn = cols.reduce((s, p) => s + (p === l ? 0 : confusion[l][p]), 0);   // key says l, predicted otherwise
     per_label[l] = scores(tp, fp, fn);
   }
-  return { type: 'label', accuracy: rate(correct, pop.length), per_label, confusion };
+  const out = { type: 'label', accuracy: rate(correct, decline ? answered : pop.length), per_label, confusion };
+  if (decline) out.declines = scoreDeclines(pop, name, decline);
+  return out;
+}
+
+// Declining as its own outcome. Every rate says what it is out of:
+//   coverage                - answered, of all records
+//   declined                - declined, of all records
+//   unnecessary             - of the declines, the share where the key has an answer
+//   should_have_declined    - of the answers, the share where the key says decline. null when the
+//                             key cannot say so (no decline.values): not measured, never 0
+function scoreDeclines(pop, name, decline) {
+  const ids = list => list.map(r => r.id);
+  const declined = pop.filter(r => r.pred[name] && r.pred[name].declined);
+  const answered = pop.filter(r => r.pred[name] && !r.pred[name].declined);
+  const unnecessary = declined.filter(r => r.key[name] !== DECLINED);
+  const shouldHave = answered.filter(r => r.key[name] === DECLINED);
+  return {
+    coverage: rate(answered.length, pop.length),
+    declined: rate(declined.length, pop.length),
+    unnecessary: { rate: rate(unnecessary.length, declined.length), ids: ids(unnecessary) },
+    should_have_declined: decline.values.length ? { rate: rate(shouldHave.length, answered.length), ids: ids(shouldHave) } : null,
+    correct_declines: ids(declined.filter(r => r.key[name] === DECLINED)),
+    key_declines: decline.values.length ? pop.filter(r => r.key[name] === DECLINED).length : null,
+  };
 }
 
 // Ordered labels (bands 1-5, low/medium/high): everything a label gets, plus how FAR off
@@ -101,7 +139,7 @@ function scoreQuality(records, config) {
   const outputs = {};
   let tp = 0, fp = 0, fn = 0, anySet = false;
   for (const [name, o] of Object.entries(config.outputs)) {
-    outputs[name] = o.type === 'set' ? scoreSet(pop, name) : o.type === 'ordinal' ? scoreOrdinal(pop, name, o.labels) : scoreLabel(pop, name, o.labels);
+    outputs[name] = o.type === 'set' ? scoreSet(pop, name) : o.type === 'ordinal' ? scoreOrdinal(pop, name, o.labels) : scoreLabel(pop, name, o.labels, o.decline);
     if (o.type === 'set') { anySet = true; tp += outputs[name].tp; fp += outputs[name].fp; fn += outputs[name].fn; }
   }
   return {

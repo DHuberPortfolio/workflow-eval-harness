@@ -2,7 +2,7 @@
 // seeing, and how (docs/SILENT_ERRORS.md). Every routing number, the per-trap table
 // and the what-if are counts over these judgments, so the rules live in one place.
 
-const { SEVERITIES } = require('../config.js');
+const { SEVERITIES, DECLINED } = require('../config.js');
 
 const nonEmpty = obj => Object.keys(obj).length > 0;
 const unique = list => [...new Set(list)];
@@ -24,16 +24,25 @@ const keyValues = (r, name, o) => (o.type === 'set' ? r.key[name] : r.key[name] 
 //   missing          - in the key, never proposed
 //   invalid          - applied, not in the output's allowed_values
 //   near_miss        - ordinal outputs: off by no more than near_miss_steps ("4 for 5")
+//   declined         - labels with decline: declined, but the key has an answer (the key's answer)
+//   should_decline   - labels with decline: answered, but the key says declining is correct
+// A decline is never "wrong": declining and answering wrongly are different mistakes with
+// different costs, and they are counted apart (docs/SILENT_ERRORS.md).
 // A single-value output (label, ordinal) that is wrong is listed as wrong only: "the right
 // label was never proposed" adds nothing when there is exactly one label.
 function valueFindings(r, config) {
-  const f = { wrong: {}, missing_rejected: {}, missing: {}, invalid: {}, near_miss: {} };
+  const f = { wrong: {}, missing_rejected: {}, missing: {}, invalid: {}, near_miss: {}, declined: {}, should_decline: {} };
   for (const [name, o] of contentOutputs(config)) {
     if (o.type !== 'set') {
       const p = r.pred[name];
       const k = r.key[name];
       if (k == null) continue;
       if (!p) { f.missing[name] = [k]; continue; }
+      if (p.declined) {
+        if (k !== DECLINED) f.declined[name] = [k + (p.set_aside ? ' (set aside: ' + p.set_aside + ')' : '')];
+        continue;
+      }
+      if (k === DECLINED) { f.should_decline[name] = [p.value]; continue; }
       const allowed = config.allowed_values[name];
       if (Array.isArray(allowed) && !allowed.includes(p.value)) f.invalid[name] = [p.value];
       if (p.value === k) continue;
@@ -95,7 +104,8 @@ const ordered = (types, config) => unique(types).sort((a, b) => Object.keys(conf
 function judgeRecord(r, config, ctx) {
   const gold = r.gold_class;   // null without a gold route
   const values = valueFindings(r, config);
-  const mismatch = nonEmpty(values.wrong) || nonEmpty(values.missing_rejected) || nonEmpty(values.missing) || nonEmpty(values.near_miss);
+  const mismatch = nonEmpty(values.wrong) || nonEmpty(values.missing_rejected) || nonEmpty(values.missing) || nonEmpty(values.near_miss) ||
+    nonEmpty(values.declined) || nonEmpty(values.should_decline);
 
   // Which evidence decides that a record needed a person (config: wrong_when).
   const useGold = gold !== null && config.wrong_when !== 'any_mismatch';
@@ -113,8 +123,10 @@ function judgeRecord(r, config, ctx) {
   const valueTypes = [];
   if (nonEmpty(values.invalid)) valueTypes.push('SP-INVALID');
   if (nonEmpty(values.wrong)) valueTypes.push('SP-WRONG');
+  if (nonEmpty(values.should_decline)) valueTypes.push('SP-SHOULD-DECLINE');
   if (nonEmpty(values.missing_rejected)) valueTypes.push('SP-MISSING-REJECTED');
   if (nonEmpty(values.missing)) valueTypes.push('SP-MISSING');
+  if (nonEmpty(values.declined)) valueTypes.push('SP-DECLINED');
   if (nonEmpty(values.near_miss)) valueTypes.push('SP-NEAR-MISS');
 
   let silent = null;
@@ -136,8 +148,14 @@ function judgeRecord(r, config, ctx) {
   }
 
   // Blocked or suppressed, but the key says it should have gone through or to a person.
+  // A record left out (block) because its label was declined, while the key has an answer,
+  // is SO-DECLINED: the decline is why it was left out, so it takes that type instead of
+  // SO-FALSE-BLOCK. It needs no correct route: the key's answer says something was lost,
+  // unless the key's route says the record should be left out anyway.
   let omission = null;
-  if ((gold === 'auto' || gold === 'review') && (r.route_class === 'block' || r.route_class === 'exclude')) {
+  if (r.route_class === 'block' && nonEmpty(values.declined) && (gold === null || gold === 'auto' || gold === 'review')) {
+    omission = { types: ['SO-DECLINED'], severity: config.severity['SO-DECLINED'] };
+  } else if ((gold === 'auto' || gold === 'review') && (r.route_class === 'block' || r.route_class === 'exclude')) {
     const type = r.route_class === 'block' ? 'SO-FALSE-BLOCK'
       : ctx.keptDuplicateOf.has(r.id) ? 'SO-PRIMARY-SUPPRESSED' : 'SO-FALSE-DUPLICATE';
     omission = { types: [type], severity: config.severity[type] };
@@ -167,4 +185,7 @@ function judgeAll(records, config) {
   return records.map(r => judgeRecord(r, config, ctx));
 }
 
-module.exports = { judgeAll, judgeRecord, buildContext, gatePasses, valueFindings, contentOutputs, worst };
+// The label outputs that may decline (outputs.<name>.decline).
+const declineOutputs = config => Object.entries(config.outputs).filter(([, o]) => o.decline).map(([name]) => name);
+
+module.exports = { declineOutputs, judgeAll, judgeRecord, buildContext, gatePasses, valueFindings, contentOutputs, worst };

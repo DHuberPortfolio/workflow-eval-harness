@@ -33,7 +33,7 @@ function withThresholds(config, changes) {
 }
 
 function summarize(records, config, extra) {
-  const routing = scoreRouting(judgeAll(records, config), config);
+  const routing = scoreRouting(judgeAll(records, config), config, records);
   return {
     ...extra,
     through: records.filter(r => r.route_class === 'auto').map(r => r.id),
