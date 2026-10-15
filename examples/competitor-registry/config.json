@@ -1,0 +1,16 @@
+{
+  "id_field": "url",
+  "outputs": {
+    "category": {
+      "type": "label",
+      "labels": ["case_results", "attorneys", "awards", "news"],
+      "confidence_field": "confidence",
+      "decline": { "values": ["none"], "field": "declined" }
+    }
+  },
+  "routing": {
+    "field": "outcome",
+    "map": { "WRITTEN": "auto", "LEFT_OUT": "block" }
+  },
+  "thresholds": { "auto_publish": { "category": 0.5 } }
+}

@@ -60,6 +60,8 @@ The metric tests are checked against answers worked out by hand before the code 
 - `test/fixtures/compliance/`: nine documents from a compliance reviewer, as spreadsheets,
   with a verdict label that is also the route.
 - `test/fixtures/runs/`: three runs of the same workflow, for variance and compare.
+- `test/fixtures/declines/`: ten links classified into page categories or declined, shaped
+  like a competitor registry: coverage, accuracy when answered, and both kinds of decline mistake.
 - `test/fixtures/shapes/`: the same six records in six file shapes, which must all load identically.
 - `examples/`: real runs of two real workflows (see each example's NOTES.md).
 
