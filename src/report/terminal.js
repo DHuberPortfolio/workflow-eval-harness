@@ -266,4 +266,58 @@ function renderWhatif(w) {
   return parts.join('\n\n') + '\n';
 }
 
-module.exports = { renderTerminal, renderVariance, renderCompare, renderWhatif };
+// ---------- Free text, graded by a person ----------
+
+function renderGrades(g) {
+  const parts = ['GRADES  ' + g.inputs.grades + (g.reviewer ? '  (' + g.reviewer + ')' : '') + (g.title ? '  ' + g.title : '')];
+  parts.push(g.overall.graded + ' fields graded by a person against the source · ' + g.inputs.mode + ' mode · scored as labels: faithful, invented or missing');
+  const row = (name, r, what) => [name, pct(r), count(r), range(r), what];
+  const head = [['', 'rate', 'count', 'likely range', 'what it counts']];
+  parts.push('HEADLINE\n' + table([...head,
+    row('Invented', g.overall.invented, 'says something the source does not support (high)'),
+    row('Missing', g.overall.missing, 'leaves out something the source says (medium)'),
+    row('Faithful', g.overall.faithful, 'supported by the source, nothing left out'),
+    row('Forms with an invented field', g.forms.with_invented, 'of the forms with every field graded'),
+  ], [1, 2]));
+  const rateRows = (label, list) => table([[label, 'graded', 'invented', '', 'likely range', 'missing', '', 'likely range'],
+    ...list.map(x => [x.name || x.section, x.graded, pct(x.invented), count(x.invented), range(x.invented), pct(x.missing), count(x.missing), range(x.missing)])], [1, 2, 3, 5, 6]);
+  parts.push('PER FIELD\n' + rateRows('field', g.fields.map(f => ({ ...f, name: f.name + (f.section ? '  [' + f.section + ']' : '') }))));
+  if (g.sections.length) parts.push('PER SECTION  a section pools its fields\' grades, so it counts fields, not forms\n' + rateRows('section', g.sections));
+
+  const lines = ['INVENTED  ' + (g.invented.length ? g.invented.length + ' field(s), high: the form says something the source does not' : 'none')];
+  for (const x of g.invented) {
+    lines.push('  ' + x.form.padEnd(8) + x.field + (x.kinds.length ? '   [' + x.kinds.join(', ') + ']' : ''));
+    if (x.note) lines.push('  ' + ''.padEnd(8) + x.note);
+  }
+  const kinds = Object.entries(g.kinds.counts).filter(([, n]) => n > 0);
+  if (kinds.length || g.kinds.none_given) lines.push('  by kind: ' + [...kinds.map(([k, n]) => k + ' ' + n), ...(g.kinds.none_given ? ['none given ' + g.kinds.none_given] : [])].join(' · '));
+  parts.push(lines.join('\n'));
+  const miss = ['MISSING  ' + (g.missing.length ? g.missing.length + ' field(s), medium: the form leaves out something the source says' : 'none')];
+  for (const x of g.missing) {
+    miss.push('  ' + x.form.padEnd(8) + x.field);
+    if (x.note) miss.push('  ' + ''.padEnd(8) + x.note);
+  }
+  parts.push(miss.join('\n'));
+  parts.push('PER FORM\n' + table([['form', 'graded', 'invented', 'missing'], ...g.forms.per_form.map(f => [f.form, f.graded + ' of ' + f.of, f.invented, f.missing])], [1, 2, 3]));
+
+  const a = g.agreement;
+  if (a) {
+    const k = v => (v === null ? 'not measurable (chance agreement is already 100%)' : v.toFixed(3));
+    const al = ['AGREEMENT  ' + (a.first || g.inputs.grades) + ' and ' + (a.second || g.inputs.second) + ', ' + a.compared + ' fields graded by both'];
+    al.push(table([['', 'value', 'count', 'likely range'],
+      ['Observed agreement', pct(a.observed), count(a.observed), range(a.observed)],
+      ["Cohen's kappa", k(a.kappa), '', ''],
+      ['On "invented or not"', pct(a.invented_observed), count(a.invented_observed), range(a.invented_observed)],
+      ["  Cohen's kappa", k(a.invented_kappa), '', ''],
+    ], [1, 2]));
+    al.push('  Kappa is 1 for perfect agreement, 0 for agreement no better than chance.' + (a.graded_by_one_only ? ' ' + a.graded_by_one_only + ' field(s) graded by only one reviewer are left out.' : ''));
+    al.push('  disagreements' + (a.disagreements.length ? ', for a person to settle:' : ': none'));
+    for (const d of a.disagreements) al.push('    ' + d.form.padEnd(8) + d.field.padEnd(16) + (d.first + ' / ' + d.second).padEnd(22) + (d.first_note || d.second_note ? '   ' + [d.first_note, d.second_note].filter(Boolean).join(' / ') : ''));
+    parts.push(al.join('\n'));
+  }
+  const notes = g.problems.filter(i => i.level !== 'stop');
+  if (notes.length) parts.push('WARNINGS AND CLEAN-UPS\n' + notes.map(i => '  ' + i.level + ' [' + i.trap + '] ' + i.where + ': ' + i.message).join('\n'));
+  return parts.join('\n\n') + '\n';
+}
+
+module.exports = { renderTerminal, renderVariance, renderCompare, renderWhatif, renderGrades };

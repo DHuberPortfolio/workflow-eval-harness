@@ -2,6 +2,7 @@
   "format": "wfeval-grades/1",
   "title": "Assessment form v1: three synthetic visits",
   "fingerprint": "sha256:5258ec52fe7604a62b99d572c51f3274dc183ac50c7b7e51820c7e06c7b83500",
+  "forms_file": "forms.json",
   "reviewer": "Reviewer B",
   "saved_at": "2026-10-15T11:00:00.000Z",
   "fields": [
