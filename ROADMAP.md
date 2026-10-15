@@ -73,15 +73,27 @@ the design is wrong.
       fixture (`test/fixtures/ordinal/`). Competitor watch's own runs not scored: running it writes
       to its snapshot tables
 
+## Free text, graded by a person
+- [x] `wfeval grade`: one self-contained HTML page (offline, escaped, keyboard-usable, light and
+      dark) in which a reviewer grades each field faithful / invented / missing against its
+      source, with kinds and a note, and saves a grades file (`src/grading.js`, `src/report/grading-page.js`)
+- [x] `wfeval score --grades`: invented and missing rates per field, per section and per form,
+      with likely ranges; invented is high severity (`--fail-on high`); two reviewers' agreement
+      with Cohen's kappa (`test/fixtures/freetext/`, traps J1-J14)
+- [ ] Assessment template: grade its real output. Needs a set of transcripts to run it on, and
+      a reviewer; nothing has been graded yet
+- [ ] An HTML report for `score --grades` (terminal and JSON only for now)
+
 ## Out of scope for now
-- Free-text outputs (assessment template). Scoring them needs a reviewer to grade each field
-  first (faithful / invented / missing); the harness could then score those grades as labels.
 - Snapshot backdating fixture: a test utility with nothing to score.
 
 ## Later
 - Golden-set trap design for each workflow (2-3+ records per trap type, plus records combining traps)
 
 ## Settled
+- Free text is graded faithful / invented / missing, one grade per field; "figure altered" and
+  "contradiction smoothed over" are kinds of invented, not grades, so grades stay exclusive and
+  agreement measurable. A person grades; the harness never calls a model.
 - Declining is an outcome of a label output, not a route class: a route says who sees a record,
   and a workflow can send declines anywhere. Wrong category out unseen: SP-WRONG, high. Answer
   where the key says decline: SP-SHOULD-DECLINE, high. Unnecessary decline: medium (SO-DECLINED

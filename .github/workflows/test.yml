@@ -1,7 +1,8 @@
 # Runs on every push and pull request.
 #   tests:   the whole suite, on Linux and Windows, on the oldest supported Node (18) and
 #            two current ones; then the commands the README and example notes show,
-#            including --fail-on, which must stop a build that has a high-severity silent error.
+#            including --fail-on, which must stop a build that has a high-severity silent error
+#            (or, for graded free text, an invented field).
 #   samples: rebuilds the sample reports the README links to and fails if they differ from
 #            the committed copies, so the samples always show what the tool produces today.
 name: tests
@@ -48,7 +49,13 @@ jobs:
           node bin/wfeval.js variance --config $G/config.json --key $G/exec-70.json $G/exec-7{0,1,2}.json
           node bin/wfeval.js compare --config $G/config.json --key $G/exec-70.json --before $G/exec-69.json --after $G/exec-71.json \
             --noise $G/exec-70.json --noise $G/exec-71.json --noise $G/exec-72.json
-      - name: --fail-on stops a build with a high-severity silent error
+          D=test/fixtures/declines
+          node bin/wfeval.js score --config $D/config.json --pred $D/predictions.json --key $D/key.json
+          node bin/wfeval.js check --config examples/competitor-registry/config.json
+          F=test/fixtures/freetext
+          node bin/wfeval.js grade --config $F/grading.json --pred $F/forms.json --out "$out/grading.html"
+          node bin/wfeval.js score --grades $F/grades-a.json --second-reviewer $F/grades-b.json --json "$out/grades.json"
+      - name: --fail-on stops a build with a high-severity silent error or invented field
         shell: bash
         run: |
           set +e
@@ -56,6 +63,10 @@ jobs:
             --pred test/fixtures/tiny/predictions.json --key test/fixtures/tiny/key.json --quiet --fail-on high
           code=$?
           echo "exit code $code (expected 3)"
+          test "$code" -eq 3
+          node bin/wfeval.js score --grades test/fixtures/freetext/grades-a.json --quiet --fail-on high
+          code=$?
+          echo "grades: exit code $code (expected 3: invented fields are high)"
           test "$code" -eq 3
 
   samples:

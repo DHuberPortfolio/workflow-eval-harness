@@ -133,6 +133,22 @@ by number.
 | `wfeval compare` | Did a change help, or did it move within that noise? Every metric's change against the spread of repeated runs, and every record that was fixed or broken. |
 | `wfeval whatif` | What would the numbers be at another threshold? Sweeps the confidence gate or the confidence floor. |
 | `wfeval check` | Is this config, and this pair of files, readable? Prints what it understood. |
+| `wfeval grade` | For free text: writes one HTML page in which a person grades each field against its source. |
+| `wfeval score --grades` | How often does the free text say something the source never said? Invented and missing rates from a person's grades, and two reviewers' agreement. |
+
+**Free text is graded by a person, not a model.** A form filled from a transcript has no answer
+key; its failure is a field that reads plausibly and says something nobody said. `wfeval grade`
+writes one self-contained page (it works offline, from the file) that shows each field beside
+its source. The reviewer marks each field faithful, invented or missing and saves the grades;
+`score --grades` turns them into invented and missing rates per field, per section and per
+form, with likely ranges, and with a second reviewer, how far the two agree (Cohen's kappa):
+
+```
+node bin/wfeval.js grade --config test/fixtures/freetext/grading.json \
+  --pred test/fixtures/freetext/forms.json --out grading.html
+node bin/wfeval.js score --grades test/fixtures/freetext/grades-a.json \
+  --second-reviewer test/fixtures/freetext/grades-b.json
+```
 
 It is not tied to any platform. The config says where the records are and what their
 fields are called: an n8n export, a Zapier export, a script's JSON Lines log, an API
@@ -178,8 +194,8 @@ produces today. Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 ## Limits
 
 - Scores sets of values, single labels (which may decline to answer: a decline is its own
-  outcome, never a wrong label) and ordered labels. Free text is not supported:
-  it needs a reviewer to grade each field first, and the grades can then be scored as labels.
+  outcome, never a wrong label) and ordered labels. Free text is scored only through a
+  person's grades: the harness never judges text itself.
 - The floor what-if does not re-add broader terms or re-apply per-output caps; records
   whose route could depend on those are marked "needs replay" rather than guessed.
 - Every rate is only as strong as the golden set is large. The likely ranges say how strong

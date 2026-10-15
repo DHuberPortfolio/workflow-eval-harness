@@ -95,6 +95,44 @@ Routing applies as for any record. A wrong label or an answer that should have b
 going out is a high-severity silent error; a decline left out where the key has an answer is a
 medium silent omission ([SILENT_ERRORS.md](SILENT_ERRORS.md#declines)).
 
+## Free text, graded by a person
+
+A free-text field (a paragraph of an assessment form filled from a visit transcript) has no
+answer key to compare against, and its failure is a form that reads plausibly and says
+something the person never said. So a person grades it: `wfeval grade` writes a page that
+shows each field beside its source, and the reviewer gives each field one grade.
+
+| Grade | Means | Severity |
+|---|---|---|
+| **faithful** | everything in it is supported by the source, and nothing it should hold is left out | |
+| **invented** | it says something the source does not support | high: wrong information in a record someone will rely on |
+| **missing** | it leaves out something the source says that belongs in it, and invents nothing | medium: incomplete, not false |
+
+The grades are then scored as labels, each field one label out of three: the **invented
+rate** and **missing rate** over all fields, per field and per section, and the share of
+**forms with an invented field**, each with its likely range. A section pools its fields'
+grades, so it counts fields, not forms; the per-form rate is the one to read for "how often
+does a whole form need correcting". `--fail-on high` stops a build on any invented field.
+
+**Why "figure altered" and "contradiction smoothed over" are not grades of their own.** They
+are ways of inventing: a changed figure states a number nobody said; a smoothed-over
+contradiction states one account as fact when two were given (and usually drops the other,
+so it also leaves something out). As separate grades they would overlap with invented and
+with each other, a field could earn two at once, and two reviewers could disagree on the
+label while agreeing the field is wrong. Kept as three exclusive grades, every field gets one
+label and agreement can be measured; the kinds are tick boxes on an invented grade, set in
+the grading config, and counted in the report, so the diagnosis is not lost. A field that
+both invents and leaves something out is graded invented (the worse) with the kind "also
+leaves something out".
+
+**Two reviewers.** With `--second-reviewer`, the report gives observed agreement, **Cohen's
+kappa** (agreement beyond what chance would give: 1 is perfect, 0 is chance level) over the
+three grades and on "invented or not" alone, and lists every disagreement for a person to
+settle. With few fields, kappa is a rough guide; the disagreements are what matter.
+
+The harness never grades anything itself: no model, no LLM-as-judge, no network. A person
+grades; the harness counts.
+
 ## Per trap
 
 A golden set is built from traps: records designed to provoke one kind of mistake. Grouping

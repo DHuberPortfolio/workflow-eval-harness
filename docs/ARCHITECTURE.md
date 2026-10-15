@@ -8,6 +8,10 @@ answer key  ──>  (csv.js)   (pairs by id)  (one judgment   classification.js
                                             per record)    traps.js          │
                                                            calibration.js ───┘
                                            variance · compare · whatif reuse the same judgments
+
+free text:  grading config + forms ──> grading.js ──> grading-page.js ──> one HTML page
+            a person grades each field, the page saves a grades file
+            grades file ──> grading.js ──> metrics/grades.js ──> terminal / JSON
 ```
 
 - **Messy input is handled in one place.** `load.js` (and `csv.js` for spreadsheets) is
@@ -60,6 +64,8 @@ The metric tests are checked against answers worked out by hand before the code 
 - `test/fixtures/compliance/`: nine documents from a compliance reviewer, as spreadsheets,
   with a verdict label that is also the route.
 - `test/fixtures/runs/`: three runs of the same workflow, for variance and compare.
+- `test/fixtures/freetext/`: three synthetic visit transcripts, the forms filled from them,
+  and two reviewers' grades: invented and missing rates, and their agreement (kappa).
 - `test/fixtures/declines/`: ten links classified into page categories or declined, shaped
   like a competitor registry: coverage, accuracy when answered, and both kinds of decline mistake.
 - `test/fixtures/shapes/`: the same six records in six file shapes, which must all load identically.
