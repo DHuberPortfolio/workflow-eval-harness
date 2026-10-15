@@ -3,7 +3,7 @@
 // report. Every value that came from an input file is HTML-escaped: a record id is data,
 // and data must never be able to run as code in the report.
 
-const { WRONG_WHEN, TYPE_LABELS, typesIn } = require('./format.js');
+const { WRONG_WHEN, TYPE_LABELS, typesIn, omissionWhat, declineRows } = require('./format.js');
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const pct = r => (!r || r.pct === null ? 'n/a' : r.pct.toFixed(1) + '%');
@@ -42,7 +42,8 @@ function table(head, rows, numeric = []) {
 }
 
 function differences(d) {
-  const labels = { wrong: 'applied, not in the answer key', missing_rejected: 'found, but set aside', missing: 'never found', invalid: 'not an allowed value', near_miss: 'near miss' };
+  const labels = { wrong: 'applied, not in the answer key', missing_rejected: 'found, but set aside', missing: 'never found', invalid: 'not an allowed value', near_miss: 'near miss',
+    declined: 'declined, but the answer key has', should_decline: 'answered, but the answer key says to decline' };
   const out = [];
   for (const [bucket, label] of Object.entries(labels)) {
     for (const [output, values] of Object.entries(d[bucket] || {})) out.push(esc(output) + ' ' + label + ': <code>' + values.map(esc).join(', ') + '</code>');
@@ -50,11 +51,11 @@ function differences(d) {
   return out.join('<br>');
 }
 
-function tiles(r) {
+function tiles(r, results) {
   const tile = (label, rate, note) => '<div class="tile"><div class="tile-label">' + label + '</div><div class="tile-value">' + pct(rate) +
     '</div><div class="tile-note">' + (note ? note + '<br>' : '') + cnt(rate) + (rng(rate) ? ' · likely ' + rng(rate) : '') + '</div></div>';
   const out = [tile('Straight-through', r.straight_through, 'went out without review')];
-  if (r.silent_omissions) out.push(tile('Silent omissions', r.silent_omissions.rate, 'blocked or suppressed, but should have gone out or to a person'));
+  if (r.silent_omissions) out.push(tile('Silent omissions', r.silent_omissions.rate, omissionWhat(results)));
   out.push(tile('Review precision', r.review_queue.precision, 'sent to a person, and needed one'));
   if (r.block) out.push(tile('Block precision', r.block.precision, 'blocked, and the answer key agrees'));
   out.push('<div class="tile"><div class="tile-label">Safeguard failures</div><div class="tile-value">' + r.safeguard_failures.records +
@@ -212,7 +213,7 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
   const se = r.silent_errors;
   s.push('<section class="card hero"><div class="hero-label">Silent error rate</div><div class="hero-value">' + pct(se.rate) + '</div>' +
     '<div class="hero-note">' + heroNote(se.rate, se.one_record_moves_pct) + '</div></section>');
-  s.push(tiles(r));
+  s.push(tiles(r, results));
 
   // Silent errors
   s.push('<h2>Silent errors</h2>');
@@ -227,9 +228,15 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
   }
   if (r.silent_omissions) {
     s.push('<h3>Silent omissions</h3>');
-    s.push(r.silent_omissions.records.length === 0 ? '<p>None.</p>' : '<p>Records blocked or suppressed as duplicates that should have gone out or to a person. Nobody sees these either.</p>' + table(['Record', 'Severity', 'Type', 'Went', 'Answer key', 'Trap'], r.silent_omissions.records.map(x => [
-      '<code>' + esc(x.id) + '</code>', severity(x.severity), x.types.map(typeTag).join('<br>'), esc(x.route), esc(x.gold_route), x.traps.map(esc).join(', '),
-    ])) + typeLegend(r.silent_omissions.records));
+    const om = r.silent_omissions.records;
+    const declined = om.some(x => x.declined);   // a "What was declined" column, only when there is something to show
+    const intro = r.silent_omissions.basis === 'declines' ? 'Records declined and left out, though the answer key has an answer. Nobody sees these either.'
+      : declined ? 'Records blocked, suppressed as duplicates or declined, that should have gone out or to a person. Nobody sees these either.'
+        : 'Records blocked or suppressed as duplicates that should have gone out or to a person. Nobody sees these either.';
+    s.push(om.length === 0 ? '<p>None.</p>' : '<p>' + intro + '</p>' + table(['Record', 'Severity', 'Type', 'Went', 'Answer key', ...(declined ? ['What was declined'] : []), 'Trap'], om.map(x => [
+      '<code>' + esc(x.id) + '</code>', severity(x.severity), x.types.map(typeTag).join('<br>'), esc(x.route), esc(x.gold_route ?? ''),
+      ...(declined ? [x.declined ? differences({ declined: x.declined }) : ''] : []), x.traps.map(esc).join(', '),
+    ])) + typeLegend(om));
   }
   s.push('<h3>Safeguard failures</h3>');
   s.push(r.safeguard_failures.records === 0 ? '<p>None.</p>'
@@ -251,17 +258,29 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
     s.push(table(['Output', 'Precision', 'Recall', 'F1', 'Exact match', 'TP / FP / FN'], rows, [1, 2, 3, 4, 5]));
   }
   for (const [n, o] of Object.entries(q.outputs).filter(([, x]) => x.type !== 'set')) {
-    const labels = Object.keys(o.per_label);
-    s.push('<h3>' + esc(n) + ': accuracy ' + pct(o.accuracy) + ' (' + cnt(o.accuracy) + ')</h3>');
+    // Rows are the answer key's labels, columns the workflow's; with declines, both can include "(declined)".
+    const keys = Object.keys(o.confusion);
+    const labels = Object.keys(o.confusion[keys[0]]);
+    s.push('<h3>' + esc(n) + ': accuracy ' + (o.declines ? 'when answered ' : '') + pct(o.accuracy) + ' (' + cnt(o.accuracy) + ')</h3>');
     if (o.type === 'ordinal') {
       const lean = o.mean_signed === null || o.mean_signed === 0 ? 'no lean' : o.mean_signed > 0 ? 'leans higher than the answer key' : 'leans lower than the answer key';
       s.push('<p>Within one step: ' + pct(o.within_one) + ' · average distance ' + num(o.mean_distance, 2) + ' steps · closeness ' + num(o.closeness) +
         ' (1 is always exact) · ' + lean + ' (' + o.predicted_higher + ' higher, ' + o.predicted_lower + ' lower)' +
         (Object.keys(o.miss_distances).length ? ' · misses by distance: ' + Object.entries(o.miss_distances).map(([d, c]) => d + ': ' + c).join(', ') : '') + '</p>');
     }
-    s.push(table(['Answer key says', ...labels.map(l => 'predicted ' + esc(l)), 'Precision', 'Recall', 'F1'], labels.map(k => [
-      esc(k), ...labels.map(p => String(o.confusion[k][p])), pct(o.per_label[k].precision), pct(o.per_label[k].recall), num(o.per_label[k].f1),
-    ]), labels.map((_, i) => i + 1).concat([labels.length + 1, labels.length + 2, labels.length + 3])));
+    s.push(table(['Answer key says', ...labels.map(l => 'predicted ' + esc(l)), 'Precision', 'Recall', 'F1'], keys.map(k => {
+      const pl = o.per_label[k];
+      return [esc(k), ...labels.map(p => String(o.confusion[k][p])), pl ? pct(pl.precision) : '', pl ? pct(pl.recall) : '', pl ? num(pl.f1) : ''];
+    }), labels.map((_, i) => i + 1).concat([labels.length + 1, labels.length + 2, labels.length + 3])));
+    if (o.declines) {
+      const d = o.declines;
+      s.push('<p>Declining is its own outcome here: neither a wrong label nor left out. Accuracy is on what was answered, so coverage sits beside it. ' +
+        'Per label, precision counts what was given (a decline gives nothing) and recall counts a decline as a miss.</p>');
+      s.push(table(['Declines', 'Rate', 'Count', 'Likely range', 'What it counts'], declineRows(d).map(([name, rate, what, list]) => [
+        name, pct(rate), cnt(rate), rng(rate), esc(what) + (list && list.length ? ': ' + ids(list) : ''),
+      ]), [1, 2, 3]));
+      s.push('<p>Correct declines: ' + ids(d.correct_declines) + '.' + (d.should_have_declined ? '' : ' Answers that should have been declines: not measured (no decline.values, so the answer key cannot say to decline).') + '</p>');
+    }
   }
 
   // Traps

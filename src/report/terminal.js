@@ -1,13 +1,14 @@
 // The score report as plain text for the terminal. Headline first: what went out without
 // review but needed a person, how sure we can be of that number, then everything else.
 
-const { pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, typesIn } = require('./format.js');
+const { pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, typesIn, omissionWhat, declineRows } = require('./format.js');
 
 // "SUBJECT  applied, not in the answer key: SUBJ-ANTI" lines for one record's differences.
 function differenceLines(d) {
   const labels = {
     wrong: 'applied, not in the answer key', missing_rejected: 'in the answer key, found but set aside',
     missing: 'in the answer key, never found', invalid: 'not an allowed value', near_miss: 'near miss',
+    declined: 'declined, but the answer key has', should_decline: 'answered, but the answer key says to decline',
   };
   const out = [];
   for (const [bucket, label] of Object.entries(labels)) {
@@ -22,7 +23,7 @@ function headline(results) {
   const row = (name, rate, what) => rows.push([name, pct(rate), count(rate), range(rate), what]);
   row('Silent error rate', r.silent_errors.rate, 'went out without review, but needed a person');
   row('Straight-through', r.straight_through, 'went out without review');
-  if (r.silent_omissions) row('Silent omissions', r.silent_omissions.rate, 'blocked or suppressed, but should have gone out or to a person');
+  if (r.silent_omissions) row('Silent omissions', r.silent_omissions.rate, omissionWhat(results));
   row('Review precision', r.review_queue.precision, 'sent to a person, and needed one');
   if (r.block) row('Block precision', r.block.precision, 'blocked, and the answer key agrees');
   rows.push(['Safeguard failures', '', r.safeguard_failures.records + ' record(s)', '', "went out past the workflow's own confidence gate or floor"]);
@@ -47,8 +48,9 @@ function silentSection(title, what, block, showDiffs) {
   const lines = [title + '  ' + block.records.length + ' record(s)' + (sev ? '  (' + sev + ')' : '') + ': ' + what];
   for (const x of block.records) {
     lines.push('  ' + x.id.padEnd(8) + x.severity.padEnd(10) + x.types.join(', ') + (x.traps.length ? '   [' + x.traps.join(', ') + ']' : ''));
-    lines.push('  ' + ''.padEnd(8) + 'went: ' + x.route + '   answer key: ' + x.gold_route);
+    lines.push('  ' + ''.padEnd(8) + 'went: ' + x.route + (x.gold_route === null ? '' : '   answer key: ' + x.gold_route));
     if (showDiffs) for (const d of differenceLines(x.differences)) lines.push('  ' + ''.padEnd(8) + d);
+    if (x.declined) for (const d of differenceLines({ declined: x.declined })) lines.push('  ' + ''.padEnd(8) + d);
   }
   lines.push(...typeLegend(typesIn(block.records)));
   return lines.join('\n');
@@ -68,7 +70,7 @@ function quality(results) {
     lines.push(table(rows, [1, 2, 3, 4]));
   }
   for (const [name, o] of Object.entries(q.outputs).filter(([, x]) => x.type !== 'set')) {
-    lines.push('  ' + name + ' (' + o.type + '): accuracy ' + pct(o.accuracy) + ' (' + count(o.accuracy) + ')');
+    lines.push('  ' + name + ' (' + o.type + '): accuracy ' + (o.declines ? 'when answered ' : '') + pct(o.accuracy) + ' (' + count(o.accuracy) + ')');
     if (o.type === 'ordinal') {
       const lean = o.mean_signed === null || o.mean_signed === 0 ? 'no lean' : o.mean_signed > 0 ? 'leans higher than the answer key' : 'leans lower than the answer key';
       lines.push('    within one step ' + pct(o.within_one) + ' · average distance ' + num(o.mean_distance, 2) + ' steps · closeness ' + num(o.closeness) +
@@ -76,14 +78,27 @@ function quality(results) {
       const md = Object.entries(o.miss_distances);
       if (md.length) lines.push('    misses by distance: ' + md.map(([d, c]) => d + ' step' + (d === '1' ? '' : 's') + ': ' + c).join(' · '));
     }
-    const labels = Object.keys(o.per_label);
+    // Rows are the answer key's labels, columns the workflow's; with declines, both can include "(declined)".
+    const keys = Object.keys(o.confusion);
+    const labels = Object.keys(o.confusion[keys[0]]);
     const rows = [['', ...labels.map(l => 'as ' + l), '', 'precision', 'recall', 'F1']];
-    for (const k of labels) {
+    for (const k of keys) {
       const s = o.per_label[k];
-      rows.push(['key ' + k, ...labels.map(p => o.confusion[k][p]), '', pct(s.precision), pct(s.recall), num(s.f1)]);
+      rows.push(['key ' + k, ...labels.map(p => o.confusion[k][p]), '', s ? pct(s.precision) : '', s ? pct(s.recall) : '', s ? num(s.f1) : '']);
     }
     lines.push(table(rows, labels.map((_, i) => i + 1).concat([labels.length + 2, labels.length + 3, labels.length + 4]), '    '));
+    if (o.declines) lines.push(declineLines(o.declines));
   }
+  return lines.join('\n');
+}
+
+// A label that may decline: how much it answered, and what each kind of decline mistake cost.
+function declineLines(d) {
+  const rows = [['declines', 'rate', 'count', 'likely range', 'what it counts']];
+  for (const [name, rate, what, ids] of declineRows(d)) rows.push([name, pct(rate), count(rate), range(rate), what + (ids && ids.length ? ': ' + list(ids) : '')]);
+  const lines = [table(rows, [1, 2], '    ')];
+  lines.push('    Correct declines: ' + list(d.correct_declines) + '. A decline is neither a wrong label nor left out: accuracy is on what was answered, and coverage sits beside it.');
+  if (!d.should_have_declined) lines.push('    Answers that should have been declines: not measured (no decline.values, so the answer key cannot say to decline).');
   return lines.join('\n');
 }
 
@@ -127,7 +142,7 @@ function renderTerminal(results) {
   parts.push(r.total + ' records · ' + results.inputs.mode + ' mode · a record needed a person if ' + WRONG_WHEN[results.inputs.wrong_when]);
   parts.push(headline(results));
   parts.push(silentSection('SILENT ERRORS', 'went out without review, but needed a person', r.silent_errors, true));
-  if (r.silent_omissions) parts.push(silentSection('SILENT OMISSIONS', 'blocked or suppressed, but should have gone out or to a person', r.silent_omissions, false));
+  if (r.silent_omissions) parts.push(silentSection('SILENT OMISSIONS', omissionWhat(results), r.silent_omissions, false));
   parts.push(r.safeguard_failures.records === 0 ? 'SAFEGUARD FAILURES  none'
     : 'SAFEGUARD FAILURES  ' + r.safeguard_failures.detail.map(d => d.id + ' (' + d.types.join(', ') + ')').join('  ') +
       '\n  Critical, and a workflow bug even when the content is right: find the branch that routed these records\n' +

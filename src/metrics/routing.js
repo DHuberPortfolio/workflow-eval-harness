@@ -14,7 +14,8 @@
 //                            silent error rate: the content can be right and the process still broken.
 
 const { rate } = require('./stats.js');
-const { SEVERITIES } = require('../config.js');
+const { SEVERITIES, DECLINED } = require('../config.js');
+const { declineOutputs } = require('./judge.js');
 
 const ids = list => list.map(j => j.id);
 
@@ -32,7 +33,10 @@ function countTypes(list, pick, config) {
 function notMeasured(config) {
   const out = [];
   const gold = config.routing.gold_field !== null;
-  if (!gold) out.push({ what: 'SP-FORBIDDEN, SP-SHOULD-REVIEW, SP-DUPLICATE, silent omissions, block precision', why: 'the answer key has no correct route (routing.gold_field)' });
+  if (!gold) {
+    const omissions = declineOutputs(config).length ? 'silent omissions other than SO-DECLINED' : 'silent omissions';
+    out.push({ what: 'SP-FORBIDDEN, SP-SHOULD-REVIEW, SP-DUPLICATE, ' + omissions + ', block precision', why: 'the answer key has no correct route (routing.gold_field)' });
+  }
   else if (!Object.values(config.routing.map).includes('block')) out.push({ what: 'block precision', why: 'no decision maps to block' });
   if (Object.keys(config.allowed_values).length === 0) out.push({ what: 'SP-INVALID', why: 'no allowed_values list' });
   if (!config.duplicate_of_field && Object.values(config.routing.map).includes('exclude')) {
@@ -43,8 +47,22 @@ function notMeasured(config) {
   return out;
 }
 
-function scoreRouting(judgments, config) {
+// Who should not have been left out unseen: with a correct route, the records it sends out or
+// to a person. Without one, outputs that may decline still say it: a record whose answer key
+// has an answer for one of them had something to lose by being left out (SO-DECLINED).
+// Every omission type counted comes from inside this group, so the rate's top and bottom
+// count the same kind of record (trap G9).
+function shouldBeSeenFn(config, records) {
+  if (config.routing.gold_field !== null) return j => j.gold_class === 'auto' || j.gold_class === 'review';
+  const names = declineOutputs(config);
+  const keyById = new Map(records.map(r => [r.id, r.key]));
+  return j => names.some(n => keyById.get(j.id)[n] !== DECLINED);
+}
+
+// records: the paired records, needed only to read the answer key without a correct route.
+function scoreRouting(judgments, config, records = []) {
   const gold = config.routing.gold_field !== null;
+  const omissionsMeasured = gold || declineOutputs(config).length > 0;
   const total = judgments.length;
   const byClass = { auto: 0, review: 0, block: 0, exclude: 0 };
   const byRoute = {};
@@ -56,7 +74,7 @@ function scoreRouting(judgments, config) {
   const guarded = auto.filter(j => j.safeguards.length);
   const reviewed = judgments.filter(j => j.route_class === 'review');
   const blocked = judgments.filter(j => j.route_class === 'block');
-  const shouldBeSeen = judgments.filter(j => j.gold_class === 'auto' || j.gold_class === 'review');
+  const shouldBeSeen = omissionsMeasured ? judgments.filter(shouldBeSeenFn(config, records)) : [];
   const omitted = judgments.filter(j => j.omission);
 
   return {
@@ -80,10 +98,16 @@ function scoreRouting(judgments, config) {
       by_type: countTypes(guarded, j => j.safeguards, config),
       detail: guarded.map(j => ({ id: j.id, types: j.safeguards })),
     },
-    silent_omissions: gold ? {
+    silent_omissions: omissionsMeasured ? {
+      // What the rate is measured against: the correct route, or (without one) the answers
+      // the key gives where the workflow may decline.
+      basis: gold ? 'gold_route' : 'declines',
       rate: rate(omitted.length, shouldBeSeen.length),
       by_type: countTypes(omitted, j => j.omission.types, config),
-      records: omitted.map(j => ({ id: j.id, severity: j.omission.severity, types: j.omission.types, route: j.route, gold_route: j.gold_route, traps: j.traps })),
+      records: omitted.map(j => ({
+        id: j.id, severity: j.omission.severity, types: j.omission.types, route: j.route, gold_route: j.gold_route, traps: j.traps,
+        ...(j.omission.types.includes('SO-DECLINED') ? { declined: j.values.declined } : {}),
+      })),
     } : null,
     review_queue: {
       precision: rate(reviewed.filter(j => j.needs_human).length, reviewed.length),

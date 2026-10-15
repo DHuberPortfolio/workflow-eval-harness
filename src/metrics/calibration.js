@@ -6,8 +6,9 @@
 // is in the answer key. Claims are grouped by stated confidence; each group's accuracy
 // is compared with what was stated.
 //
-// Left out: values without a confidence, and values inherited from another value (they
-// copy its confidence; counting them would count one claim twice, trap D17).
+// Left out: values without a confidence, values inherited from another value (they
+// copy its confidence; counting them would count one claim twice, trap D17), and declined
+// labels (a decline claims nothing; a label set aside beside it was never given, trap F9).
 //
 // Average calibration gap (expected calibration error): each group's |accuracy - stated|,
 // weighted by its size. 0 means perfectly calibrated. Model confidences are often closer
@@ -22,6 +23,7 @@ function claims(records, config) {
   const out = [];
   let noConfidence = 0;
   let inherited = 0;
+  let declined = 0;
   for (const r of scorePopulation(records)) {
     for (const [name, o] of Object.entries(config.outputs)) {
       if (o.type === 'set') {
@@ -34,12 +36,13 @@ function claims(records, config) {
       } else {
         const v = r.pred[name];
         if (!v) continue;
+        if (v.declined) { declined++; continue; }
         if (v.confidence === null) { noConfidence++; continue; }
         out.push({ output: name, id: r.id, value: v.value, confidence: v.confidence, correct: v.value === r.key[name] });
       }
     }
   }
-  return { claims: out, noConfidence, inherited };
+  return { claims: out, noConfidence, inherited, declined };
 }
 
 // "distinct": one bucket per stated value. A width: fixed-width buckets. The small nudge
@@ -77,7 +80,7 @@ function bucketize(list, mode) {
 }
 
 function scoreCalibration(records, config) {
-  const { claims: all, noConfidence, inherited } = claims(records, config);
+  const { claims: all, noConfidence, inherited, declined } = claims(records, config);
   const distinct = new Set(all.map(c => round(c.confidence, 6))).size;
   const setting = config.calibration.buckets;
   const mode = setting === 'auto' ? (distinct <= 12 ? 'distinct' : 0.1) : setting;
@@ -106,7 +109,7 @@ function scoreCalibration(records, config) {
     overall: bucketize(all, mode),
     outputs,
     thresholds,
-    left_out: { no_confidence: noConfidence, inherited },
+    left_out: { no_confidence: noConfidence, inherited, declined },
   };
 }
 

@@ -25,7 +25,7 @@ function recordSummary(j) {
 function scoreRecords(records, config) {
   const judgments = judgeAll(records, config);
   return {
-    routing: scoreRouting(judgments, config),
+    routing: scoreRouting(judgments, config, records),
     quality: scoreQuality(records, config),
     traps: scoreTraps(judgments, config),
     calibration: scoreCalibration(records, config),
