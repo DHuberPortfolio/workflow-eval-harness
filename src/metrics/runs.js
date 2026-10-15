@@ -95,6 +95,29 @@ function keyGapCandidates(runs, config) {
     .sort((a, b) => b.runs - a.runs);
 }
 
+// The silent error rate to quote from repeated runs: the worst run's, with its likely range.
+// Never the runs added together (trap I8). They repeat the same records, and a record's runs
+// tend to go the same way, so an added-up count looks like more evidence than it is and its
+// likely range comes out too narrow. Worst means the highest rate, compared as exact fractions
+// (trap G6); on a tie, the run with the wider range. times_out counts a record once per run it
+// went out in; records_out counts it once.
+function silentToQuote(runs) {
+  const rates = runs.map(run => run.results.routing.silent_errors.rate);
+  let worst = null;
+  rates.forEach((r, i) => {
+    if (r.d === 0) return;
+    const w = worst === null ? null : rates[worst];
+    if (w === null || r.n * w.d > w.n * r.d || (r.n * w.d === w.n * r.d && r.high_pct > w.high_pct)) worst = i;
+  });
+  const out = new Set();
+  for (const run of runs) for (const rec of run.results.records) if (rec.route_class === 'auto') out.add(rec.id);
+  return {
+    worst_run: worst === null ? null : { run: worst + 1, label: runs[worst].label, ...rates[worst] },
+    times_out: rates.reduce((s, r) => s + r.d, 0),
+    records_out: out.size,
+  };
+}
+
 // runs: [{ label, results }], two or more.
 function varianceOf(runs, config) {
   const metrics = metricList(runs[0].results).map(m => {
@@ -122,6 +145,7 @@ function varianceOf(runs, config) {
   return {
     runs: runs.map(r => r.label),
     metrics,
+    silent_error_rate: silentToQuote(runs),
     records: {
       route_changed: rows.filter(r => new Set(r.routes).size > 1).map(r => ({ id: r.id, routes: r.routes, should: r.gold_route })),
       silent_changed: rows.filter(r => new Set(r.silent).size > 1).map(r => ({ id: r.id, silent: r.silent })),

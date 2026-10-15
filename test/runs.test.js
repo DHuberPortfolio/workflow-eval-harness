@@ -86,6 +86,16 @@ test('I3: the same run passed twice is a warning', () => {
   assert.deepEqual(v.problems.map(p => p.trap), ['I3']);
 });
 
+test('I8: variance quotes the worst run, never the runs added together', () => {
+  const q = V.silent_error_rate;
+  const w = q.worst_run;
+  assert.deepEqual([w.run, w.n, w.d, w.pct, w.low_pct, w.high_pct], [1, 1, 2, 50, 9.5, 90.5]);
+  // Added up, the runs send out 6 records, but those are R1 three times, R2 twice and R4 once.
+  assert.deepEqual([q.times_out, q.records_out], [6, 3]);
+  const { renderVariance } = require('../src/report/terminal.js');
+  assert.match(renderVariance(V), /The figure to quote is the worst run, run 1: 50\.0% \(1 of 2; likely 9\.5-90\.5%\)\. Not the runs added together: their 6 records out without review are 3 different records/);
+});
+
 test('compare a -> b: a 50-point drop in silent errors, yet within the noise of identical runs', () => {
   const c = compareRun({ config, keyPath, beforePath: run('a'), afterPath: run('b'), noisePaths: [run('a'), run('b'), run('c')] });
   const m = metric(c, 'silent error rate');

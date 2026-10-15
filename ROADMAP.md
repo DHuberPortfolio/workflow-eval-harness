@@ -61,11 +61,12 @@ the design is wrong.
 - [x] Compliance reviewer: prompt v2 measured (runs 56-59), pass-with-notes log in n8n, answer key v2 from the key-gap review (`KEY_GAPS.md`)
 - [x] Metadata enrichment: Harness Export node in n8n (compact records, `decision_branch` emitted), three fresh runs (61-63) for variance
 - [x] Compliance reviewer: its own scorecard now leads with the silent error rate (a note is no longer a catch)
-- [x] Golden 500: both workflows scored on 500-record golden sets (`examples/*/golden500/`): compliance 9.8% (award claims 15 of 25); metadata 27% in v1, 7.2% over three runs of v3 (44 of 615), 6.6% on the held-out half
+- [x] Golden 500: both workflows scored on 500-record golden sets (`examples/*/golden500/`): compliance 9.8% (award claims 15 of 25); metadata 27% in v1, 6.3-8.6% in three runs of v3 (worst 18 of 210), 5.4-7.6% on the held-out half
 - [x] Readability: one vocabulary across reports and docs ("went out without review", "answer key", "needed a person"); every error code explained where it appears; docs/READING_A_REPORT.md, docs/METRICS.md, docs/ARCHITECTURE.md; example notes in one shape
 - [x] Declining to answer as its own outcome for label outputs (`decline` in the config): coverage,
       accuracy when answered, decline rate, unnecessary declines, answers that should have been
       declines; SP-SHOULD-DECLINE, SP-DECLINED, SO-DECLINED (`test/fixtures/declines/`)
+- [x] Honest ranges: `variance` quotes the worst run and never adds runs of the same records together (trap I8); golden-set rates labelled as stress-test rates, not rates for real traffic; reports say the likely range is for "records like these"
 - [ ] Competitor registry: config in `examples/competitor-registry/`. Not yet scored: it has never
       been run against an answer key. Needs an adapter that turns each run into one record per
       link (the workflow writes only the links it classified) and a labelled set of homepages

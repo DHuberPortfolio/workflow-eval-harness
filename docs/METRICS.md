@@ -27,6 +27,21 @@ textbook formula claims a range of exactly 0 to 0 at 0 of 7.
 The report also says how far one record moves the rate at this size: with 7 records, one
 record is 14 points.
 
+**What the range does not cover.** It assumes each record is a separate piece of evidence,
+drawn from the records you care about. Two common cases break that:
+
+- **A golden set built from traps.** It holds far more hard cases than real traffic, so its
+  rate is a stress-test rate: how the workflow does on records chosen to trip it. That is the
+  right yardstick for comparing versions on the same records, and the range says how precise
+  it is, but it is not the rate real traffic would see, and no range can say how far off it
+  is. The rate on real traffic needs a random sample of that traffic with its own answer key,
+  or each kind of record weighted by its real share (stratified estimation; Cochran 1977,
+  ch. 5). The reports say "the true rate on records like these" for this reason.
+- **Repeated runs of the same records, added together.** A record's runs tend to go the same
+  way, so three runs of 200 records are not 600 records' worth of evidence, and a range drawn
+  from the added-up count comes out too narrow (records that repeat are clustered: the design
+  effect; Kish 1965). `variance` never adds runs up; see below.
+
 ## Straight-through rate
 
 The share of all records that went out without review. The throughput number, and
@@ -154,6 +169,12 @@ Identical code can produce different numbers from run to run, and one run cannot
 precision than that spread. `variance` measures it over repeated runs. `compare` judges a
 change against it: a change no bigger than the spread of identical runs is "within noise",
 a bigger one "beyond noise".
+
+`variance` names **the figure to quote**: the worst run's silent error rate, with its likely
+range. It never adds the runs together, and says how many different records the runs' totals
+really are: on the metadata tagger's Golden 500, three runs sent out 615 records, but only 254
+different articles. Added up, 44 of 615 gives a range of 5.4-9.5%; the worst run alone, 18 of
+210, gives 5.5-13.1%.
 
 `variance` also lists **possible key gaps**: values the workflow states in every run that
 the answer key does not list. Each is either the same mistake made every time, or a gap in

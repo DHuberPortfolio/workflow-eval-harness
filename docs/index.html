@@ -33,12 +33,15 @@ li a:hover, li a:focus-visible { border-color: var(--link); }
     <li><a href="samples/compliance-after.html"><span class="title">After the prompt fix: silent error rate <span class="rate">6.7%</span></span>
       <span class="detail">1 of 15; the same in all four runs</span></a></li>
   </ul>
-  <h2>Both workflows on 500-record golden sets</h2>
+  <h2>Both workflows on 500-record stress tests</h2>
+  <p>Golden sets built to cover each workflow's traps, so they hold far more hard cases than real
+  traffic. Their rates are stress-test rates, for comparing versions on the same records, not the
+  rate real traffic would see.</p>
   <ul>
     <li><a href="samples/compliance-golden500.html"><span class="title">Compliance reviewer: silent error rate <span class="rate">9.8%</span></span>
       <span class="detail">25 of 256; 15 of the 25 are award claims</span></a></li>
     <li><a href="samples/metadata-golden500.html"><span class="title">News-metadata tagger: silent error rate <span class="rate">6.5%</span></span>
-      <span class="detail">13 of 199 (run 70); 6.3% to 8.6% across three identical runs</span></a></li>
+      <span class="detail">13 of 199 (run 70); 6.3% to 8.6% across three identical runs, the worst 18 of 210</span></a></li>
   </ul>
   <p><a href="https://github.com/DHuberPortfolio/workflow-eval-harness">The code, tests and notes on GitHub</a></p>
 </main>

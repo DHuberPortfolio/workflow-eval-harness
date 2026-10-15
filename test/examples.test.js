@@ -65,6 +65,11 @@ test('runs 61-63: identical code, the numbers that moved and the one value state
   // workflow's salience gate exists for exactly this marginal claim (trap I7).
   assert.deepEqual(v.records.key_gap_candidates.filter(g => g.runs === g.of).map(g => [g.id, g.value]), [['A01', 'SUBJ-ANTI']]);
   assert.deepEqual(v.problems, []);
+  // 0 silent errors in 23 records out is the same 8 articles again and again (trap I8). The
+  // figure to quote is one run's: all three are 0%, and 0 of 7 has the widest range.
+  const w = v.silent_error_rate.worst_run;
+  assert.deepEqual([w.run, w.n, w.d, w.high_pct], [1, 0, 7, 35.4]);
+  assert.deepEqual([v.silent_error_rate.times_out, v.silent_error_rate.records_out], [23, 8]);
 });
 
 // Real data: both workflows on their 500-record golden sets. These pin the figures the README
@@ -87,20 +92,45 @@ test('Golden 500, metadata: v3 below 10% in three identical runs, beyond the noi
   const run = n => path.join(G, 'exec-' + n + '.json');
   const v = varianceRun({ config: cfg, keyPath: run(70), predPaths: [run(70), run(71), run(72)] });
   assert.deepEqual(v.metrics.find(m => m.name === 'silent error rate').values, [6.5, 6.3, 8.6]);
+  // The figure to quote is the worst run, never the runs added together (trap I8): their 615
+  // records out are 254 different articles.
+  const w = v.silent_error_rate.worst_run;
+  assert.deepEqual([w.run, w.n, w.d, w.low_pct, w.high_pct], [3, 18, 210, 5.5, 13.1]);
+  assert.deepEqual([v.silent_error_rate.times_out, v.silent_error_rate.records_out], [615, 254]);
   const c = compareRun({ config: cfg, keyPath: run(70), beforePath: run(69), afterPath: run(71), noisePaths: [run(70), run(71), run(72)] });
   assert.equal(c.metrics.find(m => m.name === 'silent error rate').verdict, 'beyond noise');
   const v1 = scoreRun({ config: cfg, predPath: run(68), keyPath: run(68) });
   assert.deepEqual([v1.routing.silent_errors.rate.n, v1.routing.silent_errors.rate.d], [54, 200]);
+  // Inside the 500, v1 again sent the original 24 articles out without an error (0 of 9).
+  const out = v1.records.filter(r => r.route_class === 'auto');
+  const original = out.filter(r => /^A\d+$/.test(r.id));
+  assert.deepEqual([original.filter(r => r.silent).length, original.length], [0, 9]);
 });
 
-test('Golden 500, metadata: the pooled v3 rate, and v1 articles missing a regulation or litigation subject', () => {
+// The guard's 0.40 was chosen on the articles whose id's CRC-32 (zlib's) is even, and checked
+// on the odd ones. Written out because zlib.crc32 needs Node 22.2.
+const CRC = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+const crc32 = s => { let c = 0xffffffff; for (const b of Buffer.from(s)) c = CRC[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+
+test('Golden 500, metadata: v3 run by run on the tuning and held-out halves, and v1 articles missing a regulation or litigation subject', () => {
+  const { rate } = require('../src/metrics/stats.js');
+  assert.equal(crc32('123456789'), 0xcbf43926);   // the standard CRC-32 check value
   const G = path.join(dir, 'golden500');
   const cfg = loadConfig(path.join(G, 'config.json'));
   const run = n => path.join(G, 'exec-' + n + '.json');
-  // Pooled over the three v3 runs: counts added, never the three rates averaged (7.1%).
-  let n = 0, d = 0;
-  for (const r of [70, 71, 72]) { const s = scoreRun({ config: cfg, predPath: run(r), keyPath: run(r) }).routing.silent_errors.rate; n += s.n; d += s.d; }
-  assert.deepEqual([n, d, Number((100 * n / d).toFixed(1))], [44, 615, 7.2]);
+  // Each run on its own; never added up (trap I8).
+  const halves = { tuning: [], held_out: [] };
+  for (const n of [70, 71, 72]) {
+    const out = scoreRun({ config: cfg, predPath: run(n), keyPath: run(n) }).records.filter(r => r.route_class === 'auto');
+    for (const [name, parity] of [['tuning', 0], ['held_out', 1]]) {
+      const half = out.filter(r => crc32(r.id) % 2 === parity);
+      halves[name].push([half.filter(r => r.silent).length, half.length]);
+    }
+  }
+  assert.deepEqual(halves.tuning, [[8, 107], [6, 100], [10, 105]]);
+  assert.deepEqual(halves.held_out, [[5, 92], [7, 106], [8, 105]]);
+  const worst = rate(8, 105);
+  assert.deepEqual([worst.pct, worst.low_pct, worst.high_pct], [7.6, 3.9, 14.3]);
   // v1: count articles, not problems. B223 is missing both subjects.
   const silent = scoreRun({ config: cfg, predPath: run(68), keyPath: run(68) }).records.filter(r => r.silent);
   const missing = (r, code) => ['missing', 'missing_rejected'].some(b => ((r.differences[b] || {}).SUBJECT || []).includes(code));

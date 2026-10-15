@@ -42,6 +42,13 @@ Spread is the sample standard deviation: how far a typical run sits from the ave
 Read it this way: three runs of *identical code* put the silent error rate anywhere from
 0% to 50%. No single run of this workflow can claim a silent error rate more precise than that.
 
+**The figure to quote** (trap I8) is the worst run: a, 1 of 2 = 50.0%, Wilson range 9.5-90.5%
+(z = 1.96, z^2 = 3.8416: center (0.5 + 0.9604) / 2.9208 = 0.5; half-width
+1.96 x sqrt(0.125 + 0.2401) / 2.9208 = 0.4055). Added up, the runs would say 2 silent errors in
+6 records out, but those 6 are R1 three times (a, b, c), R2 twice (a, c) and R4 once (c):
+**3 different records**, and R2's two silent errors are one record making the same mistake
+twice. The added-up 2 of 6 (Wilson 9.7-70.0%) would claim more evidence than 3 records hold.
+
 **Possible key gaps** (values stated that the key does not list, per record and output):
 
 | record | output | value | runs stating it | applied in | confidence |

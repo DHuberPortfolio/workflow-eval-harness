@@ -116,8 +116,11 @@ One at a time, about $0.33 each by the workflow's own estimate:
 | Review precision | 14 of 15 (A04 unnecessary) | 12 of 14 (A04, A24) | 13 of 14 (A04) |
 | SUBJECT recall | 70.7% | 73.2% | 75.6% |
 
-- **0 silent errors in 23 articles out without review**, across the three runs. Pooled, that
-  is consistent with a true rate up to about 14%, where one run alone allows 35%.
+- **0 silent errors in any run, on the same 8 articles.** The 23 records out without review
+  across the three runs are 8 articles: 7 went out in every run, and A22 in two (below). So the
+  runs are evidence about 8 articles, not 23, and the figure to quote is one run's: 0 of 7,
+  consistent with a true rate up to 35%. Added up as 0 of 23, they would seem to rule out
+  anything above 14% (trap I8).
 - **A22 changed route.** In run 61 the model left out GEO-UK ("open an office in London");
   the place-name cue caught it and sent A22 to an editor. In 62 and 63 the model tagged it and
   A22 went out correctly. The guard, not luck, kept run 61 safe.
@@ -132,7 +135,7 @@ One at a time, about $0.33 each by the workflow's own estimate:
 
 | | 24 articles (61-63) | v1 (68) | v2 prompt (69) | v3 guard (70, 71, 72) |
 |---|---|---|---|---|
-| Silent error rate | 0 of 23 (likely up to ~14%) | **27.0%** (54 of 200) | 11.6% (27 of 233) | **6.5%, 6.3%, 8.6%** |
+| Silent error rate | 0 of 7, 8, 8 (each likely up to 32-35%) | **27.0%** (54 of 200) | 11.6% (27 of 233) | **6.5%, 6.3%, 8.6%** |
 | Straight-through | 29-33% | 40.0% | 46.6% | 39.8-42.0% |
 | Review precision | 86-93% | 61.7% | 47.4% | 40.8-44.0% |
 | SUBJECT recall | 71-76% | 82.8% | 94.7% | 95.2-95.8% |
@@ -140,22 +143,36 @@ One at a time, about $0.33 each by the workflow's own estimate:
 
 The workflow's own scorecard gives the same silent error rates.
 
-- **The 24 articles were not representative.** Their 0 silent errors in 23 allowed a true rate
-  up to about 14%; on 500 articles v1's was 27% (likely 21.3-33.5%). A likely range covers the
-  chance in which records a golden set happens to hold, not a golden set that leaves out the
-  hard cases.
+- **These are stress-test rates.** Every article was written to test something, and the set was
+  built to cover all of the tagger's traps, so it holds far more hard cases than a day's news.
+  Its rates say how the tagger does on articles chosen to trip it: the right yardstick for
+  comparing v1, v2 and v3 on the same articles, but not the rate real articles would see. That
+  needs a random sample of real articles with its own answer key, or each trap weighted by how
+  often it occurs in real news (stratified estimation; Cochran 1977, ch. 5). A likely range
+  covers chance only, not how far a golden set is from real traffic.
+- **The 24 articles could not have shown it.** Each run sent 7 or 8 of them out without
+  review, and 0 of 8 allows a true rate up to 32%, so v1's 27% here (likely 21.3-33.5%) was
+  always possible. Inside the 500, v1 again sent the 24 out clean (0 of 9 with an error,
+  against 54 of 191 for the other 476 articles): a hint that they are easier than the rest, but
+  9 articles are too few to show it (one-sided Fisher exact test, p = 0.055).
 - **v1's silent errors were mostly one gap**: 36 of the 54 articles were missing a regulation
   (SUBJ-REG, 29 articles) or litigation (SUBJ-LIT, 8) subject beside the main one; B223 was
   missing both, so the two counts overlap by one. The prompt told the model not to tag
   broader terms, and those two are not broader terms of anything the model did tag, so the
   roll-up never added them. The v2 prompt fixed it: SUBJECT recall 82.8% to 94.7%.
-- **v3 is below 10% in every run**: pooled over its three runs, 44 of 615 (7.2%, likely
-  5.4-9.5%). Compared with v2 against the spread of the three identical runs, the drop is
-  beyond noise (5.3 points against a 2.3-point range).
-- **It holds on articles it was not tuned on.** The guard's 0.40 was chosen on the articles
-  whose id's CRC-32 is even, and checked on the rest. Pooled over v3's runs: 7.7% (24 of 312)
-  on the tuning half, 6.6% (20 of 303; likely 4.3-10.0%) on the held-out half. (The v2 prompt
-  fixes were written from v1's mistakes across all 500.)
+- **v3 is below 10% in every run**: 13 of 199 (6.5%, likely 3.9-10.9%), 13 of 206 (6.3%,
+  likely 3.7-10.5%) and 18 of 210 (8.6%, likely 5.5-13.1%). Quote the worst run, not the three
+  added up: their 615 records out without review are 254 articles sent out again and again, and
+  an article's runs tend to go the same way (5 were silent errors in all three, below). Added up,
+  44 of 615 (likely 5.4-9.5%) would claim more certainty than the evidence holds: records that
+  repeat are clustered, and count for less than new ones (the design effect; Kish 1965; trap
+  I8). Compared with v2 against the spread of the three identical runs, the drop is beyond noise
+  (5.3 points against a 2.3-point range); even the worst run is 3.0 points below v2.
+- **Checked on articles it was not tuned on.** The guard's 0.40 was chosen on the articles
+  whose id's CRC-32 is even, and checked on the rest. Run by run, the held-out half gave 5.4%,
+  6.6% and 7.6% (worst: 8 of 105, likely 3.9-14.3%), inside the tuning half's 6.0% to 9.5%: no
+  sign the 0.40 was fitted to the articles it was chosen on, though halves this size could only
+  show a large gap. (The v2 prompt fixes were written from v1's mistakes across all 500.)
 - **The price is reviews.** v3 sends 21-27 articles per run to an editor on the new rung, about
   half of which needed one; straight-through falls from 46.6% to about 41%. Across the ladder,
   148-154 of v3's 256-268 reviews are ones the answer key says an editor did not need: the
@@ -199,6 +216,9 @@ In a test copy of the workflow, scored on the Golden 500; the demo workflow is u
 
 ## What's left
 
+- **A rate for real articles**: every rate here is a stress-test rate. Scoring a random sample
+  of real articles against an answer key written for them (or weighting the Golden 500's traps
+  by how often each occurs in real news) would give the rate the tagger's readers would see.
 - **Reviews**: more than half of v3's reviews are ones an editor did not need. The confidence
   gate and the salience check send the most; the gate's trade-off is measured above.
 - **5 articles are silent errors in every v3 run** (B299, B413, B424, B427, B460): the next

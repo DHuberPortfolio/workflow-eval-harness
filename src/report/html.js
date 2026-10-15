@@ -21,8 +21,8 @@ function heroNote(rate, moves) {
     ? 'The only record that went out without review ' + (rate.n ? 'should have had one' : 'did not need one')
     : rate.n + ' of the ' + rate.d + ' records that went out without review should have had one';
   if (rate.low_pct === null) return what;
-  return what + '<br>The true rate is likely between ' + rate.low_pct.toFixed(1) + '% and ' + rate.high_pct.toFixed(1) + '% (95% range).' +
-    (rate.d > 1 && moves !== null ? ' With ' + rate.d + ' records, each one moves it by ' + moves.toFixed(1) + ' points.' : '');
+  return what + '<br>The true rate on records like these is likely between ' + rate.low_pct.toFixed(1) + '% and ' + rate.high_pct.toFixed(1) + '% (95% range).' +
+    (rate.d > 1 && moves !== null ? '<br>With ' + rate.d + ' records, each one moves it by ' + moves.toFixed(1) + ' points.' : '');
 }
 
 // An error type such as SP-SHOULD-REVIEW, kept on one line rather than broken at its hyphens.

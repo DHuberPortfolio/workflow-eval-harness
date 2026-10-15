@@ -13,6 +13,13 @@ Both are AI workflows built in n8n. Each was scored first on a small golden set,
 500-record golden set built to cover its traps. The harness reads their exports through a
 config, the same way it reads a Zapier export, a script's log, an API response or a spreadsheet.
 
+None of these golden sets is a random sample of real traffic: each record was written to test
+something, and the 500-record sets hold far more hard cases than real traffic would. So every
+rate below is a **stress-test rate**: how the workflow does on records chosen to trip it, the
+right yardstick for comparing versions on the same set, but not the rate its real traffic would
+see. That takes a random sample of real traffic with its own answer key, or each kind of record
+weighted by its real share (stratified estimation; Cochran 1977, ch. 5).
+
 **A compliance reviewer for law-firm advertising.** A regex layer catches banned words; an
 LLM catches implied violations, and holds the copy for a person only when its confidence
 clears the client's threshold. Below the threshold, the finding becomes a note and the copy
@@ -26,9 +33,9 @@ threshold: a prompt that anchors what each confidence level means brought it to 
 runs out of four, a drop well beyond the old prompt's run-to-run noise. The workflow's
 scorecard now reports the silent error rate too.
 
-On 500 documents (243 violations; 257 clean, 112 of them built to look like violations) the
-silent error rate is **9.8%** (25 of 256; likely 6.7-14.0%), with 89.7% of violations reaching
-a person. The larger set shows where the rest is: 15 of the 25 silent errors are award claims
+On a 500-document stress test (243 violations; 257 clean, 112 of them built to look like
+violations) the silent error rate is **9.8%** (25 of 256; likely 6.7-14.0%), with 89.7% of
+violations reaching a person. The larger set shows where the rest is: 15 of the 25 silent errors are award claims
 ("Named to Super Lawyers"), which the model rates 0.75 almost every time, under every client's
 threshold; and 23 of the 26 clean documents sent to a person anyway were flagged by regex
 rules that cannot read context (a fee counted as a result, "We cannot guarantee" read as a
@@ -40,15 +47,20 @@ the answer key lacks, for a person to rule on (the same mistake can repeat every
 ([review](examples/compliance-reviewer/KEY_GAPS.md))
 
 **A news-metadata tagger** (controlled-vocabulary codes on four facets). On 24 articles,
-three runs found 0 silent errors in the 23 that went out without review, which the harness
-said still allowed a true rate up to 14%. On 500 articles it was **27%**. The small set was
-not representative, and a likely range only covers chance, not an unrepresentative golden set.
+three runs sent 7, 8 and 8 articles out without review, none with an error. They were the same
+8 articles each time, and no errors in 8 still allows a true rate up to 32%: the small set
+could never have shown the tagger was good enough. On the 500-article stress test, the same
+pipeline's rate was **27%**.
 
 Two prompt fixes and a new guard (a tag the model proposed but set aside goes to an editor)
-brought it to **7.2% across three runs of identical code** (44 of 615, likely 5.4-9.5%; the
-runs gave 6.3%, 6.5% and 8.6%), a drop beyond run-to-run noise. On the half of the articles the
-guard's threshold was not tuned on, it is 6.6%. The price: 41% of articles now go out without
-review, down from 47%, and more than half of the reviews are ones an editor did not need.
+brought it to **6.3% to 8.6% in three runs of identical code**, a drop beyond run-to-run noise.
+The worst run is the one to quote: 8.6% (18 of 210, likely 5.5-13.1%). The runs are not added
+together: they send out the same articles again (their 615 records out are 254 articles), and
+an article's runs tend to go the same way, so an added-up 44 of 615 would claim a narrower
+range than the evidence holds (the design effect; Kish 1965). On the half of the articles the
+guard's threshold was not tuned on, the runs gave 5.4% to 7.6% (worst: 8 of 105, likely
+3.9-14.3%). The price: about 41% of articles now go out without review, down from 47%, and
+more than half of the reviews are ones an editor did not need.
 ([notes](examples/metadata-enrichment/NOTES.md))
 
 ![The HTML report for the compliance reviewer before its prompt fix: silent error rate 30.0%, six silent errors listed](docs/samples/compliance-before.png)
@@ -56,7 +68,7 @@ review, down from 47%, and more than half of the reviews are ones an editor did 
 Open the full reports, each one self-contained HTML file: the compliance reviewer
 [before](https://dhuberportfolio.github.io/workflow-eval-harness/samples/compliance-before.html) and
 [after](https://dhuberportfolio.github.io/workflow-eval-harness/samples/compliance-after.html) its prompt fix on 40 documents,
-and both workflows on 500 records:
+and both workflows on their 500-record stress tests:
 [compliance reviewer](https://dhuberportfolio.github.io/workflow-eval-harness/samples/compliance-golden500.html),
 [metadata tagger](https://dhuberportfolio.github.io/workflow-eval-harness/samples/metadata-golden500.html).
 
@@ -72,15 +84,18 @@ nothing until something marks it, and the marking is where the two workflows abo
 2. **It counts the mistakes that matter.** In the metadata tagger's first 500-article run, 99%
    of the tags it applied were correct, yet 27% of the articles it published without review
    had an error. An average hides that; the silent error rate does not.
-3. **It says how far to trust a number.** "0 errors in 23" looked perfect; the real rate was
-   27%. Three identical runs gave 6.3%, 6.5% and 8.6%. Likely ranges and repeated runs tell a
-   real improvement from luck, and `compare` says whether a change is beyond noise.
+3. **It says how far to trust a number.** No errors in the 8 articles the tagger sent out
+   looked perfect; it still allowed a rate up to 32%, and on the 500-article stress test the
+   rate was 27%. Three identical runs gave 6.3%, 6.5% and 8.6%: `variance` says to quote the
+   worst, and why the three are not added up. Likely ranges and repeated runs tell a real
+   improvement from luck, and `compare` says whether a change is beyond noise.
 4. **It says why, not just how often.** The model had found the violations and understated its
    confidence, so the fix was the prompt, not the threshold. 15 of 25 misses were award claims.
    Regex rules, not the AI, caused most unnecessary reviews. A pass/fail count points at none
    of that.
 5. **It answers "what if" for free.** Capping thresholds at 0.85 and sending award claims to a
-   person: 1.3%, computed from the recorded answers without running the workflow again.
+   person: 1.3% on the same 500 documents, computed from the recorded answers without running
+   the workflow again.
 6. **It checks the answer key too.** It surfaced 9 real violations the compliance answer key
    had missed, and it stops rather than count anything it cannot read correctly.
 7. **One yardstick for every workflow.** Each workflow's home-made scorecard measures in its own
@@ -109,7 +124,7 @@ HEADLINE
   Review precision      50.0%        1 of 2   9.5-90.5%      sent to a person, and needed one
   Block precision      100.0%        1 of 1   20.7-100.0%    blocked, and the answer key agrees
   Safeguard failures            0 record(s)                  went out past the workflow's own confidence gate or floor
-  The likely range is where the true rate probably sits (95%). With 2 records out without review, each one moves the silent error rate by 50.0 points.
+  The likely range is where the true rate on records like these probably sits (95%). With 2 records out without review, each one moves the silent error rate by 50.0 points.
 
 SILENT ERRORS  1 record(s)  (high 1): went out without review, but needed a person
   R2      high      SP-WRONG, SP-SHOULD-REVIEW   [plausible-extra-tag]
@@ -129,7 +144,7 @@ by number.
 | Command | Question it answers |
 |---|---|
 | `wfeval score` | How did this run do? Silent errors by type and severity, routing, output quality, per-trap results, calibration. `--fail-on critical` exits non-zero, to stop a build. |
-| `wfeval variance` | How much do the numbers move between runs of identical code? Mean, spread and range per metric, the records that behave differently run to run, and possible key gaps: values stated in every run that the answer key does not list, for a person to rule on. |
+| `wfeval variance` | How much do the numbers move between runs of identical code? Mean, spread and range per metric; the worst run's silent error rate, the one to quote (runs are never added together); the records that behave differently run to run; and possible key gaps: values stated in every run that the answer key does not list, for a person to rule on. |
 | `wfeval compare` | Did a change help, or did it move within that noise? Every metric's change against the spread of repeated runs, and every record that was fixed or broken. |
 | `wfeval whatif` | What would the numbers be at another threshold? Sweeps the confidence gate or the confidence floor. |
 | `wfeval check` | Is this config, and this pair of files, readable? Prints what it understood. |
@@ -200,6 +215,10 @@ produces today. Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
   whose route could depend on those are marked "needs replay" rather than guessed.
 - Every rate is only as strong as the golden set is large. The likely ranges say how strong
   that is.
+- A likely range covers chance only. It does not make a golden set like real traffic: a set
+  built from traps gives a stress-test rate, and the rate on real traffic needs a random sample
+  of it. Nor does it hold for repeated runs of the same records added together, which is why
+  `variance` quotes the worst run instead.
 
 ## Docs
 

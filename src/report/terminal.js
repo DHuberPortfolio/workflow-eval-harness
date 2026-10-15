@@ -30,7 +30,7 @@ function headline(results) {
   const lines = ['HEADLINE', table(rows, [1, 2])];
   const se = r.silent_errors;
   if (se.one_record_moves_pct !== null && se.rate.d > 1) {
-    lines.push('  The likely range is where the true rate probably sits (95%). With ' + se.rate.d +
+    lines.push('  The likely range is where the true rate on records like these probably sits (95%). With ' + se.rate.d +
       ' records out without review, each one moves the silent error rate by ' + se.one_record_moves_pct.toFixed(1) + ' points.');
   }
   return lines.join('\n');
@@ -187,6 +187,16 @@ function renderVariance(v) {
   } else if (silent && silent.range !== null) {
     parts.push('Identical code put the silent error rate anywhere from ' + fmt(silent.min, 'points') + ' to ' + fmt(silent.max, 'points') +
       '. A single run cannot claim more precision than that ' + fmtSpread(silent.range, 'points') + ' range.');
+  }
+  // Trap I8: quote the worst run, never the runs added together.
+  const q = v.silent_error_rate;
+  if (q.worst_run) {
+    const w = q.worst_run;
+    parts.push('The figure to quote is the worst run, run ' + w.run + ': ' + pct(w) + ' (' + count(w) + '; likely ' + range(w) + ').' +
+      (q.records_out < q.times_out
+        ? ' Not the runs added together: their ' + q.times_out + ' records out without review are ' + q.records_out +
+          ' different records, and a record\'s runs tend to go the same way, so the added-up count would look like more evidence than it is.'
+        : ''));
   }
   const rc = v.records.route_changed;
   parts.push('RECORDS THAT CHANGED ROUTE  ' + (rc.length ? '' : 'none') +

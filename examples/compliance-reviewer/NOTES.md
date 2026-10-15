@@ -105,6 +105,13 @@ With prompt v1, on the first 40 documents:
 The 40-document figures sit inside their own likely ranges; the 500 show what was behind them.
 The workflow's own scorecard gives the same figures.
 
+- **These are stress-test rates.** The Golden 500 is about half violations, and 112 of its 257
+  clean documents were built to look like violations; real copy is unlikely to look like that.
+  Its rates say how the reviewer does on copy chosen to trip it: the right yardstick for
+  comparing prompts and policies on the same documents, but not the rate real copy would see.
+  That needs a random sample of real copy with its own answer key, or each kind of document
+  weighted by its real share (stratified estimation; Cochran 1977, ch. 5). A likely range covers
+  chance only, not how far a golden set is from real traffic.
 - **Award claims are 15 of the 25 silent errors.** Of 31 documents with an award, rating or
   list claim ("Named to the 2025 Super Lawyers list", "Rated 10.0 Superb on Avvo"), 15 went out
   with only a note. The model states AWARD_CLAIM_REVIEW at 0.75 in 27 of its 36 findings and
@@ -213,6 +220,9 @@ Every earlier version of the workflow is in its n8n version history.
 
 ## What's left
 
+- **A rate for real copy**: every rate here is a stress-test rate. Scoring a random sample of
+  real copy against an answer key written for it (or weighting the Golden 500's kinds of
+  document by their real share) would give the rate clients' readers would see.
 - **Award claims** are now a clear pattern (31 documents, 15 silent errors), so fixing them no
   longer means fitting one document: either the model's confidence for them, or a rule that
   sends every award, rating or list claim to a person.

@@ -21,18 +21,21 @@ A walk through one real report, top to bottom: the
 | **confidence gate** | The confidence a record's strongest value needs for the record to go out without review |
 | **confidence floor** | The confidence a value needs to be kept at all |
 | **declined** | The workflow said "none of these" instead of a label (only for outputs configured to decline). Never counted as a wrong label |
-| **likely range** | Where the true rate probably sits (a 95% range). A small golden set gives a wide range |
+| **likely range** | Where the true rate on records like these probably sits (a 95% range). A small golden set gives a wide range. It covers chance only ([what it does not cover](METRICS.md#every-rate-carries-its-likely-range)) |
+| **stress-test rate** | A rate on a golden set built from traps, which holds more hard cases than real traffic. Right for comparing versions on the same records; not the rate real traffic would see |
 
 ## 1. The headline: silent error rate
 
 > **30.0%** · 6 of the 20 records that went out without review should have had one.
-> The true rate is likely between 14.5% and 51.9% (95% range). With 20 records, each one
-> moves it by 5.0 points.
+> The true rate on records like these is likely between 14.5% and 51.9% (95% range). With 20
+> records, each one moves it by 5.0 points.
 
 Of everything the workflow released unseen, the share a person should have caught. Read all
 three parts: the rate, the count behind it (6 of 20) and the likely range. On a golden set this
 size the true rate could be anywhere from about 15% to about 52%. What is certain is that it
-is not small.
+is not small. "Records like these" matters: these 40 documents were chosen to test the
+reviewer (each is labelled with the layer that should catch it, and 26 have violations), so
+this is a stress-test rate. The rate on real copy needs a random sample of real copy.
 
 ## 2. The row of tiles
 
@@ -110,9 +113,11 @@ always named, never shown as zero.
 ## Across runs
 
 - **`wfeval variance`**: the same metrics over repeated runs of identical code. The range
-  between runs is how precise any single run can claim to be. It also lists the records that
-  changed route between runs, and **possible key gaps**: values stated in every run that the
-  answer key does not list, for a person to rule on.
+  between runs is how precise any single run can claim to be. It names the figure to quote,
+  the worst run's silent error rate with its likely range, and never adds the runs together:
+  they repeat the same records, so the added-up count would look like more evidence than it
+  is. It also lists the records that changed route between runs, and **possible key gaps**:
+  values stated in every run that the answer key does not list, for a person to rule on.
 - **`wfeval compare`**: what changed between two runs, and whether each change is bigger than
   the spread of identical runs ("beyond noise") or not ("within noise"). Plus every record
   whose route was fixed or broken.
