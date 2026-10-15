@@ -114,3 +114,41 @@ and not the output that is also the route. What is reported:
 | `duplicate_of_field` | - | The answer key's field giving the id of the primary a duplicate repeats. Enables SP-WRONG-PRIMARY and SO-PRIMARY-SUPPRESSED. |
 | `allowed_values` | - | `{ output: [values] }` or `{ output: { "file": "vocab.json", "field": "code" } }` (relative to the config). An applied value outside it is SP-INVALID. |
 | `severity` | see docs/SILENT_ERRORS.md | `{ "SP-DUPLICATE": "medium" }`: override any error type's severity. |
+
+## Grading free text (`wfeval grade`)
+
+Free-text outputs have no answer key; a person grades them. `wfeval grade` takes a separate,
+smaller config that says where each form's fields and source text are:
+
+```json
+{
+  "title": "Assessment form v1",
+  "id_field": "id",
+  "source_field": "transcript",
+  "fields": {
+    "reason": { "field": "form.reason", "section": "Reason for contacting", "label": "Your reason for contacting People's Services?" },
+    "enjoyed": { "field": "form.enjoyed", "section": "Unique strengths" }
+  },
+  "kinds": ["figure altered", "contradiction smoothed over", "also leaves something out"]
+}
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `fields` | required | Every free-text field to grade, in the order the page shows them. |
+| `fields.<name>.field` | the name | Where the field's text is (a name or dotted path). Text, a number, true/false, or empty; an empty field is still graded. |
+| `fields.<name>.section` | - | The form section it belongs to. Rates are also pooled per section. |
+| `fields.<name>.label` | the name | The question the page shows for it. |
+| `source_field` | - | Where the source text (a transcript) is. Shown beside the fields. Without it the page says to grade against your own copy. |
+| `kinds` | `figure altered`, `contradiction smoothed over`, `also leaves something out` | Tick boxes offered on an invented field: how it was invented. Tags on the grade, counted in the report. |
+| `id_field`, `input` | `"id"`, - | As above: `input` takes `format`, `records_at`, `unwrap` and `delimiter`. |
+| `title` | - | Shown on the page and carried into the grades file. |
+
+```
+wfeval grade --config grading.json --pred forms.json --out grading.html
+wfeval score --grades grades-A.json [--second-reviewer grades-B.json]
+```
+
+The page saves a grades file (format `wfeval-grades/1`) that carries everything `score --grades`
+needs, including a fingerprint of exactly what was graded, so no config is passed to `score`.
+Why the grades are three and not five: [METRICS.md](METRICS.md#free-text-graded-by-a-person).
