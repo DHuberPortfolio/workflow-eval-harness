@@ -1,0 +1,13 @@
+{
+  "title": "Assessment form v1: three synthetic visits",
+  "id_field": "id",
+  "source_field": "transcript",
+  "fields": {
+    "type": { "field": "form.type", "section": "Is this a", "label": "Is this a:" },
+    "reason": { "field": "form.reason", "section": "Reason for contacting", "label": "Your reason for contacting People's Services?" },
+    "enjoyed": { "field": "form.enjoyed", "section": "Unique strengths", "label": "What have you previously enjoyed doing, what knowledge and skills do you have?" },
+    "independence": { "field": "form.independence", "section": "Unique strengths", "label": "What level of independence did you once have?" },
+    "manage_now": { "field": "form.manage_now", "section": "Unique strengths", "label": "What can you manage to do now?" }
+  },
+  "kinds": ["figure altered", "contradiction smoothed over", "inferred a diagnosis, risk or eligibility", "also leaves something out"]
+}

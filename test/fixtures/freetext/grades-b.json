@@ -1,0 +1,125 @@
+{
+  "format": "wfeval-grades/1",
+  "title": "Assessment form v1: three synthetic visits",
+  "fingerprint": "sha256:5258ec52fe7604a62b99d572c51f3274dc183ac50c7b7e51820c7e06c7b83500",
+  "reviewer": "Reviewer B",
+  "saved_at": "2026-10-15T11:00:00.000Z",
+  "fields": [
+    {
+      "name": "type",
+      "section": "Is this a"
+    },
+    {
+      "name": "reason",
+      "section": "Reason for contacting"
+    },
+    {
+      "name": "enjoyed",
+      "section": "Unique strengths"
+    },
+    {
+      "name": "independence",
+      "section": "Unique strengths"
+    },
+    {
+      "name": "manage_now",
+      "section": "Unique strengths"
+    }
+  ],
+  "kinds": [
+    "figure altered",
+    "contradiction smoothed over",
+    "inferred a diagnosis, risk or eligibility",
+    "also leaves something out"
+  ],
+  "forms": [
+    "V1",
+    "V2",
+    "V3"
+  ],
+  "grades": [
+    {
+      "form": "V1",
+      "field": "type",
+      "grade": "faithful"
+    },
+    {
+      "form": "V1",
+      "field": "reason",
+      "grade": "invented",
+      "kinds": [
+        "figure altered"
+      ]
+    },
+    {
+      "form": "V1",
+      "field": "enjoyed",
+      "grade": "faithful"
+    },
+    {
+      "form": "V1",
+      "field": "independence",
+      "grade": "faithful"
+    },
+    {
+      "form": "V1",
+      "field": "manage_now",
+      "grade": "missing"
+    },
+    {
+      "form": "V2",
+      "field": "type",
+      "grade": "faithful"
+    },
+    {
+      "form": "V2",
+      "field": "reason",
+      "grade": "invented",
+      "kinds": [
+        "contradiction smoothed over",
+        "also leaves something out"
+      ]
+    },
+    {
+      "form": "V2",
+      "field": "enjoyed",
+      "grade": "faithful"
+    },
+    {
+      "form": "V2",
+      "field": "independence",
+      "grade": "faithful"
+    },
+    {
+      "form": "V2",
+      "field": "manage_now",
+      "grade": "faithful"
+    },
+    {
+      "form": "V3",
+      "field": "type",
+      "grade": "faithful"
+    },
+    {
+      "form": "V3",
+      "field": "reason",
+      "grade": "missing",
+      "note": "Does not say it is an initial assessment."
+    },
+    {
+      "form": "V3",
+      "field": "enjoyed",
+      "grade": "faithful"
+    },
+    {
+      "form": "V3",
+      "field": "independence",
+      "grade": "missing"
+    },
+    {
+      "form": "V3",
+      "field": "manage_now",
+      "grade": "faithful"
+    }
+  ]
+}
