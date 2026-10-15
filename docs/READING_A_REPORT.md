@@ -20,6 +20,7 @@ A walk through one real report, top to bottom: the
 | **silent omission** | Blocked or suppressed, but should have gone out or to a person. Nobody saw that either |
 | **confidence gate** | The confidence a record's strongest value needs for the record to go out without review |
 | **confidence floor** | The confidence a value needs to be kept at all |
+| **declined** | The workflow said "none of these" instead of a label (only for outputs configured to decline). Never counted as a wrong label |
 | **likely range** | Where the true rate probably sits (a 95% range). A small golden set gives a wide range |
 
 ## 1. The headline: silent error rate

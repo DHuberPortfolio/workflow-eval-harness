@@ -56,10 +56,34 @@ A field literally named with a dot is used first, because spreadsheet exports fl
 | `value_key` / `confidence_key` | `"value"` / `"confidence"` | Inside a value object, which fields hold the value and its confidence. |
 | `rejected_field` | - | Sets: a separate field listing values proposed but not applied; read as `applied: false`. |
 | `confidence_field` | - | Labels and ordinals: a separate field holding the label's confidence. |
+| `decline` | - | Labels: the workflow may decline to answer, and a decline is its own outcome (below). |
 
 A value is written as `"text"` or `{ "value": "text", "confidence": 0.9, "applied": true, "inherited_from": "..." }`.
 `applied` must be a real `true`/`false`; `inherited_from` marks a value copied from another
 (a broader term), which is left out of calibration.
+
+### Declines
+
+```json
+"category": {
+  "type": "label",
+  "labels": ["case_results", "attorneys", "awards", "news"],
+  "decline": { "values": ["none"], "field": "declined" }
+}
+```
+
+Either or both:
+
+| Key | Meaning |
+|---|---|
+| `decline.values` | Label values that mean "declined", such as `"none"` or `"unsure"`. In the answer key, one of them means declining is the correct outcome. Never also a label. |
+| `decline.field` | A prediction field that is `true` (a real true, not text) when the workflow declined, whatever label sits beside it. That label is shown as "set aside" and never counted as an answer: useful when the workflow names a category but drops it below its own threshold. |
+
+A missing label is still a stop (trap F3), not a decline, unless `decline.field` is `true`:
+"nothing" might be a crash. With only `decline.field`, the answer key cannot say to decline,
+so "answers that should have been declines" is reported as not measured. Label outputs only,
+and not the output that is also the route. What is reported:
+[METRICS.md](METRICS.md#declines); the error types: [SILENT_ERRORS.md](SILENT_ERRORS.md#declines).
 
 ## Routing
 

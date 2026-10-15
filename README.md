@@ -177,7 +177,8 @@ produces today. Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Limits
 
-- Scores sets of values, single labels and ordered labels. Free text is not supported:
+- Scores sets of values, single labels (which may decline to answer: a decline is its own
+  outcome, never a wrong label) and ordered labels. Free text is not supported:
   it needs a reviewer to grade each field first, and the grades can then be scored as labels.
 - The floor what-if does not re-add broader terms or re-apply per-output caps; records
   whose route could depend on those are marked "needs replay" rather than guessed.

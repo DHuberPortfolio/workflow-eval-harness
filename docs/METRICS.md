@@ -70,6 +70,31 @@ high or low, and a closeness score where a near miss loses a little and a miss a
 scale loses everything. A near miss that goes out is a low-severity silent error; a far miss
 is a high one.
 
+## Declines
+
+A label output can be allowed to decline (`decline` in the config): to say "none of these"
+rather than guess. A decline is neither counted as a wrong label (that would make a workflow
+that declines honestly look worse than one that guesses) nor dropped (that would let a
+workflow that declines everything hard look perfect). Instead, five numbers, each with its
+likely range:
+
+| Number | Out of | Why |
+|---|---|---|
+| **Coverage** | all records | the share answered |
+| **Accuracy when answered** | the answers | how good the answers are; it replaces accuracy for this output |
+| **Declined** | all records | 100% minus coverage, stated plainly |
+| **Unnecessary declines** | the declines | the answer key has an answer: what declining cost |
+| **Answers that should have been declines** | the answers | the answer key says no label fits: overconfidence. Not measured when the key cannot say decline |
+
+Read accuracy and coverage together: declining more raises one and lowers the other. In the
+confusion matrix a decline gets its own column (and row, when the key can decline). Per label,
+precision counts only what was given, so a decline is never a false positive; recall counts a
+decline as a miss. Calibration leaves declines out: they claim nothing.
+
+Routing applies as for any record. A wrong label or an answer that should have been a decline
+going out is a high-severity silent error; a decline left out where the key has an answer is a
+medium silent omission ([SILENT_ERRORS.md](SILENT_ERRORS.md#declines)).
+
 ## Per trap
 
 A golden set is built from traps: records designed to provoke one kind of mistake. Grouping

@@ -203,3 +203,10 @@ test('F10: a decline value with spaces is trimmed; with another case it stops', 
   assert.deepEqual(cased.flagged, ['stop:F1']);
   assert.match(cased.items[0].message, /or a decline: none\) \(did you mean "none"\?\)/);
 });
+
+test('the competitor registry example config is valid and declines the way the fixture does', () => {
+  const c = loadConfig(path.join(__dirname, '..', 'examples', 'competitor-registry', 'config.json'));
+  assert.deepEqual(c.outputs.category.decline, { values: ['none'], field: 'declined' });
+  assert.equal(c.routing.gold_field, null);
+  assert.deepEqual(c.thresholds.auto_publish, { category: 0.5 });
+});

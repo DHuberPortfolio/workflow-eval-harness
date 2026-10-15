@@ -63,7 +63,12 @@ the design is wrong.
 - [x] Compliance reviewer: its own scorecard now leads with the silent error rate (a note is no longer a catch)
 - [x] Golden 500: both workflows scored on 500-record golden sets (`examples/*/golden500/`): compliance 9.8% (award claims 15 of 25); metadata 27% in v1, 7.2% over three runs of v3 (44 of 615), 6.6% on the held-out half
 - [x] Readability: one vocabulary across reports and docs ("went out without review", "answer key", "needed a person"); every error code explained where it appears; docs/READING_A_REPORT.md, docs/METRICS.md, docs/ARCHITECTURE.md; example notes in one shape
-- [ ] Competitor registry: needs "declined to classify" handled as its own outcome
+- [x] Declining to answer as its own outcome for label outputs (`decline` in the config): coverage,
+      accuracy when answered, decline rate, unnecessary declines, answers that should have been
+      declines; SP-SHOULD-DECLINE, SP-DECLINED, SO-DECLINED (`test/fixtures/declines/`)
+- [ ] Competitor registry: config in `examples/competitor-registry/`. Not yet scored: it has never
+      been run against an answer key. Needs an adapter that turns each run into one record per
+      link (the workflow writes only the links it classified) and a labelled set of homepages
 - [x] Ordinal labels (bands 1-5: near misses count less than far misses), with a hand-worked
       fixture (`test/fixtures/ordinal/`). Competitor watch's own runs not scored: running it writes
       to its snapshot tables
@@ -77,6 +82,10 @@ the design is wrong.
 - Golden-set trap design for each workflow (2-3+ records per trap type, plus records combining traps)
 
 ## Settled
+- Declining is an outcome of a label output, not a route class: a route says who sees a record,
+  and a workflow can send declines anywhere. Wrong category out unseen: SP-WRONG, high. Answer
+  where the key says decline: SP-SHOULD-DECLINE, high. Unnecessary decline: medium (SO-DECLINED
+  when left out, SP-DECLINED when it goes out). Sets do not decline: an empty set is already an answer.
 - Route classes: auto (goes through, unseen), review (a person decides), block (never
   processed, unseen), exclude (duplicate suppressed, unseen). Silent omission = key says auto
   or review, workflow said block or exclude.
