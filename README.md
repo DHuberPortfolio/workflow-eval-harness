@@ -201,7 +201,7 @@ with what it does about each: stop and name the offending record, fix and report
 follow a stated rule. On a golden set it stops on anything suspicious; `--lenient` turns
 those stops into warnings for samples of production output.
 
-170+ tests check the numbers against answers worked out by hand before the code existed.
+200+ tests check the numbers against answers worked out by hand before the code existed.
 GitHub Actions runs them on Linux and Windows with Node 18, 22 and 24 on every push, along
 with the commands this README shows, and checks that the sample reports match what the tool
 produces today. Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
