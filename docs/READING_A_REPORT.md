@@ -43,8 +43,12 @@ chance if the real rate is this run's, and the hard minimum, a perfect run
 ([how it is worked out](METRICS.md#how-many-records-would-show-a-target)).
 
 With `clusters` in the config (or `--cluster-by`), one more line gives the likely range counting
-clusters of records that go together, such as retellings of one story, instead of every record:
-wider when the silent errors pile up in a few clusters, the same when they do not
+clusters of records that go together, such as retellings of one story, instead of every record.
+It is wider when the silent errors pile up in a few clusters, and the same as the headline's when
+they are spread out across clusters. With no silent errors, or all of them in one cluster, there
+is nothing to tell piling up from chance, so each cluster's records are taken to go right or
+wrong together, worth at most one record per cluster: at least as wide as the headline's, the
+cautious choice, and the line says so
 ([how it is worked out](METRICS.md#ranges-that-count-clusters)).
 
 With `--mix <file>`, two more lines estimate what a real mix of traffic would see: each group of

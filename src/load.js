@@ -220,16 +220,43 @@ function readValue(item, o, where, p, isKey) {
   return isKey ? trimmed : { value: trimmed, confidence, applied, inherited };
 }
 
-// D23: two values that the config's equivalents make one, in one record. The higher-confidence
-// copy is kept, applied if either was: one episode cited twice under two ids was still cited.
-function mergeEquivalent(a, b, isKey) {
+// Two copies of one value in one record, kept as one: two values that the config's equivalents
+// make one (D23), or the same text twice, kept once in lenient mode (D6). Applied if either copy
+// was: one episode cited twice under two ids was still cited. The confidence kept is the one a
+// lead gate would see: with an applied copy, the highest applied copy's, never a copy's the
+// workflow did not apply (an applied 0.4 merged with a 0.9 set aside would otherwise become an
+// applied 0.9, or not applied at all, and hide the gate and floor failures, SG-GATE and SG-FLOOR).
+// With no applied copy, the higher, as before. When applied copies differ, the lowest is kept as
+// well (floor_confidence), for the floor check and a "weakest" gate (judge.js): a merge never
+// hides a weak value that was applied. A value that is the result of an earlier merge brings its
+// own lowest along.
+function mergeCopies(a, b, isKey) {
   if (isKey) return a;
-  const hi = (b.confidence ?? -1) > (a.confidence ?? -1) ? b : a;
-  return { ...hi, applied: a.applied || b.applied };
+  const conf = v => v.confidence ?? -1;
+  const applied = [a, b].filter(v => v.applied);
+  const from = applied.length ? applied : [a, b];
+  const merged = { ...(from.length === 2 && conf(from[1]) > conf(from[0]) ? from[1] : from[0]) };
+  delete merged.floor_confidence;
+  const lows = applied.map(v => v.floor_confidence ?? v.confidence).filter(c => c !== null);
+  const low = lows.length ? Math.min(...lows) : null;
+  if (low !== null && low < merged.confidence) merged.floor_confidence = low;
+  return merged;
+}
+// What a merge kept, for its line (D23's FIX, D6's lenient warning): applied or not, the
+// confidence kept and whose it is when that is not plain, and the lowest applied copy's when it
+// was kept too.
+function keptWords(a, b, m) {
+  if (m.confidence === null) return m.applied ? 'applied' : 'not applied';
+  let s = (m.applied ? 'applied' : 'not applied') + ', confidence ' + m.confidence;
+  const low = m.floor_confidence;
+  const unused = m.applied ? [a, b].filter(v => !v.applied && v.confidence !== null && v.confidence > m.confidence) : [];
+  if (low !== undefined || unused.length) s += ', the ' + (low !== undefined ? 'highest applied' : 'applied') + " copy's";
+  if (unused.length) s += ': the ' + unused[0].confidence + ' of a copy not applied is not used';
+  if (low !== undefined) s += '; the floor and a "weakest" gate check the lowest, ' + low;
+  return s;
 }
 const mergedMessage = (name, first, second, value, kept) => name + ': merged 2 equivalent values, ' + JSON.stringify(first) + ' and ' +
-  JSON.stringify(second) + ', into ' + JSON.stringify(value) +
-  (kept ? ' (' + (kept.applied ? 'applied' : 'not applied') + (kept.confidence === null ? '' : ', confidence ' + kept.confidence) + ')' : '');
+  JSON.stringify(second) + ', into ' + JSON.stringify(value) + (kept ? ' (' + kept + ')' : '');
 
 // One slot of a set output's answer key: { "any_of": [...] }, any one of whose values is right
 // (D20). Each value is text, trimmed and read through equivalents like a plain value. Anything
@@ -305,12 +332,17 @@ function readSet(raw, name, o, where, p, isKey, gated, eq) {
       plain.set(value, { i: out.length, as: [as] });
       out.push(entry);
     } else if (prev.as.includes(as)) {
-      // D6: listed twice. A sign something upstream is not de-duplicating.
-      p.strict('D6', where, name + ' lists ' + JSON.stringify(value) + ' more than once');
-      if (!isKey && (entry.confidence ?? -1) > (out[prev.i].confidence ?? -1)) out[prev.i] = entry;
+      // D6: listed twice. A sign something upstream is not de-duplicating. A stop in strict mode;
+      // in lenient mode the copies are kept once, by the same rule as equivalents (mergeCopies),
+      // and the warning says which confidences were kept.
+      const before = out[prev.i];
+      out[prev.i] = mergeCopies(before, entry, isKey);
+      const kept = !isKey && p.mode === 'lenient' ? '; kept once (' + keptWords(before, entry, out[prev.i]) + ')' : '';
+      p.strict('D6', where, name + ' lists ' + JSON.stringify(value) + ' more than once' + kept);
     } else {
-      out[prev.i] = mergeEquivalent(out[prev.i], entry, isKey);
-      p.fix('D23', where, mergedMessage(name, prev.as[0], as, value, isKey ? null : out[prev.i]));
+      const before = out[prev.i];
+      out[prev.i] = mergeCopies(before, entry, isKey);
+      p.fix('D23', where, mergedMessage(name, prev.as[0], as, value, isKey ? null : keptWords(before, entry, out[prev.i])));
       prev.as.push(as);
     }
   });

@@ -2,6 +2,8 @@
 // against test/fixtures/alternatives/EXPECTED.md. Named after traps D20-D23, F13 and I10.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { validateConfig, loadConfig } = require('../src/config.js');
@@ -97,14 +99,99 @@ test('D23: equivalent values are read as the group\'s first, on both sides; two 
   ]);
 });
 
-test('D23: merged values keep the higher confidence and are applied if either was; a value written twice is still D6', () => {
+test('D23: merged values are applied if either was, at the applied copy\'s confidence; a value written twice is still D6', () => {
   const cfg = validateConfig({ outputs: { cites: { type: 'set' } }, routing: { map: { A: 'auto' } }, equivalents: { cites: [['x', 'x2', 'x3']] } }).config;
   const pred = cites => run(p => normalizePredictions([{ id: 'P1', route: 'A', cites }], cfg, 'preds', p), 'lenient');
+  // x applied at 0.7; x2 (0.4) and x3 (0.9) proposed but not applied. The workflow acted on 0.7.
   const merged = pred([{ value: 'x2', confidence: 0.4, applied: false }, { value: 'x', confidence: 0.7, applied: true }, { value: 'x3', confidence: 0.9, applied: false }]);
-  assert.deepEqual(merged.result[0].outputs.cites, [{ value: 'x', confidence: 0.9, applied: true, inherited: false }]);
+  assert.deepEqual(merged.result[0].outputs.cites, [{ value: 'x', confidence: 0.7, applied: true, inherited: false }]);
   assert.deepEqual(merged.flagged, ['fix:D23', 'fix:D23', 'fix:D23']);
+  // With no applied copy, the higher confidence, as before.
+  const none = pred([{ value: 'x2', confidence: 0.4, applied: false }, { value: 'x3', confidence: 0.9, applied: false }]);
+  assert.deepEqual(none.result[0].outputs.cites, [{ value: 'x', confidence: 0.9, applied: false, inherited: false }]);
+  assert.match(none.items[0].message, /\(not applied, confidence 0\.9\)$/);
+  // Three applied copies: the highest is kept, and the lowest beside it.
+  const three = pred([{ value: 'x2', confidence: 0.5 }, { value: 'x', confidence: 0.7 }, { value: 'x3', confidence: 0.9 }]);
+  assert.deepEqual(three.result[0].outputs.cites, [{ value: 'x', confidence: 0.9, applied: true, inherited: false, floor_confidence: 0.5 }]);
   assert.deepEqual(pred(['x', 'x']).flagged, ['warn:D6']);
   assert.deepEqual(pred(['x2', 'x2']).flagged, ['warn:D6', 'fix:D23']);
+});
+
+// The reviewer's case: gate 0.8, floor 0.6, ep-12 and ep-12-rerun equivalent; one record whose
+// cites are as given. Scored with and without the equivalents.
+const EQ_RAW = {
+  id_field: 'id', outputs: { cites: { type: 'set' } }, routing: { field: 'decision', map: { ANSWER: 'auto', REVIEW: 'review' } },
+  thresholds: { floor: 0.6, auto_publish: { cites: 0.8 } },
+};
+const eqConfig = ({ equivalents = true, gate_uses } = {}) => {
+  const { config, errors } = validateConfig({
+    ...EQ_RAW, thresholds: { ...EQ_RAW.thresholds, ...(gate_uses ? { gate_uses } : {}) },
+    ...(equivalents ? { equivalents: { cites: [['ep-12', 'ep-12-rerun']] } } : {}),
+  });
+  assert.deepEqual(errors, []);
+  return config;
+};
+function scoreOne(cites, options) {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'wfeval-eq-'));
+  try {
+    const file = (name, data) => { fs.writeFileSync(path.join(d, name), JSON.stringify(data)); return path.join(d, name); };
+    const S = scoreRun({ config: eqConfig(options), predPath: file('pred.json', [{ id: 'E1', decision: 'ANSWER', cites }]), keyPath: file('key.json', [{ id: 'E1', cites: ['ep-12'] }]),
+      mode: (options && options.mode) || 'strict' });
+    const merges = S.problems.filter(i => i.trap === 'D23' && / merged /.test(i.message)).map(i => i.message);
+    return { S, safeguards: S.records[0].safeguards, merges };
+  } finally { fs.rmSync(d, { recursive: true }); }
+}
+
+test('D23: an applied 0.4 and a 0.9 not applied merge at 0.4: SG-GATE and SG-FLOOR still fire, as without equivalents', () => {
+  const cites = [{ value: 'ep-12', confidence: 0.4 }, { value: 'ep-12-rerun', confidence: 0.9, applied: false }];
+  assert.deepEqual(scoreOne(cites, { equivalents: false }).safeguards, ['SG-GATE', 'SG-FLOOR']);
+  const m = scoreOne(cites);
+  assert.deepEqual(m.safeguards, ['SG-GATE', 'SG-FLOOR']);
+  assert.equal(m.S.routing.safeguard_failures.records, 1);
+  // The FIX line says which confidence was kept, and which was not used.
+  assert.deepEqual(m.merges, ['cites: merged 2 equivalent values, "ep-12" and "ep-12-rerun", into "ep-12" ' +
+    '(applied, confidence 0.4, the applied copy\'s: the 0.9 of a copy not applied is not used)']);
+});
+
+test('D6 in lenient mode keeps one copy by the same rule: the same text applied at 0.4 and set aside at 0.9 still fails the gate and the floor', () => {
+  const cites = [{ value: 'ep-12', confidence: 0.4 }, { value: 'ep-12', confidence: 0.9, applied: false }];
+  const m = scoreOne(cites, { equivalents: false, mode: 'lenient' });
+  assert.deepEqual(m.safeguards, ['SG-GATE', 'SG-FLOOR']);
+  assert.deepEqual(m.S.problems.filter(i => i.trap === 'D6').map(i => i.level), ['warn']);
+  // Two applied copies: a lead gate sees 0.9, the floor 0.4.
+  assert.deepEqual(scoreOne([{ value: 'ep-12', confidence: 0.9 }, { value: 'ep-12', confidence: 0.4 }], { equivalents: false, mode: 'lenient' }).safeguards, ['SG-FLOOR']);
+});
+
+test('D23: an applied 0.9 and an applied 0.4 merge at 0.9, keeping the 0.4: the floor fires, a lead gate passes, a "weakest" gate fails', () => {
+  const cites = [{ value: 'ep-12', confidence: 0.9 }, { value: 'ep-12-rerun', confidence: 0.4 }];
+  const m = scoreOne(cites);
+  assert.deepEqual(m.safeguards, ['SG-FLOOR']);
+  assert.deepEqual(m.merges, ['cites: merged 2 equivalent values, "ep-12" and "ep-12-rerun", into "ep-12" ' +
+    '(applied, confidence 0.9, the highest applied copy\'s; the floor and a "weakest" gate check the lowest, 0.4)']);
+  assert.deepEqual(scoreOne(cites, { gate_uses: 'weakest' }).safeguards, ['SG-GATE', 'SG-FLOOR']);
+  // Either order: the merge keeps the same two confidences.
+  assert.deepEqual(scoreOne([...cites].reverse()).safeguards, ['SG-FLOOR']);
+  // Calibration counts one claim, at the confidence a lead gate sees.
+  const c = m.S.calibration;
+  assert.deepEqual([c.overall.n, c.overall.correct], [1, 1]);
+  assert.equal(c.overall.buckets[0].from, 0.9);
+});
+
+test('D23: the what-ifs read a merged value by its copies: a floor above the weakest drops that copy, and the value stays', () => {
+  const cites = [{ value: 'ep-12', confidence: 0.9 }, { value: 'ep-12-rerun', confidence: 0.4 }];
+  const { S } = scoreOne(cites);
+  const row = f => floorSweep(S.paired, eqConfig(), { from: 0.4, to: 0.95, step: 0.05 }).rows.find(r => r.floor === f);
+  // At 0.4 the weak copy stands, and it is not under the floor.
+  assert.deepEqual([row(0.4).safeguard_failures, row(0.4).evicted, row(0.4).through], [0, [], ['E1']]);
+  // From 0.45 the floor drops the 0.4 copy and keeps the 0.9 one: no failure, nothing evicted,
+  // as a plain value under the floor is evicted rather than counted as a failure.
+  for (const f of [0.45, 0.6, 0.9]) assert.deepEqual([row(f).safeguard_failures, row(f).evicted, row(f).through], [0, [], ['E1']], 'floor ' + f);
+  // Above 0.9 the value itself goes.
+  assert.deepEqual(row(0.95).evicted, ['E1 ep-12']);
+  // The gate sweep sees the lead copy: 0.9 passes a gate of 0.9, not 0.95.
+  const { gateSweep } = require('../src/metrics/whatif.js');
+  const g = gateSweep(S.paired, eqConfig());
+  assert.deepEqual([g.rows.find(r => r.threshold === 0.9).through, g.rows.find(r => r.threshold === 0.95).through], [['E1'], []]);
 });
 
 test('D20: the floor what-if fills the slots again at every floor', () => {
@@ -240,6 +327,36 @@ test('CSV: with input.key.any_of_separator, "ep-07 / ep-08" in a key cell is one
   const key = normalizeKey(decoded, cfg, 'key.csv', p);
   assert.deepEqual(p.items, []);
   assert.deepEqual(key.map(k => k.outputs.cites), [['ep-05', { any_of: ['ep-07', 'ep-08', 'ep-09'] }], []]);
+});
+
+test('CSV: any_of_separator splits every set output of the key, unless any_of_outputs names some; a label cell holding it stops', () => {
+  const raw = { outputs: { cites: { type: 'set' }, tags: { type: 'set' }, verdict: { type: 'label', labels: ['n/a', 'pass'] } }, routing: { map: { A: 'auto' } } };
+  const read = (input, text) => {
+    const { config, errors } = validateConfig({ ...raw, input });
+    assert.deepEqual(errors, []);
+    const p = problems('strict');
+    const rows = parseRecords(text, 'key.csv', p, config.input.key);
+    const key = normalizeKey(decodeCsvRecords(rows, config, 'key', config.input.key, 'key.csv', p), config, 'key.csv', p);
+    return { outputs: key[0].outputs, flagged: p.items.map(i => i.level + ':' + i.trap) };
+  };
+  const text = 'id,cites,tags,verdict\nK1,ep-07 / ep-08,TCP/IP,pass\n';
+  // Every set output: the tag "TCP/IP", one real value, becomes a slot of two.
+  assert.deepEqual(read({ key: { any_of_separator: '/' } }, text).outputs.tags, [{ any_of: ['TCP', 'IP'] }]);
+  // Limited to cites, the tag stays one value.
+  assert.deepEqual(read({ key: { any_of_separator: '/', any_of_outputs: ['cites'] } }, text).outputs,
+    { cites: [{ any_of: ['ep-07', 'ep-08'] }], tags: ['TCP/IP'], verdict: 'pass' });
+  // A label holding the separator stops (any_of is for set outputs), unless the outputs are named.
+  const label = 'id,cites,tags,verdict\nK1,,,n/a\n';
+  assert.deepEqual(read({ key: { any_of_separator: '/' } }, label).flagged, ['stop:F13']);
+  assert.equal(read({ key: { any_of_separator: '/', any_of_outputs: ['cites'] } }, label).outputs.verdict, 'n/a');
+  // any_of_outputs names set outputs of the key, with a separator to split on.
+  const errs = input => validateConfig({ ...raw, input }).errors.join('\n');
+  assert.match(errs({ key: { any_of_separator: '/', any_of_outputs: ['verdict'] } }), /input\.key\.any_of_outputs: "verdict" is not a set output/);
+  assert.match(errs({ key: { any_of_separator: '/', any_of_outputs: ['nope'] } }), /input\.key\.any_of_outputs: "nope" is not a set output/);
+  assert.match(errs({ key: { any_of_separator: '/', any_of_outputs: [] } }), /input\.key\.any_of_outputs must be a list of one or more output names/);
+  assert.match(errs({ key: { any_of_separator: '/', any_of_outputs: 'cites' } }), /input\.key\.any_of_outputs must be a list of one or more output names/);
+  assert.match(errs({ key: { any_of_outputs: ['cites'] } }), /input\.key\.any_of_outputs needs input\.key\.any_of_separator/);
+  assert.match(errs({ predictions: { any_of_outputs: ['cites'] } }), /input\.predictions\.any_of_outputs: alternatives belong in the answer key only/);
 });
 
 test('CSV: any_of_separator is for the answer key only, and differs from the other separators', () => {

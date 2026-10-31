@@ -17,6 +17,10 @@ function contentOutputs(config) {
 
 // A label output as a list of one, so the gate reads sets and labels the same way.
 const predValues = (r, name, o) => (o.type === 'set' ? r.pred[name] : r.pred[name] ? [r.pred[name]] : []);
+// A value's weakest applied confidence. Two equivalent values merged into one (load.js, D23) keep
+// their highest applied confidence and, below it, their lowest (floor_confidence): the floor and a
+// "weakest" gate check that one, as they would have checked the two apart.
+const weakest = v => v.floor_confidence ?? v.confidence;
 
 // How a record's values differ from the key, per output:
 //   wrong            - applied, not in the key
@@ -74,7 +78,8 @@ function gatePasses(r, config, overrides = {}) {
   let unknown = false;
   for (const [name, configured] of Object.entries(t.auto_publish)) {
     const threshold = name in overrides ? overrides[name] : configured;
-    const confs = predValues(r, name, config.outputs[name]).filter(v => v.applied).map(v => v.confidence);
+    const applied = predValues(r, name, config.outputs[name]).filter(v => v.applied);
+    const confs = applied.map(t.gate_uses === 'weakest' ? weakest : v => v.confidence);
     if (confs.length === 0) return false;
     if (confs.some(c => c === null)) { unknown = true; continue; }
     const lead = t.gate_uses === 'weakest' ? Math.min(...confs) : Math.max(...confs);
@@ -146,7 +151,7 @@ function judgeRecord(r, config, ctx) {
     if (config.thresholds && gatePasses(r, config) === false) safeguards.push('SG-GATE');
     const floor = config.thresholds ? config.thresholds.floor : null;
     if (floor !== null && Object.entries(config.outputs).some(([name, o]) => o.type === 'set' &&
-        r.pred[name].some(v => v.applied && v.confidence !== null && v.confidence < floor))) safeguards.push('SG-FLOOR');
+        r.pred[name].some(v => v.applied && v.confidence !== null && weakest(v) < floor))) safeguards.push('SG-FLOOR');
   }
 
   // Blocked or suppressed, but the key says it should have gone through or to a person.

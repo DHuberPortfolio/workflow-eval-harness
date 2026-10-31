@@ -19,7 +19,6 @@ const { mixedRate } = require('./stats.js');
 const { NONE } = require('./traps.js');
 
 const pct1 = x => (x === null ? null : Number((x * 100).toFixed(1)));
-const round1 = x => (x === null ? null : Number(x.toFixed(1)));
 
 // mix: loadMix() of the file; summaries: results.records (each with id, route_class, silent);
 // records: the paired records, with their groups; sources: the files a record is named by, so a
@@ -78,8 +77,10 @@ function scoreMix(mix, summaries, records, config, sources, p) {
   return {
     file: mix.file, group: mix.group, field, from,
     strata: strata.map((x, i) => ({ label: x.label, given: x.given, share_pct: pct1(m.shares[i]), records: x.records, out: x.out, silent_errors: x.silent_errors })),
-    silent_error_rate: { pct: pct1(m.rate), low_pct: pct1(m.low), high_pct: pct1(m.high), effective_records: round1(m.effective) },
-    straight_through: { pct: pct1(st.rate), low_pct: pct1(st.low), high_pct: pct1(st.high), effective_records: round1(st.effective) },
+    // The records' worth as worked out, not rounded: the reports round it once, where they show it.
+    // Rounded here too, 5.46 would become 5.5, then "about 6" (trap G6).
+    silent_error_rate: { pct: pct1(m.rate), low_pct: pct1(m.low), high_pct: pct1(m.high), effective_records: m.effective },
+    straight_through: { pct: pct1(st.rate), low_pct: pct1(st.low), high_pct: pct1(st.high), effective_records: st.effective },
     why: m.rate === null ? 'nothing_out' : null,
     // A group the mix gives weight to that sent nothing out: it lowers the straight-through on the
     // mix and adds nothing to the rate, which then rests on the other groups alone.

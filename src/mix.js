@@ -55,6 +55,10 @@ function loadMix(file, config) {
       else shares.push({ label, given });
     }
     if (shares.length === Object.keys(raw.shares).length && shares.every(x => x.given === 0)) p.stop('G18', file, 'every share is 0: there is nothing to weight by');
+    // Each a number, and still too big to add up (1e308 twice): divided by an Infinity total, every
+    // weight would be 0, and the report would print "Infinity records' worth".
+    const total = shares.reduce((t, x) => t + x.given, 0);
+    if (!Number.isFinite(total)) p.stop('G18', file, 'the shares add up to more than a number can hold (' + total + '): write them smaller, as fractions or percentages');
   }
   p.throwIfStopped();
   return { file, group, shares };

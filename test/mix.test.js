@@ -103,6 +103,8 @@ test('mixedRate: the story mix is 3/19 over 361/39 records; nothing out is no ra
     [{ share: 1, N: 2, a: 1, s: 2 }], [{ share: 1, N: 2, a: 3, s: 0 }], [{ share: 1, N: 2.5, a: 1, s: 0 }], []]) {
     assert.throws(() => mixedRate(bad), RangeError, JSON.stringify(bad));
   }
+  // Shares each a number, but too big to add up: the total is Infinity, and every weight would be 0.
+  assert.throws(() => mixedRate(SECTIONS(1e308, 1e308)), /the shares add up to more than a number can hold/);
 });
 
 // An independent check, written differently from the implementation: read the fixture files
@@ -136,7 +138,7 @@ test('G18: a brute-force weighting of the raw files agrees with the arithmetic a
   near(m.straight_through.rate, b.out, 12);
   const r = withMix(f('mix.json')).mix;
   assert.equal(r.silent_error_rate.pct, Number((b.R * 100).toFixed(1)));
-  assert.equal(r.silent_error_rate.effective_records, Number(b.n_eff.toFixed(1)));
+  near(r.silent_error_rate.effective_records, b.n_eff, 9);
   // The golden set's own counts: every record weighs 1/15.
   const g = bruteForce({ business: 8, general: 7 });
   near(g.R, 0.25, 12);
@@ -145,16 +147,19 @@ test('G18: a brute-force weighting of the raw files agrees with the arithmetic a
 
 // ---------- Through `wfeval score` ----------
 
+// results.mix keeps the records' worth as worked out (trap G6); compared here to six places.
+const six = r => ({ ...r, effective_records: r.effective_records === null ? null : Number(r.effective_records.toFixed(6)) });
+
 test('G18: score --mix gives results.mix for the fixture; the headline and the group rows do not move', () => {
   const r = withMix(f('mix.json'));
-  assert.deepEqual(r.mix, {
+  assert.deepEqual({ ...r.mix, silent_error_rate: six(r.mix.silent_error_rate), straight_through: six(r.mix.straight_through) }, {
     file: f('mix.json'), group: 'section', field: 'section', from: 'key',
     strata: [
       { label: 'business', given: 0.1, share_pct: 10, records: 8, out: 7, silent_errors: 3 },
       { label: 'general', given: 0.9, share_pct: 90, records: 7, out: 5, silent_errors: 0 },
     ],
-    silent_error_rate: { pct: 5.1, low_pct: 0.4, high_pct: 43.7, effective_records: 6.4 },
-    straight_through: { pct: 73, low_pct: 40.2, high_pct: 91.6, effective_records: 8.5 },
+    silent_error_rate: { pct: 5.1, low_pct: 0.4, high_pct: 43.7, effective_records: 6.369455 },
+    straight_through: { pct: 73, low_pct: 40.2, high_pct: 91.6, effective_records: 8.549618 },
     why: null,
     none_out: [],
   });
@@ -168,19 +173,19 @@ test('G18: score --mix gives results.mix for the fixture; the headline and the g
 test('G18: the golden set\'s own counts give back the headline: 25.0%, 8.9-53.2%, 12 records\' worth; 80.0%, 15', () => {
   const r = withMix(f('mix-golden.json'));
   assert.deepEqual(r.mix.strata.map(x => [x.label, x.given, x.share_pct]), [['business', 8, 53.3], ['general', 7, 46.7]]);
-  assert.deepEqual(r.mix.silent_error_rate, { pct: 25, low_pct: 8.9, high_pct: 53.2, effective_records: 12 });
+  assert.deepEqual(six(r.mix.silent_error_rate), { pct: 25, low_pct: 8.9, high_pct: 53.2, effective_records: 12 });
   const se = r.routing.silent_errors.rate;
   assert.deepEqual([se.pct, se.low_pct, se.high_pct], [25, 8.9, 53.2]);
   const st = r.routing.straight_through;
-  assert.deepEqual(r.mix.straight_through, { pct: st.pct, low_pct: st.low_pct, high_pct: st.high_pct, effective_records: 15 });
+  assert.deepEqual(six(r.mix.straight_through), { pct: st.pct, low_pct: st.low_pct, high_pct: st.high_pct, effective_records: 15 });
 });
 
 test('a group with a share and nothing out is named; "(none)" with a share is a group like any other (the story mix)', () => {
   const r = withMix(f('mix-story.json'), grouped('story'));
   assert.deepEqual(r.mix.strata.map(x => [x.label, x.records, x.out, x.silent_errors]),
     [['A', 4, 4, 3], ['B', 4, 3, 0], ['C', 2, 2, 0], ['D', 2, 2, 0], ['E', 2, 0, 0], ['(none)', 1, 1, 0]]);
-  assert.deepEqual(r.mix.silent_error_rate, { pct: 15.8, low_pct: 3.7, high_pct: 48, effective_records: 9.3 });
-  assert.deepEqual(r.mix.straight_through, { pct: 79.2, low_pct: 50.9, high_pct: 93.3, effective_records: 12 });
+  assert.deepEqual(six(r.mix.silent_error_rate), { pct: 15.8, low_pct: 3.7, high_pct: 48, effective_records: 9.25641 });
+  assert.deepEqual(six(r.mix.straight_through), { pct: 79.2, low_pct: 50.9, high_pct: 93.3, effective_records: 12 });
   assert.deepEqual(r.mix.none_out, ['E']);
   assert.equal(r.mix.strata[4].share_pct, 16.7);
 });
@@ -191,9 +196,20 @@ test('G1: when nothing would go out on the mix, the rate is null and the report 
     const r = withMix(t.file, grouped('story'));
     assert.deepEqual(r.mix.silent_error_rate, { pct: null, low_pct: null, high_pct: null, effective_records: null });
     assert.equal(r.mix.why, 'nothing_out');
-    assert.deepEqual(r.mix.straight_through, { pct: 0, low_pct: 0, high_pct: 65.8, effective_records: 2 });
+    assert.deepEqual(six(r.mix.straight_through), { pct: 0, low_pct: 0, high_pct: 65.8, effective_records: 2 });
     const line = require('../src/report/terminal.js').renderTerminal(r);
     assert.match(line, /the silent error rate cannot be estimated: no group with a share sent a record out without review, so nothing would go out on that mix\./);
+  } finally { t.done(); }
+});
+
+test('G6: the records\' worth is rounded once, where the line shows it: 5.4598 is about 5, not 5.5 and then 6', () => {
+  // The reviewer's mix: business 36, general 964.
+  const t = tmpFile({ group: 'section', shares: { business: 36, general: 964 } });
+  try {
+    const r = withMix(t.file);
+    near(r.mix.silent_error_rate.effective_records, 5.459771, 6);
+    const line = require('../src/report/terminal.js').renderTerminal(r);
+    assert.match(line, /the silent error rate would be about 1\.9% \(likely 0\.0-43\.5%; about 5 records' worth\)/);
   } finally { t.done(); }
 });
 
@@ -250,6 +266,8 @@ test('G18: a mix file the tool cannot use stops before scoring, naming what is w
     [{ group: 'section', shares: { business: '0.1', general: 0.9 } }, /the share for "business" is the text "0\.1"; a share must be a number \(a fraction, a percentage or a count\)/],
     [{ group: 'section', shares: { business: -1, general: 2 } }, /the share for "business" is negative \(-1\)/],
     [{ group: 'section', shares: { business: 0, general: 0 } }, /every share is 0: there is nothing to weight by/],
+    // Each a number, but their total overflows to Infinity: every weight would come out 0 (or NaN).
+    ['{ "group": "section", "shares": { "business": 1e308, "general": 1e308 } }', /the shares add up to more than a number can hold \(Infinity\): write them smaller, as fractions or percentages/],
     [{ group: 'section', shares: {} }, /"shares" is empty: give each group of the run its share of real traffic/],
     [{ group: 'section', shares: [0.1, 0.9] }, /"shares" must be an object: \{ "<label>": <share>, \.\.\. \}/],
     [{ shares: { business: 1 } }, /needs "group": the name of a group from the config's groups or --group-by/],

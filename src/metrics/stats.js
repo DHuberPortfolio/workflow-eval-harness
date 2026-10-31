@@ -208,20 +208,34 @@ function pairedDifference(fixed, broke, tested) {
 // clusters: [{ n, y }] - each cluster's records out without review (n) and its silent errors (y).
 // Clusters with n = 0 have nothing out and are not counted. p = sum y / sum n.
 //   var_c   = C/(C-1) x sum_c (y_c - p n_c)^2 / n^2   C: clusters with records out
-//   var_srs = p(1-p) / n                              as if every record were independent
+//   var_srs = p(1-p) / (n-1)                          as if every record were independent
 //   deff    = var_c / var_srs, floored at 1           the design effect (Kish)
 //   n_eff   = n / deff                                records' worth of evidence
 // and the range is Wilson's at p over n_eff records (bounds() takes a non-integer count).
 // sum_c (y_c - p n_c)^2 is Miller's Eq. 4 sum written per cluster: within one cluster,
 // (sum_i (s_i - p))^2 is every pair (s_i - p)(s_j - p), a record with itself included.
-// C/(C-1) is the usual small-sample correction for few clusters; with every record alone it
-// gives p(1-p)/(n-1), as Miller's Eq. 4 does (its plain standard error divides by n - 1 too).
+// C/(C-1) is the usual small-sample correction for few clusters. With every record alone it
+// gives p(1-p)/(n-1), as Miller's Eq. 4 does, so var_srs divides by n - 1 too: the same
+// correction on both sides, and records that are each a cluster of their own have a design
+// effect of exactly 1, their range the headline's. (Over n, they would come out at n/(n-1):
+// 2 for two records, a clumping that is not there.)
 // The floor at 1: when the clusters vary less than independent records would, the range still
 // never claims more evidence than the records themselves.
-// When p is 0 or 1 every term is 0, and the design effect is 0 / 0; with one cluster there is no
-// spread between clusters to measure. Either way the data cannot say how far a cluster's records
-// go together, so each cluster counts as one record (n_eff = C): the cautious choice, which
-// assumes they go together entirely. `why` says which case it was.
+// A design effect needs a spread between clusters to measure: silent errors in two clusters or
+// more, and records out without one in two or more. When p is 0 or 1 every term is 0, and the
+// design effect is 0 / 0. With every silent error in one cluster (or every other record), there
+// is one clump and nothing to compare it with: one wrong record looks like no clumping at all
+// (a design effect near 1), so a first error would narrow the range below what no errors give
+// (35.4% against 47.6% on the clusters fixture). With one cluster there is no spread at all. In
+// each case the data cannot say how far a cluster's records go together, so the range assumes
+// the worst: each cluster's records go right or wrong together, the cautious choice. The rate is
+// then an average of C outcomes, one per cluster, each weighted by its records, and it is worth
+//   n_eff = (sum n_c)^2 / sum n_c^2
+// records: Kish's (1965) effective number, with the clusters' sizes as the weights. It is C when
+// the clusters are the same size, and fewer when they are not: one big cluster is a single
+// outcome carrying much of the weight (4, 3, 2, 2 and 1 records: 144 / 34 = 4.24, not 5).
+// method "clusters_together"; `why` says which case it was. With every record a cluster of its
+// own it is n, every record counted.
 // Returns null when nothing went out.
 function clusteredRange(clusters, z = Z) {
   for (const c of clusters) {
@@ -233,14 +247,21 @@ function clusteredRange(clusters, z = Z) {
   const y = used.reduce((s, c) => s + c.y, 0);
   if (n === 0) return null;
   const p = y / n;
-  const varSrs = p * (1 - p) / n;
-  const why = p === 0 ? 'no_silent_errors' : p === 1 ? 'all_silent_errors' : C < 2 ? 'one_cluster' : null;
+  const varSrs = n > 1 ? y * (n - y) / (n * n * (n - 1)) : null;   // p(1-p)/(n-1)
+  const withErrors = used.filter(c => c.y > 0).length;
+  const withOthers = used.filter(c => c.y < c.n).length;
+  const why = y === 0 ? 'no_silent_errors' : y === n ? 'all_silent_errors' : C < 2 ? 'one_cluster'
+    : withErrors < 2 ? 'silent_errors_in_one_cluster' : withOthers < 2 ? 'others_in_one_cluster' : null;
   if (why) {
-    const b = bounds(p, C, z);
-    return { n, y, p, clusters: C, var_clustered: null, var_simple: varSrs, design_effect: null, effective: C, low: b.low, high: b.high, method: 'cluster_count', why };
+    const together = (n * n) / used.reduce((s, c) => s + c.n * c.n, 0);
+    const b = bounds(p, together, z);
+    return { n, y, p, clusters: C, var_clustered: null, var_simple: varSrs, design_effect: null, effective: together, low: b.low, high: b.high, method: 'clusters_together', why };
   }
-  const varC = (C / (C - 1)) * used.reduce((s, c) => s + (c.y - p * c.n) ** 2, 0) / (n * n);
-  const deff = Math.max(1, varC / varSrs);
+  // The residuals in whole numbers, n y_c - y n_c = n (y_c - p n_c), and the design effect as one
+  // fraction of whole numbers, so records each alone give exactly 1, not 1 give or take a rounding.
+  const T = used.reduce((s, c) => s + (n * c.y - y * c.n) ** 2, 0);
+  const varC = (C / (C - 1)) * T / n ** 4;
+  const deff = Math.max(1, (C * (n - 1) * T) / ((C - 1) * n * n * y * (n - y)));
   const b = bounds(p, n / deff, z);
   return { n, y, p, clusters: C, var_clustered: varC, var_simple: varSrs, design_effect: deff, effective: n / deff, low: b.low, high: b.high, method: 'design_effect', why: null };
 }
@@ -277,6 +298,9 @@ function mixedRate(strata, z = Z) {
   }
   const total = strata.reduce((t, x) => t + x.share, 0);
   if (!(total > 0)) throw new RangeError('the shares add up to 0: there is nothing to weight by');
+  // Shares each a number can still add up past the largest one (1e308 + 1e308): divided by
+  // Infinity, every weight would be 0, or NaN, and the rate with them.
+  if (!Number.isFinite(total)) throw new RangeError('the shares add up to more than a number can hold');
   const W = strata.map(x => x.share / total);
   let out = 0, bad = 0, sw2 = 0, all2 = 0;
   strata.forEach((x, i) => {

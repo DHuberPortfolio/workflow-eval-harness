@@ -120,7 +120,9 @@ function decodeItem(piece, o, s, where, p) {
 
 // One piece between list separators. In the answer key, with input.key.any_of_separator set,
 // "EP-7 / EP-8" is one slot either fills: { any_of: [...] }, checked by load.js as in JSON (D20,
-// D21). Off by default, so a value that happens to contain the character is never split.
+// D21). Off by default, so a value that happens to contain the character is never split. Once
+// set, it splits every output's cells (a label's then stops, F13), unless input.key.any_of_outputs
+// names the set outputs it is for.
 function decodePiece(piece, o, s, where, p) {
   if (!s.any_of_separator || !piece.includes(s.any_of_separator)) return decodeItem(piece, o, s, where, p);
   return { any_of: piece.split(s.any_of_separator).map(x => decodeItem(x.trim(), o, s, where, p)).filter(v => v !== null) };
@@ -160,7 +162,7 @@ function decodeCsvRecords(rows, config, which, s, source, p) {
     const rec = { ...row };
     const id = has(row, config.id_field) ? row[config.id_field].trim() : '';
     const where = source + ' ' + (id || 'row #' + (i + 1));
-    const decode = (col, fn, o) => { if (has(row, col)) rec[col] = fn(row[col], o, s, where + ' ' + col, p); };
+    const decode = (col, fn, o, set = s) => { if (has(row, col)) rec[col] = fn(row[col], o, set, where + ' ' + col, p); };
 
     // Group labels (config.groups) read from this side: several in one cell are split like trap
     // labels. Only a cell holding several is changed, and before anything else is decoded, so a
@@ -170,13 +172,24 @@ function decodeCsvRecords(rows, config, which, s, source, p) {
         rec[g.field] = row[g.field].split(s.list_separator).map(x => x.trim());
       }
     }
-    for (const o of Object.values(config.outputs)) {
+    // The cluster cell (config.clusters) the same way: "A | B" becomes a list, which load.js stops
+    // as it stops a list in JSON (G15); read as text, it would be one cluster named "A | B". A cell
+    // without the separator stays one value.
+    const c = config.clusters;
+    if (c && (c.from === 'key') === isKey && has(row, c.field) && row[c.field].includes(s.list_separator)) {
+      rec[c.field] = row[c.field].split(s.list_separator).map(x => x.trim());
+    }
+    // input.key.any_of_outputs: the set outputs any_of_separator splits, when not all of them. Every
+    // other output reads its cells as if no any_of_separator were set.
+    const only = isKey && s.any_of_outputs;
+    for (const [name, o] of Object.entries(config.outputs)) {
       const col = isKey ? o.key_field : o.field;
+      const so = only && !only.includes(name) ? { ...s, any_of_separator: null } : s;
       if (o.type === 'set') {
-        decode(col, decodeList, o);
+        decode(col, decodeList, o, so);
         if (!isKey && o.rejected_field) decode(o.rejected_field, decodeList, o);
       } else {
-        decode(col, decodeLabel, o);
+        decode(col, decodeLabel, o, so);
         if (!isKey && o.confidence_field && has(row, o.confidence_field)) {
           rec[o.confidence_field] = row[o.confidence_field].trim() === ''
             ? undefined : decodeNumber(row[o.confidence_field], where + ' ' + o.confidence_field, p, null);

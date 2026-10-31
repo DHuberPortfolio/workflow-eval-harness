@@ -42,9 +42,15 @@ are wrong.
 
 **A5 merges.** After that, A5 cites `ep-12` twice: applied at 0.90 (written `ep-12-rerun`) and
 set aside at 0.58. One episode cited twice is one value, so the two merge: **applied** (either
-was) at **0.90** (the higher confidence). The report lists this as a clean-up: "merged 2
+was) at **0.90**, the applied copy's confidence. The report lists this as a clean-up: "merged 2
 equivalent values". The 0.58 copy is gone from everything after: calibration and the what-ifs
 see one value.
+
+The confidence kept is always an applied copy's when there is one, never a higher one set aside:
+had A5 applied ep-12 at 0.58 and set ep-12-rerun aside at 0.90, the merge would be applied at
+0.58, under the gate and the floor, as it would be read without equivalents. When two applied
+copies differ, the highest is kept and the lowest beside it, for the floor and a "weakest" gate
+(`test/alternatives.test.js` checks both).
 
 The key keeps its slots as written. Which values count as right is worked out per record, from
 what that record applied, every time a number is computed (so the what-if below re-works it at

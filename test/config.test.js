@@ -29,7 +29,7 @@ test('minimal config gets every default filled in', () => {
     type: 'set', field: 'SUBJECT', key_field: 'SUBJECT', labels: null, near_miss_steps: null, value_key: 'value', confidence_key: 'confidence',
     rejected_field: null, confidence_field: null, decline: null,
   });
-  const noInput = { format: null, records_at: null, unwrap: null, delimiter: null, list_separator: '|', confidence_separator: '@', any_of_separator: null };
+  const noInput = { format: null, records_at: null, unwrap: null, delimiter: null, list_separator: '|', confidence_separator: '@', any_of_separator: null, any_of_outputs: null };
   assert.deepEqual(config.input, { predictions: noInput, key: noInput });
   assert.equal(config.wrong_when, 'any_mismatch'); // no gold field, so fall back
   assert.equal(config.thresholds, null);

@@ -28,7 +28,7 @@ const ERROR_TYPES = {
   'SG-GATE': 'critical', 'SG-FLOOR': 'critical', 'SP-NEAR-MISS': 'low',
 };
 const OUTPUT_KEYS = ['type', 'field', 'key_field', 'labels', 'value_key', 'confidence_key', 'rejected_field', 'confidence_field', 'near_miss_steps', 'decline'];
-const INPUT_KEYS = ['format', 'records_at', 'unwrap', 'delimiter', 'list_separator', 'confidence_separator', 'any_of_separator'];
+const INPUT_KEYS = ['format', 'records_at', 'unwrap', 'delimiter', 'list_separator', 'confidence_separator', 'any_of_separator', 'any_of_outputs'];
 
 const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isName = v => typeof v === 'string' && v.length > 0;
@@ -205,10 +205,15 @@ function validateConfig(raw) {
   //   list_separator       - between several values in one cell (default "|")
   //   confidence_separator - before a value's confidence: "SUBJ-MNA@0.95" (default "@")
   //   any_of_separator     - answer key only: between the alternatives of one slot, "EP-7 / EP-8"
-  //                          with "/" (D20). Off unless set, so no value is ever split by surprise
+  //                          with "/" (D20). Off unless set, so no value is ever split by surprise.
+  //                          Once set, it splits every set output's cells, and a label cell
+  //                          holding it stops (F13)
+  //   any_of_outputs       - answer key only: the set outputs any_of_separator splits, when not
+  //                          all of them, so a real value holding the character ("TCP/IP") in
+  //                          another output stays one value. Checked against outputs below
   const input = {};
   for (const which of ['predictions', 'key']) {
-    input[which] = { format: null, records_at: null, unwrap: null, delimiter: null, list_separator: '|', confidence_separator: '@', any_of_separator: null };
+    input[which] = { format: null, records_at: null, unwrap: null, delimiter: null, list_separator: '|', confidence_separator: '@', any_of_separator: null, any_of_outputs: null };
   }
   const isSeparator = v => isName(v) && !/["\r\n]/.test(v);
   if (raw.input !== undefined) {
@@ -225,10 +230,12 @@ function validateConfig(raw) {
           if ((k === 'records_at' || k === 'unwrap') && !isPath(v)) errors.push(at + ' ' + PATH_RULE);
           if (k === 'delimiter' && !DELIMITERS.includes(v)) errors.push(at + ' must be one of: "," ";" "\\t" (tab) "|"');
           if ((k === 'list_separator' || k === 'confidence_separator' || k === 'any_of_separator') && !isSeparator(v)) errors.push(at + ' must be non-empty text without quotes or line breaks');
+          if (k === 'any_of_outputs' && !(Array.isArray(v) && v.length > 0 && v.every(isName))) errors.push(at + ' must be a list of one or more output names');
           // A prediction lists what the workflow gave; "any of these" is only ever the key's to say.
-          if (k === 'any_of_separator' && which === 'predictions') errors.push(at + ': alternatives belong in the answer key only');
+          if ((k === 'any_of_separator' || k === 'any_of_outputs') && which === 'predictions') errors.push(at + ': alternatives belong in the answer key only');
           input[which][k] = v;
         }
+        if (which === 'key' && input.key.any_of_outputs && !input.key.any_of_separator) errors.push('input.key.any_of_outputs needs input.key.any_of_separator: the character to split on');
         // The CSV separators must differ, or a cell could be read two ways.
         const s = input[which];
         if (s.list_separator === s.confidence_separator) errors.push('input.' + which + ': list_separator and confidence_separator are both "' + s.list_separator + '"');
@@ -484,6 +491,12 @@ function validateConfig(raw) {
   const groups = validateGroups(raw.groups, errors);
   const clusters = validateClusters(raw.clusters, errors);
   const equivalents = validateEquivalents(raw.equivalents, outputs, raw.routing, errors);
+  // any_of_outputs names set outputs only: a slot is for a set (F13), and a misspelt name would
+  // quietly leave every output unsplit.
+  const anyOf = input.key.any_of_outputs;
+  if (Array.isArray(anyOf)) {
+    for (const name of anyOf) if (!outputs[name] || outputs[name].type !== 'set') errors.push('input.key.any_of_outputs: "' + name + '" is not a set output');
+  }
   for (const [name, v] of Object.entries(allowed)) if (Array.isArray(v)) allowed[name] = allowedAsRead(v, equivalents, name);
 
   const config = errors.length ? null : {

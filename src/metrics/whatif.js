@@ -194,6 +194,11 @@ function floorSweep(records, config, { from = 0.4, to = 0.9, step = 0.05 } = {})
         pred[name] = r.pred[name].map(v => {
           if (v.confidence === null) return v;
           if (v.applied && v.confidence < f) { touched = true; evicted.push(r.id + ' ' + v.value); return { ...v, applied: false }; }
+          // Two equivalent values merged into one (D23) whose weakest copy is under f: that copy
+          // goes and the value stays, at its highest, as a plain value under f goes rather than
+          // counting as a floor failure. Exact for two copies; with more, the ones between are
+          // not kept, so a "weakest" gate then sees the highest.
+          if (v.applied && v.floor_confidence < f) { touched = true; const kept = { ...v }; delete kept.floor_confidence; return kept; }
           // Assumption: a value rejected below the current floor was rejected by the floor.
           if (!v.applied && v.confidence < f0 && v.confidence >= f) { touched = true; readmitted.push(r.id + ' ' + v.value); return { ...v, applied: true }; }
           return v;

@@ -178,12 +178,21 @@ test('D6: the same value twice stops in strict mode', () => {
   assert.deepEqual(readKey(key({ GEOGRAPHY: ['GEO-US', 'GEO-US'] })).flagged, ['stop:D6']);
 });
 
-test('D6: in lenient mode it warns and keeps the higher-confidence copy', () => {
+test('D6: in lenient mode it warns and keeps one copy, as equivalents merge (D23): the highest applied confidence, and the lowest', () => {
   const twice = pred({ GEOGRAPHY: [{ value: 'GEO-US', confidence: 0.7 }, { value: 'GEO-US', confidence: 0.9 }] });
-  const { result, flagged } = readPred(twice, 'lenient');
+  const { result, flagged, items } = readPred(twice, 'lenient');
   assert.deepEqual(flagged, ['warn:D6']);
-  assert.equal(result[0].outputs.GEOGRAPHY.length, 1);
-  assert.equal(result[0].outputs.GEOGRAPHY[0].confidence, 0.9);
+  assert.deepEqual(result[0].outputs.GEOGRAPHY, [{ value: 'GEO-US', confidence: 0.9, applied: true, inherited: false, floor_confidence: 0.7 }]);
+  assert.match(items[0].message, /GEOGRAPHY lists "GEO-US" more than once; kept once \(applied, confidence 0\.9, the highest applied copy's; the floor and a "weakest" gate check the lowest, 0\.7\)$/);
+  // An applied 0.4 and the same value set aside at 0.9: applied at 0.4. Keeping the higher copy
+  // would have made the value not applied at all, hiding the weak value that went out.
+  const hidden = readPred(pred({ GEOGRAPHY: [{ value: 'GEO-US', confidence: 0.4 }, { value: 'GEO-US', confidence: 0.9, applied: false }] }), 'lenient');
+  assert.deepEqual(hidden.result[0].outputs.GEOGRAPHY, [{ value: 'GEO-US', confidence: 0.4, applied: true, inherited: false }]);
+  assert.match(hidden.items[0].message, /kept once \(applied, confidence 0\.4, the applied copy's: the 0\.9 of a copy not applied is not used\)$/);
+  // Neither applied: the higher, as before. In strict mode it stops, and says nothing of what was kept.
+  const none = readPred(pred({ GEOGRAPHY: [{ value: 'GEO-US', confidence: 0.4, applied: false }, { value: 'GEO-US', confidence: 0.9, applied: false }] }), 'lenient');
+  assert.deepEqual(none.result[0].outputs.GEOGRAPHY, [{ value: 'GEO-US', confidence: 0.9, applied: false, inherited: false }]);
+  assert.equal(readPred(twice).items[0].message, 'GEOGRAPHY lists "GEO-US" more than once');
 });
 
 test('D7: stray spaces around a value are trimmed and reported', () => {

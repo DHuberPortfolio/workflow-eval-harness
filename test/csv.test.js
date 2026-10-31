@@ -153,6 +153,24 @@ test('group cells split into a list on the list separator, each read on its own 
   assert.deepEqual([ky.flagged, ky.result[0].gold_route, ky.result[0].groups], [[], 'REVIEW', { should: ['REVIEW'] }]);
 });
 
+test('G15: a cluster cell holding the list separator is a list, and stops as a list does in JSON; one value is one cluster', () => {
+  // The reviewer's key: N2's story is "A|B", which must not become a cluster named "A|B".
+  const text = 'id,story,SUBJECT\nN1,A,merger\nN2,A|B,merger\nN3, B ,merger\nN4,C,merger\n';
+  for (const [from, which, side] of [['key', 'key', normalizeKey], ['predictions', 'predictions', normalizePredictions]]) {
+    const cfg = validateConfig({ outputs: { SUBJECT: { type: 'set' } }, routing: { field: 'decision', map: { PUBLISH: 'auto' } }, clusters: { field: 'story', from } }).config;
+    const rows = which === 'key' ? text : text.replace('id,story,SUBJECT', 'id,story,SUBJECT,decision').replace(/merger\n/g, 'merger,PUBLISH\n');
+    const r = run(p => side(decodeCsvRecords(parseRecords(rows, 'f.csv', p, cfg.input[which]), cfg, which, cfg.input[which], 'f.csv', p), cfg, 'f.csv', p), 'lenient');
+    assert.deepEqual(r.flagged, ['stop:G15'], from);
+    assert.equal(r.items[0].where, 'f.csv N2');
+    assert.match(r.items[0].message, /cluster field "story" is a list; a record is in one cluster/);
+    // Without the separator, a cell is one value, trimmed.
+    assert.deepEqual(r.result.filter(x => x.id !== 'N2').map(x => x.cluster), ['A', 'B', 'C'], from);
+  }
+  // Read from the other side, the column is left alone.
+  const keySide = validateConfig({ outputs: { SUBJECT: { type: 'set' } }, routing: { field: 'decision', map: { PUBLISH: 'auto' } }, clusters: { field: 'story' } }).config;
+  assert.deepEqual(decodeCsvRecords([{ id: 'N2', story: 'A|B', SUBJECT: 'merger', decision: 'PUBLISH' }], keySide, 'predictions', S, 'f', problems('strict'))[0].story, 'A|B');
+});
+
 test('an empty id or route cell counts as not given', () => {
   const { result } = decodePred(row({ id: '', route: '' }));
   assert.equal(result[0].id, undefined);

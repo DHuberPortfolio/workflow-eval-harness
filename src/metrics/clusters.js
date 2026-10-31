@@ -13,7 +13,6 @@
 
 const { clusteredRange } = require('./stats.js');
 
-const round = (x, places) => (x === null ? null : Number(x.toFixed(places)));
 const pct1 = x => (x === null ? null : Number((x * 100).toFixed(1)));
 
 // summaries: results.records (each with id, route_class, silent); records: the paired records,
@@ -43,8 +42,10 @@ function scoreClusters(summaries, records, config) {
     records_own_cluster: alone,
     method: r ? r.method : null,
     why: r ? r.why : null,
-    design_effect: r ? round(r.design_effect, 3) : null,
-    effective_records: r ? round(r.effective, 1) : null,
+    // As worked out, not rounded: the reports round them once, where they show them. Rounded here
+    // too, 5.46 records' worth would become 5.5, then "about 6" (trap G6).
+    design_effect: r ? r.design_effect : null,
+    effective_records: r ? r.effective : null,
     pct: r ? pct1(r.p) : null,
     low_pct: r ? pct1(r.low) : null,
     high_pct: r ? pct1(r.high) : null,

@@ -38,7 +38,8 @@ else has a default, and a misspelled key is an error rather than a silent fallba
 | `input.<file>.delimiter` | `,` (tab for `.tsv`) | CSV only: `,` `;` `\t` or `\|`. |
 | `input.<file>.list_separator` | `\|` | CSV only: between several values in one cell: `A \| B`. |
 | `input.<file>.confidence_separator` | `@` | CSV only: before a value's confidence: `SUBJ-MNA@0.95`. |
-| `input.key.any_of_separator` | - | CSV answer key only: between the alternatives of one slot, so `EP-12 \| EP-7 / EP-8` with `"/"` is EP-12 and one of EP-7 or EP-8 ([below](#any-of-these-is-right-and-equivalent-values)). Off unless set, so a value containing the character is never split by surprise. |
+| `input.key.any_of_separator` | - | CSV answer key only: between the alternatives of one slot, so `EP-12 \| EP-7 / EP-8` with `"/"` is EP-12 and one of EP-7 or EP-8 ([below](#any-of-these-is-right-and-equivalent-values)). Off unless set, so a value containing the character is never split by surprise. Once set, it applies to **every set output** in the key: a real value holding the character, a tag `TCP/IP`, is split into a slot (one of `TCP`, `IP`), and a label cell holding it stops (a slot is for sets). To limit it, use `any_of_outputs`. |
+| `input.key.any_of_outputs` | every set output | CSV answer key only, with `any_of_separator`: the set outputs it splits, such as `["cites"]`. Every other output reads its cells whole, so `TCP/IP` in another output stays one value. Each name must be a set output. |
 
 Every field name can be a dotted path (`"output.subject"` is `subject` inside `output`).
 A field literally named with a dot is used first, because spreadsheet exports flatten names that way.
@@ -88,7 +89,11 @@ slot is filled when the workflow applied any of its values; each applied value i
 - A value in two slots of one record (`["a", { "any_of": ["a", "b"] }]`) stops in strict mode:
   usually a key mistake.
 - In a CSV answer key, set `input.key.any_of_separator` (say `"/"`) and write the slot as
-  `ep-01 / ep-02 / ep-03` inside the cell.
+  `ep-01 / ep-02 / ep-03` inside the cell. It splits the cells of every set output in the key,
+  so a real value holding the character is read as alternatives: in another output, the tag
+  `TCP/IP` would become a slot filled by `TCP` or `IP`. Pick a character no real value holds, or
+  name the outputs it is for: `"any_of_outputs": ["cites"]` leaves every other output's cells
+  whole.
 
 **One thing under two names.** An episode re-released under a new id, a code and its alias:
 
@@ -107,9 +112,15 @@ slot is filled when the workflow applied any of its values; each applied value i
 - For a label output, the first value must be one of its labels (or a decline value): the
   others are read as it. Not on the output that is also the route.
 - If one prediction then holds the same value twice (it cited both `ep-12` and
-  `ep-12-rerun`), the two merge into one: applied if either was, at the higher confidence.
-  The report lists each merge ("merged 2 equivalent values") and, per file, which values were
-  read as another and how often. `wfeval check` prints the groups it will read.
+  `ep-12-rerun`), the two merge into one, applied if either was. Its confidence is the one the
+  workflow acted on: the highest **applied** copy's, never a higher one it set aside (with
+  neither applied, the higher). When two applied copies differ, the lowest is kept too, and the
+  floor and a `"weakest"` gate check that one. So a merge never hides a weak value that was
+  applied: `ep-12` applied at 0.4 beside `ep-12-rerun` set aside at 0.9 is applied at 0.4, under
+  the gate and the floor, as it would be without equivalents.
+  The report lists each merge ("merged 2 equivalent values", with the confidences kept) and, per
+  file, which values were read as another and how often. `wfeval check` prints the groups it
+  will read.
 
 ### Declines
 
@@ -201,7 +212,7 @@ record belongs to, and `score` adds a second range under the headline that count
 
 | Key | Default | Meaning |
 |---|---|---|
-| `clusters.field` | required | Where each record's cluster is (a name or a dotted path): text, a number or true/false, read as text. A record is in one cluster, so a list is an error, naming the record (as is an object: point `field` at the value inside it). A record with no value (missing, `null` or empty) is a cluster of its own, and the report says how many records were. |
+| `clusters.field` | required | Where each record's cluster is (a name or a dotted path): text, a number or true/false, read as text. A record is in one cluster, so a list is an error, naming the record (as is an object: point `field` at the value inside it). In a CSV, a cell holding the list separator (`A \| B`) is a list too. A record with no value (missing, `null` or empty) is a cluster of its own, and the report says how many records were. |
 | `clusters.from` | `"key"` | `key` or `predictions`: the only file the field is read from, as for a group. |
 
 On the command line, `--cluster-by` does the same, reading the answer key:
@@ -250,7 +261,8 @@ in lenient mode too, when:
   or spaces);
 - a record has several labels in the group (a message that came in by chat and by email):
   weighted in each, it would count twice;
-- the group is not one of the run's, or a share is text (`"0.7"`), negative, or every share is 0.
+- the group is not one of the run's, or a share is text (`"0.7"`), negative, or every share is 0,
+  or the shares are too big to add up (`1e308` twice: their total is more than a number can hold).
 
 The shares are taken as known, so the estimate is only as good as they are: count them from real
 traffic (a month of production logs by channel, say), not from memory. What is reported, and how

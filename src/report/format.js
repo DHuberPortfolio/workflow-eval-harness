@@ -94,20 +94,29 @@ const severalLabels = (n, total) => n + ' record(s) carry several labels and cou
 
 // The silent error rate's range counting clusters (results.clusters; traps G14-G17), as one
 // sentence under the headline: how many clusters, the range, and how much evidence that is.
-const CLUSTER_FALLBACK = { no_silent_errors: 'With no silent errors', all_silent_errors: 'With every record a silent error', one_cluster: 'With one cluster' };
+const CLUSTER_FALLBACK = {
+  no_silent_errors: 'With no silent errors', all_silent_errors: 'With every record a silent error', one_cluster: 'With one cluster',
+  silent_errors_in_one_cluster: 'With every silent error in one cluster', others_in_one_cluster: 'With every record but the silent errors in one cluster',
+};
 // "4 independent records' worth", "1 record's worth".
 const worth = (n, kind = '') => thousands(n) + ' ' + kind + (n === 1 ? "record's" : "records'") + ' worth';
+// The design effect and the records' worth arrive as worked out, and are rounded here only, once
+// (trap G6): 5.46 records' worth is "about 5", where rounding to 5.5 first would make it 6.
 function clusterLine(c) {
   const src = groupSource(c);
   if (c.records === 0) return 'Clusters (' + src + '): nothing went out without review, so there is nothing to count.';
   let s = 'Records out without review came from ' + thousands(c.clusters) + ' cluster' + (c.clusters === 1 ? '' : 's') + ' (' + src +
     '); counting clusters, the likely range is ' + c.low_pct.toFixed(1) + '-' + c.high_pct.toFixed(1) + '%';
   if (c.method === 'design_effect') {
-    // At exactly 1 (often the floor), the range is the headline's, and the line says so.
+    // At exactly 1 (the floor, or every record a cluster of its own), the range is the headline's,
+    // and the line says so.
     s += c.design_effect === 1 ? ' (design effect 1: the clusters show no clumping, so this is the range above).'
       : ' (design effect ' + c.design_effect.toFixed(1) + ': about ' + worth(Math.round(c.effective_records), 'independent ') + ').';
   } else {
-    s += '. ' + CLUSTER_FALLBACK[c.why] + ", nothing shows how far a cluster's records go together, so each cluster counts as one record (" + worth(c.clusters) + '): the cautious choice.';
+    // The records' worth is Kish's for clusters whose records go together (stats.js): the number
+    // of clusters when they are the same size, fewer when not.
+    s += '. ' + CLUSTER_FALLBACK[c.why] + ", nothing shows how far a cluster's records go together, so each cluster's records are taken to go right or wrong " +
+      'together (about ' + worth(Math.round(c.effective_records)) + '): the cautious choice.';
   }
   const k = c.records_own_cluster;
   if (k) s += ' ' + (k === 1 ? '1 record had no value there and is a cluster of its own.' : thousands(k) + ' records had no value there and are each a cluster of their own.');
@@ -123,6 +132,7 @@ const CLUSTER_TARGET_NOTE = 'The verdict and the plan count records as independe
 // group with a share that sent nothing out.
 const MIX_CAVEAT = 'A reweighting, not a measurement: it is only as good as the shares, and as the records tested in each group.';
 const CLUSTER_MIX_NOTE = 'The range on the mix counts every record as independent, not clusters.';
+// The records' worth arrives as worked out and is rounded once, here (trap G6).
 const likely = r => 'likely ' + r.low_pct.toFixed(1) + '-' + r.high_pct.toFixed(1) + '%; about ' + worth(Math.round(r.effective_records));
 function mixLines(m, results) {
   const on = 'On the real mix in ' + m.file + ' (' + m.strata.map(x => x.label + ' ' + x.share_pct + '%').join(', ') + '), the silent error rate ';

@@ -69,33 +69,52 @@ With `clusters` in the config (or `score --cluster-by <field>`), each record bel
 (its story, its filing), and the report adds one line under the headline:
 
 > Records out without review came from 5 clusters (answer key field "story"); counting clusters,
-> the likely range is 4.7-69.1% (design effect 2.8: about 4 independent records' worth).
+> the likely range is 9.9-69.4% (design effect 1.9: about 6 independent records' worth).
 
-That is the clusters fixture (`test/fixtures/clusters/`): 3 silent errors in 12 records out
-without review, all three in one story. Counted as 12 independent records the range is 8.9-53.2%;
-counted by story, 4.7-69.1%.
+That is the clusters fixture (`test/fixtures/clusters/`, `predictions-clumped.json`): 4 silent
+errors in 12 records out without review, three of them in one story and one in another. Counted
+as 12 independent records the range is 13.8-60.9%; counted by story, 9.9-69.4%.
 
 **How it is worked out.** The standard survey-sampling answer for a rate when records come in
 clusters (Kish 1965; for evals, Miller 2024, "Adding Error Bars to Evals", Eq. 4). Only the
 records out without review count, as in the silent error rate itself.
 
 1. For each cluster, compare its silent errors with what the overall rate would give it: a
-   cluster of 4 records at a rate of 25% "should" have 1; story A has 3, two more. Square each
-   difference and add them up. Clusters whose errors pile up give big differences.
+   cluster of 4 records at a rate of one in three "should" have 1.3; story A has 3, 1.7 more.
+   Square each difference and add them up. Clusters whose errors pile up give big differences.
 2. That sum, times C/(C-1) for C clusters (a correction for having few of them), divided by the
    number of records squared, is the rate's variance counting clusters. The variance counting
-   every record as independent is p(1-p)/n.
+   every record as independent is p(1-p)/(n-1): the same kind of correction, so that the two
+   agree when every record is a cluster of its own.
 3. The **design effect** is the first divided by the second: how many times less certain the
-   clusters make the rate (2.8 here). It is never taken below 1: clusters that vary less than
+   clusters make the rate (1.9 here). It is never taken below 1: clusters that vary less than
    separate records would still never count as more evidence than the records themselves.
-4. The records divided by the design effect are the **independent records' worth** (12 / 2.8,
-   about 4), and the range is the usual Wilson range for the same rate over that many records.
+4. The records divided by the design effect are the **independent records' worth** (12 / 1.9,
+   about 6), and the range is the usual Wilson range for the same rate over that many records.
 
-With no silent errors (or nothing but), or a single cluster, nothing shows how far a cluster's
-records go together. The range then counts each cluster as one record, the cautious choice, and
-says so: 0 of 12 records in 5 clusters reaches 43.4%, where 0 of 12 independent records reaches
-24.3%. With every record a cluster of its own, the C/(C-1) correction costs one record (12
-records give 11 records' worth); Miller's formula gives the same in that case.
+A design effect needs something to compare: silent errors in at least two clusters, and records
+without one in at least two. Otherwise nothing shows how far a cluster's records go together,
+and the range assumes the worst, the cautious choice, and says why: each cluster's records go
+right or wrong together. That covers no silent errors (or nothing but), a single cluster, and
+every silent error in one cluster (or every record without one).
+
+How much evidence is that? If each cluster's records go together, each cluster is one outcome,
+weighted by its records, and Kish's (1965) effective number says what they are worth: the
+records added up and squared, divided by the clusters' sizes squared and added up. For clusters
+of the same size it is the number of clusters; for clusters of different sizes it is fewer, the
+way one big cluster is a single outcome that carries much of the weight. The clusters fixture's
+5 clusters of 4, 3, 2, 2 and 1 records are 144 / 34, about 4.2 records' worth. 0 of 12 records
+there reaches 47.6%, where 0 of 12 independent records reaches 24.3%; `predictions.json`, its 3
+silent errors all in one story, reaches 69.0%, against 53.2%.
+
+Worked out as a design effect, a single wrong record would look like no clumping at all: one
+error in the clusters fixture would then reach only 35.4%, lower than no error, where taken this
+way it reaches 55.6%. So while every error sits in one cluster, one more never narrows the
+range. Once errors sit in two clusters or more, an error that spreads them out can narrow it:
+evidence that they do not pile up.
+
+With every record a cluster of its own, the design effect is exactly 1 and the range is the
+headline's: such records show no clumping. Miller's formula gives the same variance in that case.
 
 The headline range is unchanged, so nothing else in a report moves. **Per-group rows and
 `--target` still count every record as independent**, and the report says so beside them: a
@@ -252,7 +271,9 @@ floor, since a different floor changes what was applied (`test/fixtures/alternat
 Calibration counts a claim as right when its value is any of a slot's values, applied or set
 aside, and `variance` never lists an alternative as a possible key gap: the key already has it.
 Equivalent values (`equivalents`) are simpler still: they are read as one value before anything
-is counted.
+is counted. Two of them in one prediction become one value, at the confidence the workflow acted
+on (its highest applied copy's) and, for the floor and a "weakest" gate, its lowest applied
+copy's: a merge never turns a weak applied value into a strong one.
 
 ## Declines
 

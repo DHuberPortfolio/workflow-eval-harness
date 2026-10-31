@@ -105,8 +105,8 @@ Every safeguard failure is a bug to find and fix:
 
 | Code | Type | How the tool detects it |
 |---|---|---|
-| SG-GATE | **Went out below the confidence gate** | Recompute the gate from the applied values and `thresholds.auto_publish` (the lead value, or the weakest with `gate_uses: weakest`). A gated output with nothing applied fails the gate |
-| SG-FLOOR | **A value under the floor was applied** | Applied value with confidence < `thresholds.floor` |
+| SG-GATE | **Went out below the confidence gate** | Recompute the gate from the applied values and `thresholds.auto_publish` (the lead value, or the weakest with `gate_uses: weakest`). A gated output with nothing applied fails the gate. Two equivalent values merged into one count at their highest applied copy for the lead, and their lowest for the weakest |
+| SG-FLOOR | **A value under the floor was applied** | Applied value with confidence < `thresholds.floor` (for two equivalent values merged into one, the lowest applied copy's) |
 
 Splitting the two missing-value types matters for tuning: **MISSING-REJECTED** is the
 floor's cost (the model knew; the guard dropped it), so a lower floor would fix it.
