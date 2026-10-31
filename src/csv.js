@@ -153,6 +153,14 @@ function decodeCsvRecords(rows, config, which, s, source, p) {
     const where = source + ' ' + (id || 'row #' + (i + 1));
     const decode = (col, fn, o) => { if (has(row, col)) rec[col] = fn(row[col], o, s, where + ' ' + col, p); };
 
+    // Group labels (config.groups) read from this side: several in one cell are split like trap
+    // labels. Only a cell holding several is changed, and before anything else is decoded, so a
+    // column also read for something else (the route, an output, the traps) keeps its own reading.
+    for (const g of Object.values(config.groups)) {
+      if ((g.from === 'key') === isKey && has(row, g.field) && row[g.field].includes(s.list_separator)) {
+        rec[g.field] = row[g.field].split(s.list_separator).map(x => x.trim());
+      }
+    }
     for (const o of Object.values(config.outputs)) {
       const col = isKey ? o.key_field : o.field;
       if (o.type === 'set') {

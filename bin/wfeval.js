@@ -3,7 +3,7 @@
 // No metric logic lives here - this file only connects the terminal to src/.
 const fs = require('node:fs');
 const { parseArgs } = require('node:util');
-const { loadConfig, SEVERITIES } = require('../src/config.js');
+const { loadConfig, addGroupBy, SEVERITIES } = require('../src/config.js');
 const { loadRun } = require('../src/load.js');
 const { scoreRun, varianceRun, compareRun, scoreGradesRun } = require('../src/score.js');
 const { renderTerminal, renderVariance, renderCompare, renderWhatif, renderGrades } = require('../src/report/terminal.js');
@@ -17,11 +17,12 @@ commands:
 
   score     --config <file> --pred <file> --key <file> [--lenient]
             [--json <file>] [--html <file>] [--quiet] [--fail-on <severity>]
-            [--target <percent> [--chance 0.8|0.9|0.95]]
+            [--target <percent> [--chance 0.8|0.9|0.95]] [--group-by <field> ...]
             score one run. --fail-on critical|high|medium|low exits with code 3 when a
             silent error or safeguard failure at or above that severity is found (for CI).
             --target 5 says whether the silent error rate is shown to be under 5%, and if
-            not, how many records would show it
+            not, how many records would show it. --group-by channel gives the rates again
+            for each value of the answer key's "channel" (repeatable)
 
   score     --grades <file> [--second-reviewer <file>] [--lenient]
             [--json <file>] [--quiet] [--fail-on <severity>]
@@ -82,13 +83,16 @@ function score(args) {
     config: { type: 'string' }, pred: { type: 'string' }, key: { type: 'string' }, lenient: { type: 'boolean' },
     json: { type: 'string' }, html: { type: 'string' }, quiet: { type: 'boolean' }, 'fail-on': { type: 'string' },
     grades: { type: 'string' }, 'second-reviewer': { type: 'string' }, target: { type: 'string' }, chance: { type: 'string' },
+    'group-by': { type: 'string', multiple: true },
   } });
   const failOn = values['fail-on'];
   if (failOn !== undefined && !SEVERITIES.includes(failOn)) throw new Error('--fail-on must be one of: ' + SEVERITIES.join(', '));
   if (values.grades || values['second-reviewer']) return scoreGrades(values, failOn);
   need(values, ['config', 'pred', 'key'], 'score');
 
-  const results = scoreRun({ config: loadConfig(values.config), predPath: values.pred, keyPath: values.key, mode: MODE(values), ...targetOptions(values) });
+  let config = loadConfig(values.config);
+  if (values['group-by']) config = addGroupBy(config, values['group-by']);
+  const results = scoreRun({ config, predPath: values.pred, keyPath: values.key, mode: MODE(values), ...targetOptions(values) });
   if (!values.quiet) process.stdout.write(renderTerminal(results));
   if (values.json) writeFile(values.json, JSON.stringify(resultsJson(results), null, 2) + '\n');
   if (values.html) writeFile(values.html, require('../src/report/html.js').renderHtml(results));
@@ -108,7 +112,7 @@ function score(args) {
 // score --grades: a person's grades of free-text fields, scored as labels.
 function scoreGrades(values, failOn) {
   if (!values.grades) throw new Error('--second-reviewer goes with --grades <file>');
-  const extra = ['config', 'pred', 'key', 'html'].filter(k => values[k]);
+  const extra = ['config', 'pred', 'key', 'html', 'group-by'].filter(k => values[k]);
   if (extra.length) throw new Error('score --grades reads everything from the grades file; it does not take ' + extra.map(k => '--' + k).join(' '));
   const g = scoreGradesRun({ gradesPath: values.grades, secondPath: values['second-reviewer'] || null, mode: MODE(values) });
   if (!values.quiet) process.stdout.write(renderGrades(g));
@@ -150,6 +154,8 @@ function check(args) {
   console.log('  routing     ' + routes);
   console.log('  wrong when  ' + c.wrong_when);
   console.log('  traps       ' + (c.trap_field ? 'read from key field "' + c.trap_field + '"' : 'not set'));
+  const groups = Object.entries(c.groups).map(([n, g]) => n + ' (' + g.from + ' field "' + g.field + '")');
+  if (groups.length) console.log('  groups      ' + groups.join(', '));
   const t = c.thresholds;
   if (!t) {
     console.log('  thresholds  not set');

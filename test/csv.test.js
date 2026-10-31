@@ -70,14 +70,15 @@ test('.csv and .tsv are recognised by extension; .tsv splits on tabs', () => {
 
 // ---------- Step 2: cells into values ----------
 
-const CONFIG = validateConfig({
+const CONFIG_RAW = {
   trap_field: 'trap',
   outputs: {
     tags: { type: 'set', rejected_field: 'tags_rejected' },
     verdict: { type: 'label', labels: ['pass', 'elevate', 'fail'], confidence_field: 'confidence' },
   },
   routing: { gold_field: 'expected', map: { AUTO: 'auto', REVIEW: 'review' } },
-}).config;
+};
+const CONFIG = validateConfig(CONFIG_RAW).config;
 const S = CONFIG.input.predictions;   // the default separators: | and @
 const decodePred = (row, mode) => run(p => decodeCsvRecords([row], CONFIG, 'predictions', S, 'f', p), mode);
 const row = extra => ({ id: 'R1', route: 'AUTO', tags: '', tags_rejected: '', verdict: 'pass', confidence: '', ...extra });
@@ -135,6 +136,21 @@ test('trap cells split into a list on the list separator', () => {
   assert.deepEqual(decodeKey(k({ trap: 'near-duplicate | weak-tag' })), ['near-duplicate', 'weak-tag']);
   assert.deepEqual(decodeKey(k({ trap: 'near-duplicate' })), ['near-duplicate']);
   assert.deepEqual(decodeKey(k({ trap: '' })), []);
+});
+
+test('group cells split into a list on the list separator, each read on its own side only', () => {
+  const cfg = validateConfig({ ...CONFIG_RAW, groups: { kind: { field: 'kind' }, branch: { field: 'branch', from: 'predictions' } } }).config;
+  const k = extra => ({ id: 'R1', expected: 'AUTO', tags: '', verdict: 'pass', ...extra });
+  const groupsOf = (r, which) => run(p => (which === 'key' ? normalizeKey : normalizePredictions)(decodeCsvRecords([r], cfg, which, S, 'f', p), cfg, 'f', p)).result[0].groups;
+  assert.deepEqual(groupsOf(k({ kind: 'chat | email', branch: '9' }), 'key'), { kind: ['chat', 'email'] });
+  assert.deepEqual(groupsOf(k({ kind: '' }), 'key'), { kind: [] });
+  assert.deepEqual(groupsOf(row({ kind: 'chat', branch: ' 2 ' }), 'predictions'), { branch: ['2'] });
+  // A column that is also read for something else (here the route, by "rates per route") keeps its text.
+  const byRoute = validateConfig({ ...CONFIG_RAW, groups: { went: { field: 'route', from: 'predictions' }, should: { field: 'expected' } } }).config;
+  const pr = run(p => normalizePredictions(decodeCsvRecords([row({ route: 'AUTO' })], byRoute, 'predictions', S, 'f', p), byRoute, 'f', p));
+  assert.deepEqual([pr.flagged, pr.result[0].route, pr.result[0].groups], [[], 'AUTO', { went: ['AUTO'] }]);
+  const ky = run(p => normalizeKey(decodeCsvRecords([k({ expected: 'REVIEW' })], byRoute, 'key', S, 'f', p), byRoute, 'f', p));
+  assert.deepEqual([ky.flagged, ky.result[0].gold_route, ky.result[0].groups], [[], 'REVIEW', { should: ['REVIEW'] }]);
 });
 
 test('an empty id or route cell counts as not given', () => {

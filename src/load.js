@@ -353,10 +353,42 @@ function readMovable(raw, config) {
   return config.whatif.movable_values.some(m => String(m) === String(v).trim());
 }
 
+// Group labels (config.groups) for the groups read from this side: { name: [labels] }, or null
+// when this side has none, so records stay unchanged without groups. Read like trap labels:
+// text, a number or true/false is one label, as trimmed text (so a CSV's "7" and a JSON 7 are
+// one group); a list is one label per element, and the record counts in each (H7); missing,
+// null or empty is [] and is grouped as "(none)" (H1). An object has no label to show and would
+// pool as "[object Object]", so it stops (H8), naming a field inside it that could be the label.
+function readGroups(raw, config, side, where, p) {
+  const mine = Object.entries(config.groups).filter(([, g]) => g.from === side);
+  if (mine.length === 0) return null;
+  const out = {};
+  for (const [name, g] of mine) {
+    const v = getPath(raw, g.field);
+    const labels = [];
+    for (const x of Array.isArray(v) ? v : [v]) {
+      if (x === undefined || x === null) continue;
+      if (typeof x !== 'string' && typeof x !== 'boolean' && !(typeof x === 'number' && Number.isFinite(x))) {
+        const inner = isObj(x) ? Object.keys(x).find(k => typeof x[k] === 'string') : undefined;
+        p.stop('H8', where, 'group "' + name + '" ("' + g.field + '") is ' + (isObj(x) ? 'an object' : describe(x)) +
+          (Array.isArray(v) ? ' inside a list' : '') + '; it must be text, a number, true/false, or a list of them' +
+          (inner ? '. Point the group\'s field at the label inside it, such as "' + g.field + '.' + inner + '"' : ''));
+        labels.length = 0;
+        break;
+      }
+      const t = String(x).trim();
+      if (t !== '' && !labels.includes(t)) labels.push(t);
+    }
+    out[name] = labels;
+  }
+  return out;
+}
+
 // ---------- Whole files ----------
 
 // Predictions: what the workflow did.
-// Each becomes { id, route, scored, outputs }. The route is passed through as given;
+// Each becomes { id, route, scored, movable, outputs }, plus groups when the config reads any
+// from the predictions. The route is passed through as given;
 // align.js checks it against the config, because that needs the key too.
 // opts.sameFile: the answer key is in the same records (see H4 below).
 function normalizePredictions(raws, config, source, p, opts = {}) {
@@ -389,13 +421,17 @@ function normalizePredictions(raws, config, source, p, opts = {}) {
       if (typeof raw.scored === 'boolean') scored = raw.scored;
       else p.stop('C10', where, '"scored" must be true or false without quotes, got ' + describe(raw.scored));
     }
-    out.push({ id, route: getPath(raw, rf), scored, movable: readMovable(raw, config), outputs: readOutputs(raw, config, where, p, false, scored) });
+    const rec = { id, route: getPath(raw, rf), scored, movable: readMovable(raw, config), outputs: readOutputs(raw, config, where, p, false, scored) };
+    const groups = readGroups(raw, config, 'predictions', where, p);
+    if (groups) rec.groups = groups;
+    out.push(rec);
   });
   return out;
 }
 
 // Answer key: what the workflow should have done.
-// Each becomes { id, gold_route, traps, outputs }.
+// Each becomes { id, gold_route, traps, duplicate_of, outputs }, plus groups when the config
+// reads any from the key.
 function normalizeKey(raws, config, source, p) {
   if (raws.length === 0) return [];
   if (!idsFound(raws, config.id_field, source, 'key', p)) return [];
@@ -421,7 +457,10 @@ function normalizeKey(raws, config, source, p) {
       if (typeof d === 'string' || typeof d === 'number') duplicateOf = String(d).trim() || null;
       else if (d !== undefined && d !== null) p.stop('C9', where, config.duplicate_of_field + ' must be the id of another record, got ' + describe(d));
     }
-    out.push({ id, gold_route: goldRoute, traps, duplicate_of: duplicateOf, outputs: readOutputs(raw, config, where, p, true) });
+    const rec = { id, gold_route: goldRoute, traps, duplicate_of: duplicateOf, outputs: readOutputs(raw, config, where, p, true) };
+    const groups = readGroups(raw, config, 'key', where, p);
+    if (groups) rec.groups = groups;
+    out.push(rec);
   });
   return out;
 }

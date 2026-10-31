@@ -1,12 +1,12 @@
 [
-  { "id": "Q1",  "decision": "SEND", "TOPIC": ["billing"] },
-  { "id": "Q2",  "decision": "SEND", "TOPIC": ["billing"] },
-  { "id": "Q3",  "decision": "ASK",  "TOPIC": ["refund"] },
-  { "id": "Q4",  "decision": "ASK",  "TOPIC": ["billing"] },
-  { "id": "Q5",  "decision": "ASK",  "TOPIC": ["promo"] },
-  { "id": "Q6",  "decision": "ASK",  "TOPIC": ["billing"] },
-  { "id": "Q7",  "decision": "FILE", "TOPIC": [] },
-  { "id": "Q8",  "decision": "ASK",  "TOPIC": ["billing"] },
-  { "id": "Q9",  "decision": "ASK",  "TOPIC": ["refund"] },
-  { "id": "Q10", "decision": "ASK",  "TOPIC": ["billing"] }
+  { "id": "Q1",  "decision": "SEND", "TOPIC": ["billing"], "branch": 2 },
+  { "id": "Q2",  "decision": "SEND", "TOPIC": ["billing"], "branch": 2 },
+  { "id": "Q3",  "decision": "ASK",  "TOPIC": ["refund"],  "branch": 2 },
+  { "id": "Q4",  "decision": "ASK",  "TOPIC": ["billing"], "branch": 2 },
+  { "id": "Q5",  "decision": "ASK",  "TOPIC": ["promo"],   "branch": 2 },
+  { "id": "Q6",  "decision": "ASK",  "TOPIC": ["billing"], "branch": 2 },
+  { "id": "Q7",  "decision": "FILE", "TOPIC": [],          "branch": 1 },
+  { "id": "Q8",  "decision": "ASK",  "TOPIC": ["billing"], "branch": 1 },
+  { "id": "Q9",  "decision": "ASK",  "TOPIC": ["refund"],  "branch": 2 },
+  { "id": "Q10", "decision": "ASK",  "TOPIC": ["billing"], "branch": 2 }
 ]

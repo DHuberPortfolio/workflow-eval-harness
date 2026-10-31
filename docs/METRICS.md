@@ -194,6 +194,24 @@ results by the answer key's trap labels shows which kind of trap gets through, w
 single rate hides. With `min_per_trap`, a trap with too few records stops the run: one record
 passing a trap can be luck.
 
+## Per group
+
+The same rates for each value of one field (`groups` in the config, or `score --group-by`):
+silent error rate, straight-through, review precision, silent omissions and routed as the answer
+key says, each with its count and likely range. It exists for questions a single rate cannot
+answer: did the prompt, tuned on one half of the golden set, do as well on the held-out half it
+never saw? Does the workflow do worse on one kind of record (chat against email, one branch of
+the workflow against another)? Each row is the headline's own arithmetic on that row's records,
+so the rows and the headline cannot disagree.
+
+A group is smaller than the run, so **its range is wider**: with one record in a group, one
+mistake reads as 100% and none as 0%, and both ranges span most of the scale. Compare the ranges,
+not the percentages: when two groups' ranges overlap widely, these records cannot tell the
+groups apart (the queue fixture's two channels, 100% and 0%, overlap from 20.7% to 79.3%). A
+record with several labels counts in each group, so the rows can add up to more than the
+records; the report says when. And a group of a golden set built from traps is still a
+stress-test rate, not the rate real traffic would see, however the group is chosen.
+
 ## Calibration
 
 Does a stated confidence mean what it says? If the gate is 0.85, are claims stated at 0.85

@@ -3,7 +3,7 @@
 // report. Every value that came from an input file is HTML-escaped: a record id is data,
 // and data must never be able to run as code in the report.
 
-const { WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines } = require('./format.js');
+const { WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines, groupSource, GROUP_RANGES, severalLabels } = require('./format.js');
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const pct = r => (!r || r.pct === null ? 'n/a' : r.pct.toFixed(1) + '%');
@@ -298,6 +298,26 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
       esc(g.trap), String(g.records.length), g.routed_correctly.d ? cnt(g.routed_correctly) : 'n/a', ids(g.silent_errors), ids(g.silent_omissions), ids(g.wasted_reviews),
     ]), [1, 2]));
     if (results.traps.coverage.below.length) s.push('<p>Below min_per_trap (' + results.traps.coverage.min_per_trap + '): ' + results.traps.coverage.below.map(b => esc(b.trap) + ' (' + b.records + ')').join(', ') + '</p>');
+  }
+
+  // Groups: every rate with its count and likely range (trap H6). Labels, fields and ids are input.
+  if (results.groups) {
+    const omissions = r.silent_omissions !== null;
+    const cell = x => pct(x) + '<br><span class="muted">' + cnt(x) + (rng(x) ? ' · likely ' + rng(x) : '') + '</span>';
+    s.push('<h2>Per group</h2>');
+    s.push('<p>The same rates as at the top, for each label of one field: one kind of record against another, or a tuning half against a held-out half. ' +
+      'A record with several labels counts in each; a record with none is grouped as (none). ' + esc(GROUP_RANGES) + '</p>');
+    for (const g of results.groups) {
+      const routed = g.rows.some(x => x.routed_correctly);
+      s.push('<h3>' + esc(g.name) + ' <span class="muted">(' + esc(groupSource(g)) + ')</span></h3>');
+      if (g.records_with_several_labels) s.push('<p>' + esc(severalLabels(g.records_with_several_labels, r.total)) + '</p>');
+      const rates = ['Silent error rate', 'Straight-through', 'Review precision', ...(omissions ? ['Silent omissions'] : []), ...(routed ? ['Routed as the answer key says'] : [])];
+      s.push(table(['Label', 'Records', ...rates, 'Silent errors', ...(omissions ? ['Omissions'] : []), 'Unnecessary reviews'], g.rows.map(x => [
+        esc(x.label), String(x.records), cell(x.silent_errors.rate), cell(x.straight_through), cell(x.review_precision.rate),
+        ...(omissions ? [cell(x.silent_omissions.rate)] : []), ...(routed ? [cell(x.routed_correctly)] : []),
+        ids(x.silent_errors.ids), ...(omissions ? [ids(x.silent_omissions.ids)] : []), ids(x.review_precision.unnecessary),
+      ]), Array.from({ length: rates.length + 1 }, (_, i) => i + 1)));   // Records and every rate: numbers
+    }
   }
 
   // Calibration

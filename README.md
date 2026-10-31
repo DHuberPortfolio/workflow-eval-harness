@@ -143,7 +143,7 @@ by number.
 
 | Command | Question it answers |
 |---|---|
-| `wfeval score` | How did this run do? Silent errors by type and severity, routing, output quality, per-trap results, calibration. `--fail-on critical` exits non-zero, to stop a build. `--target 5` says whether the silent error rate is shown to be under 5%, and if not, how many records would show it. |
+| `wfeval score` | How did this run do? Silent errors by type and severity, routing, output quality, per-trap results, calibration. `--fail-on critical` exits non-zero, to stop a build. `--target 5` says whether the silent error rate is shown to be under 5%, and if not, how many records would show it. `--group-by split` (or `groups` in the config) gives the rates again for each value of a field, each with its count and likely range: the tuning half against the held-out half, one kind of record against another. |
 | `wfeval variance` | How much do the numbers move between runs of identical code? Mean, spread and range per metric; the worst run's silent error rate, the one to quote (runs are never added together); the records that behave differently run to run; and possible key gaps: values stated in every run that the answer key does not list, for a person to rule on. |
 | `wfeval compare` | Did a change help? On the same records, how many silent errors, unnecessary reviews and misroutes it fixed and how many it broke, judged better, worse or unclear with no repeated runs needed; every metric's change against the spread of repeated runs, when you have them; and every record that was fixed or broken. |
 | `wfeval rate` | What is the likely range for any count (2 of 15), and how many records would show a rate is under a target? |

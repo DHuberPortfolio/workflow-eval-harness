@@ -5,6 +5,7 @@ const path = require('node:path');
 const { validateConfig, loadConfig } = require('../src/config.js');
 const { problems } = require('../src/problems.js');
 const { getPath, parseRecords, readRecords, normalizePredictions, normalizeKey, loadRun } = require('../src/load.js');
+const { align } = require('../src/align.js');
 
 // A config with one output of each type, and a confidence gate on SUBJECT.
 const CONFIG = validateConfig({
@@ -323,6 +324,61 @@ test('H4 does not apply when the config says answers sit beside predictions (a c
   const rec = { id: 'R1', route: 'AUTO', output: { tags: [] }, expected: { tags: [], trap: 'weak-tag' } };
   // Predictions from one run's file, the key from another's: still no H4.
   assert.deepEqual(run(p => normalizePredictions([rec], combined, 'run-2.json', p)).flagged, []);
+});
+
+// ---------- Group labels (config.groups) ----------
+
+const GCONFIG = validateConfig({
+  outputs: { tags: { type: 'set' } },
+  routing: { map: { AUTO: 'auto', REVIEW: 'review' } },
+  groups: { kind: { field: 'kind' }, branch: { field: 'branch', from: 'predictions' } },
+}).config;
+const gKey = (kind, extra) => run(p => normalizeKey([{ id: 'R1', tags: [], kind, ...extra }], GCONFIG, 'key', p));
+
+test('H1 + H7: a group value is text, a number or true/false; a list counts in each; missing, null or empty is none', () => {
+  const labels = kind => gKey(kind).result[0].groups.kind;
+  assert.deepEqual(labels(' chat '), ['chat']);   // trimmed, like trap labels
+  assert.deepEqual(labels(7), ['7']);             // read as text, so CSV "7" and JSON 7 are one group
+  assert.deepEqual(labels(false), ['false']);
+  assert.deepEqual(labels(['chat', 'email', 'chat']), ['chat', 'email']);   // a label listed twice counts once
+  for (const none of [undefined, null, '', '  ', [], ['', null]]) assert.deepEqual(labels(none), [], JSON.stringify(none));
+  assert.deepEqual(gKey('chat').flagged, []);
+  // Without groups in the config, records carry none.
+  assert.equal('groups' in readKey(key()).result[0], false);
+  assert.equal('groups' in readPred(pred()).result[0], false);
+});
+
+test('H8: an object as a group value stops, naming the record and a field inside it', () => {
+  const { flagged, items } = gKey({ value: 'chat', confidence: 0.9 });
+  assert.deepEqual(flagged, ['stop:H8']);
+  assert.equal(items[0].where, 'key R1');
+  assert.match(items[0].message, /group "kind" \("kind"\) is an object.*"kind\.value"/);
+  assert.deepEqual(gKey(['chat', { value: 'email' }]).flagged, ['stop:H8']);   // inside a list too
+  assert.deepEqual(gKey([['chat']]).flagged, ['stop:H8']);
+  // Lenient mode too: there is no label to show, so no group to count the record in.
+  assert.deepEqual(run(p => normalizeKey([{ id: 'R1', tags: [], kind: {} }], GCONFIG, 'key', p), 'lenient').flagged, ['stop:H8']);
+});
+
+test('groups: a key-side group reads only the answer key, a prediction-side one only the predictions', () => {
+  // Both files carry both fields, with different values: each group must take its own side's.
+  const preds = run(p => normalizePredictions([{ id: 'R1', route: 'AUTO', tags: [], kind: 'email', branch: 2 }], GCONFIG, 'preds', p)).result;
+  const answers = gKey('chat', { branch: 9 }).result;
+  assert.deepEqual(preds[0].groups, { branch: ['2'] });
+  assert.deepEqual(answers[0].groups, { kind: ['chat'] });
+  const p = problems('strict');
+  const paired = align(preds, answers, GCONFIG, p);
+  assert.deepEqual(paired[0].groups, { kind: ['chat'], branch: ['2'] });
+});
+
+test('groups in a combined format (one file holds both sides): each group reads its own side\'s field', () => {
+  const shapes = path.join(__dirname, 'fixtures', 'shapes');
+  const raw = JSON.parse(require('node:fs').readFileSync(path.join(shapes, 'combined.config.json'), 'utf8'));
+  const config = validateConfig({ ...raw, groups: { should: { field: 'expected.route' }, went: { field: 'route', from: 'predictions' } } }).config;
+  const file = path.join(shapes, 'combined.json');
+  const { records, problems: found } = loadRun({ config, predPath: file, keyPath: file });
+  assert.deepEqual(found, []);
+  assert.deepEqual(records.find(r => r.id === 'R2').groups, { should: ['EDITOR_REVIEW'], went: ['AUTO_PUBLISH'] });
+  assert.deepEqual(records.find(r => r.id === 'R4').groups, { should: ['AUTO_PUBLISH'], went: ['EDITOR_REVIEW'] });
 });
 
 // ---------- The whole thing ----------

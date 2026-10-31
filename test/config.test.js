@@ -206,6 +206,41 @@ test('calibration buckets and whatif settings are checked', () => {
   assert.match(errs, /whatif must be/);
 });
 
+test('groups: each names a field; from is the answer key (the default) or the predictions', () => {
+  assert.deepEqual(validateConfig(minimal()).config.groups, {});
+  const raw = minimal();
+  raw.groups = { half: { field: 'split' }, branch: { field: 'meta.branch', from: 'predictions' } };
+  const { config, errors } = validateConfig(raw);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(config.groups, { half: { field: 'split', from: 'key' }, branch: { field: 'meta.branch', from: 'predictions' } });
+});
+
+test('groups: an unknown from, an empty or non-string field, or an unknown key is an error', () => {
+  const raw = minimal();
+  raw.groups = { a: { field: 'x', from: 'answers' }, b: { field: '' }, c: { field: 3 }, d: {}, e: { field: 'x', form: 'key' }, f: 'x' };
+  const errs = validateConfig(raw).errors.join('\n');
+  assert.match(errs, /groups\.a\.from must be one of: key, predictions/);
+  assert.match(errs, /groups\.b\.field must be a field name/);
+  assert.match(errs, /groups\.c\.field must be a field name/);
+  assert.match(errs, /groups\.d\.field must be a field name/);
+  assert.match(errs, /unknown key "groups\.e\.form" \(allowed: field, from\)/);
+  assert.match(errs, /groups\.f must be/);
+  raw.groups = ['split'];
+  assert.match(validateConfig(raw).errors[0], /groups must be an object/);
+});
+
+test('--group-by adds a group read from the answer key, named by its path; a bad path or a clash is refused', () => {
+  const { addGroupBy } = require('../src/config.js');
+  const raw = minimal();
+  raw.groups = { branch: { field: 'branch', from: 'predictions' } };
+  const config = validateConfig(raw).config;
+  const out = addGroupBy(config, ['meta.channel', 'meta.channel']);
+  assert.deepEqual(out.groups, { branch: { field: 'branch', from: 'predictions' }, 'meta.channel': { field: 'meta.channel', from: 'key' } });
+  assert.deepEqual(config.groups, { branch: { field: 'branch', from: 'predictions' } });   // the loaded config is not changed
+  assert.throws(() => addGroupBy(config, ['a..b']), /--group-by must be a field name/);
+  assert.throws(() => addGroupBy(config, ['branch']), /the config already has a group named "branch"/);
+});
+
 test('every problem is reported at once', () => {
   const { config, errors } = validateConfig({ outputs: {}, routing: 'x', typo: 1 });
   assert.equal(config, null);

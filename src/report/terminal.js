@@ -1,7 +1,10 @@
 // The score report as plain text for the terminal. Headline first: what went out without
 // review but needed a person, how sure we can be of that number, then everything else.
 
-const { pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines } = require('./format.js');
+const {
+  pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines,
+  groupSource, GROUP_RANGES, severalLabels,
+} = require('./format.js');
 
 // "TARGET  under 5%: ..." and its indented details.
 function targetSection(t, words) {
@@ -132,6 +135,33 @@ function traps(results) {
   return lines.join('\n');
 }
 
+// One table per group (results.groups): each label's rates with their counts, and the likely
+// ranges on the line below, so no group's rate is ever shown without them (trap H6).
+function groupSections(results) {
+  if (!results.groups) return [];
+  const omissions = results.routing.silent_omissions !== null;
+  return results.groups.map(g => {
+    const routed = g.rows.some(x => x.routed_correctly);
+    const rates = x => [x.silent_errors.rate, x.straight_through, x.review_precision.rate,
+      ...(omissions ? [x.silent_omissions.rate] : []), ...(routed ? [x.routed_correctly] : [])];
+    const rows = [['label', 'records', 'silent error rate', 'straight-through', 'review precision',
+      ...(omissions ? ['silent omissions'] : []), ...(routed ? ['routed as the answer key says'] : [])]];
+    for (const x of g.rows) {
+      rows.push([x.label, x.records, ...rates(x).map(r => pct(r) + '  ' + count(r))]);
+      rows.push(['', '', ...rates(x).map(r => (range(r) ? 'likely ' + range(r) : ''))]);
+    }
+    // "chat: Q2 · email: Q4 Q5", for the labels that have any.
+    const byLabel = pick => g.rows.filter(x => pick(x).length).map(x => x.label + ': ' + list(pick(x))).join(' · ') || '-';
+    const idRows = [['silent errors', byLabel(x => x.silent_errors.ids)]];
+    if (omissions) idRows.push(['silent omissions', byLabel(x => x.silent_omissions.ids)]);
+    idRows.push(['unnecessary reviews', byLabel(x => x.review_precision.unnecessary)]);
+    const lines = ['PER GROUP  ' + g.name + '  (' + groupSource(g) + ')', table(rows, [1]).replace(/ +$/gm, ''), table(idRows)];
+    if (g.records_with_several_labels) lines.push('  ' + severalLabels(g.records_with_several_labels, results.routing.total));
+    lines.push('  ' + GROUP_RANGES);
+    return lines.join('\n');
+  });
+}
+
 function calibration(results) {
   const c = results.calibration;
   if (c.overall.n === 0) return 'CALIBRATION  no values with a confidence';
@@ -177,6 +207,7 @@ function renderTerminal(results) {
   parts.push(quality(results));
   const t = traps(results);
   if (t) parts.push(t);
+  parts.push(...groupSections(results));
   parts.push(calibration(results));
   if (r.not_measured.length) parts.push('NOT MEASURED\n' + r.not_measured.map(n => '  ' + n.what + ': ' + n.why).join('\n'));
   const notes = results.problems.filter(i => i.level !== 'stop');

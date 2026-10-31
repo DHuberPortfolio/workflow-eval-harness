@@ -98,6 +98,12 @@ catch the violation, and it tells the whole story in one row: every violation on
 layer can catch (`llm`, 11 records) that got through is here, 6 of them, while the regex
 layer's (`deterministic`) are all routed right.
 
+**Per group** comes next when the config has `groups` or the command has `--group-by` (this
+sample has neither): the headline rates again for each value of one field, such as the tuning
+half against the held-out half. Each row shows its count and likely range under the rate.
+A group has fewer records than the whole run, so its range is wider: compare the ranges, not
+the percentages ([more](METRICS.md#per-group)).
+
 ## 6. Calibration
 
 Does a stated confidence mean what it says? Claims are grouped by the confidence the model

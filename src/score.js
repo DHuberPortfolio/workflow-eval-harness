@@ -8,6 +8,7 @@ const { judgeAll } = require('./metrics/judge.js');
 const { scoreQuality } = require('./metrics/classification.js');
 const { scoreRouting } = require('./metrics/routing.js');
 const { scoreTraps } = require('./metrics/traps.js');
+const { scoreGroups } = require('./metrics/groups.js');
 const { scoreCalibration } = require('./metrics/calibration.js');
 const { targetCheck } = require('./metrics/target.js');
 
@@ -22,13 +23,15 @@ function recordSummary(j) {
 }
 
 // Every metric from paired records. Pure: no files, no problems collector. Used by
-// score, variance, compare and what-if alike.
+// score, variance, compare and what-if alike. `groups` only when the config has groups.
 function scoreRecords(records, config) {
   const judgments = judgeAll(records, config);
+  const groups = scoreGroups(judgments, config, records);
   return {
     routing: scoreRouting(judgments, config, records),
     quality: scoreQuality(records, config),
     traps: scoreTraps(judgments, config),
+    ...(groups ? { groups } : {}),
     calibration: scoreCalibration(records, config),
     records: judgments.map(recordSummary),
   };

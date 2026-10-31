@@ -3,9 +3,9 @@
 Ten messages triaged by a workflow: send a reply on its own (SEND, auto), ask the owner
 (ASK, review), file it (FILE, block), or drop it as a duplicate (DUPLICATE, exclude). One set
 output, `TOPIC`. Two runs of the same records: `predictions.json` (before) and
-`predictions-after.json` (after a change). Built for three things: what review precision
-counts (trap G12), what a target needs (G13), and judging a change on the same records without
-repeated runs (I9).
+`predictions-after.json` (after a change). Built for four things: what review precision
+counts (trap G12), what a target needs (G13), judging a change on the same records without
+repeated runs (I9), and rates per group (H6-H8).
 
 ## The records
 
@@ -88,3 +88,82 @@ error-rate-calculator's `pairedDifference`): silent errors -34.2 to +34.2; unnec
 The silent error *rate* fell from 50.0% (1 of 2) to 20.0% (1 of 5), yet the same number of
 silent errors went out: one fixed, one broken. The rate fell because more correct records went
 out beside the error. The paired count says so; the rate alone does not.
+
+## Per group (H6-H8)
+
+Two fields were added for this, and change nothing above: the key's `channel` (how the message
+came in) and the before run's `branch` (which part of the workflow decided: 1 the rules, 2 the
+model). Scored on the before run, with this added to `config.json` (as `test/queue.test.js`
+does):
+
+```json
+"groups": { "channel": { "field": "channel" }, "branch": { "field": "branch", "from": "predictions" } }
+```
+
+For the key's field alone, `wfeval score ... --group-by channel` does the same.
+
+| id | before | key | channel (key) | branch (before) | what happened |
+|---|---|---|---|---|---|
+| Q1 | SEND | SEND | email | 2 | went out, right |
+| Q2 | SEND | ASK | chat | 2 | **silent error** |
+| Q3 | ASK | ASK | chat | 2 | sent to a person, needed one |
+| Q4 | ASK | SEND | email | 2 | unnecessary review |
+| Q5 | ASK | FILE | email | 2 | unnecessary review (the key files it) |
+| Q6 | ASK | SEND | email | 2 | sent to a person, needed one (wrong TOPIC) |
+| Q7 | FILE | FILE | none | 1 | blocked, right |
+| Q8 | ASK | DUPLICATE | email | 1 | unnecessary review (the key drops it) |
+| Q9 | ASK | SEND | chat | 2 | unnecessary review |
+| Q10 | ASK | SEND | chat **and** email | 2 | unnecessary review |
+
+Q7 has no channel, so it is grouped as "(none)" (as H1), shown last. Q10 has two, so it counts
+in both rows (H7): the channel rows hold 4 + 6 + 1 = **11** records, one more than there are.
+`branch` is a number in the file and is read as the text "1" or "2".
+
+Each row is the headline's arithmetic on that row's records alone. A rate with nothing to
+count (0 of 0) is n/a, never 0% (G1).
+
+**channel**
+
+| label | records | silent error rate | straight-through | review precision | silent omissions | routed as the key says |
+|---|---|---|---|---|---|---|
+| chat | 4: Q2 Q3 Q9 Q10 | 1 of 1 (Q2) | 1 of 4 | 1 of 3 (Q3; unnecessary Q9 Q10) | 0 of 4 | 1 of 4 (Q3) |
+| email | 6: Q1 Q4 Q5 Q6 Q8 Q10 | 0 of 1 | 1 of 6 | 1 of 5 (Q6; unnecessary Q4 Q5 Q8 Q10) | 0 of 4 (Q1 Q4 Q6 Q10) | 1 of 6 (Q1) |
+| (none) | 1: Q7 | 0 of 0, n/a | 0 of 1 | 0 of 0, n/a | 0 of 0, n/a (the key files Q7) | 1 of 1 |
+
+**branch**
+
+| label | records | silent error rate | straight-through | review precision | silent omissions | routed as the key says |
+|---|---|---|---|---|---|---|
+| 1 | 2: Q7 Q8 | 0 of 0, n/a | 0 of 2 | 0 of 1 (unnecessary Q8) | 0 of 0, n/a | 1 of 2 (Q7) |
+| 2 | 8: the rest | 1 of 2 (Q2) | 2 of 8 | 2 of 6 (Q3 Q6; unnecessary Q4 Q5 Q9 Q10) | 0 of 7 | 2 of 8 (Q1 Q3) |
+
+Every record has exactly one branch, so the branch rows add up to the headline: silent errors
+0 + 1 = 1 of 0 + 2 = 2; reviews 0 + 2 = 2 of 1 + 6 = 7 (28.6%, as above); omissions 0 of 0 + 7 = 7.
+The channel rows do not, because Q10 is in two of them.
+
+**The ranges.** Wilson, as above: z^2 = 3.8416; with p = n/d, the center is
+(p + z^2/2d) / (1 + z^2/d) and the half-width 1.96 x sqrt(p(1 - p)/d + z^2/4d^2) / (1 + z^2/d).
+Worked in full for chat's 1 of 1: 1 + 3.8416 = 4.8416; center (1 + 1.9208) / 4.8416 = 0.603272;
+half 1.96 x sqrt(0 + 0.9604) / 4.8416 = 1.96 x 0.98 / 4.8416 = 0.396728; range 0.206544 to 1,
+**20.7-100.0%**. The rest the same way:
+
+| count | 1 + z^2/d | center | half | likely range | where |
+|---|---|---|---|---|---|
+| 1 of 1 | 4.8416 | 0.603272 | 0.396728 | 20.7-100.0% | chat silent; (none) routed |
+| 0 of 1 | 4.8416 | 0.396728 | 0.396728 | 0.0-79.3% | email silent; (none) straight-through; branch 1 review |
+| 1 of 4 | 1.9604 | 0.372475 | 0.326889 | 4.6-69.9% | chat straight-through and routed |
+| 0 of 4 | 1.9604 | 0.244950 | 0.244950 | 0.0-49.0% | chat and email omissions |
+| 1 of 3 | 2.280533 | 0.426918 | 0.365427 | 6.1-79.2% | chat review |
+| 1 of 6 | 1.640267 | 0.296781 | 0.266728 | 3.0-56.4% | email straight-through and routed |
+| 1 of 5 | 1.768320 | 0.330347 | 0.294124 | 3.6-62.4% | email review |
+| 0 of 2 | 2.920800 | 0.328814 | 0.328814 | 0.0-65.8% | branch 1 straight-through |
+| 1 of 2 | 2.920800 | 0.500000 | 0.405471 | 9.5-90.5% | branch 1 routed; branch 2 silent |
+| 2 of 8 | 1.480200 | 0.331104 | 0.259626 | 7.1-59.1% | branch 2 straight-through and routed |
+| 2 of 6 | 1.640267 | 0.398391 | 0.301621 | 9.7-70.0% | branch 2 review |
+| 0 of 7 | 1.548800 | 0.177169 | 0.177169 | 0.0-35.4% | branch 2 omissions |
+
+**What it shows (H6).** chat's silent error rate is 100% and email's 0%: as far apart as two
+rates can be. Each comes from one record out without review, and their ranges, 20.7-100.0% and
+0.0-79.3%, overlap from 20.7% to 79.3%. These ten records cannot tell the two channels apart.
+That is why the report puts the count and range beside every group rate, and says to compare
+the ranges, not the percentages.

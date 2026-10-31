@@ -86,6 +86,12 @@ function targetLines(t, words) {
   return lines;
 }
 
+// Per group (results.groups): where a group's labels were read, and how to read its rates. A
+// group holds a fraction of the records, so one record moves its rate a lot (trap H6).
+const groupSource = g => (g.from === 'key' ? 'answer key' : 'predictions') + ' field "' + g.field + '"';
+const GROUP_RANGES = 'Small groups have wide ranges, so compare the ranges, not the percentages.';
+const severalLabels = (n, total) => n + ' record(s) carry several labels and count in each, so the rows add up to more than the ' + total + ' records.';
+
 // The distinct types used by a list of records, in first-seen order.
 const typesIn = records => [...new Set(records.flatMap(x => x.types))];
 
@@ -100,4 +106,7 @@ function table(rows, right = [], indent = '  ') {
   }).join('   ')).join('\n');
 }
 
-module.exports = { pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines };
+module.exports = {
+  pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines,
+  groupSource, GROUP_RANGES, severalLabels,
+};

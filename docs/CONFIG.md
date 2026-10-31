@@ -115,6 +115,27 @@ and not the output that is also the route. What is reported:
 | `allowed_values` | - | `{ output: [values] }` or `{ output: { "file": "vocab.json", "field": "code" } }` (relative to the config). An applied value outside it is SP-INVALID. |
 | `severity` | see docs/SILENT_ERRORS.md | `{ "SP-DUPLICATE": "medium" }`: override any error type's severity. |
 
+## Rates per group
+
+The headline rates again, for each value of a field: the tuning half against the held-out half,
+one kind of email against another, one branch of the workflow against another.
+
+```json
+"groups": {
+  "half": { "field": "split" },
+  "branch": { "field": "decision_branch", "from": "predictions" }
+}
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `groups.<name>.field` | required | Where each record's label is (a name or a dotted path). Text, a number or true/false is one label; a list puts the record in each of its labels' groups; missing, `null` or empty puts it in "(none)". An object is an error: point `field` at the text inside it. |
+| `groups.<name>.from` | `"key"` | `key` or `predictions`: the only file the field is read from, even when both are one file. The answer key is the usual place, since a label there belongs to the test record and no run can change it. `predictions` is for what the workflow reports about itself, such as which branch decided. |
+
+On the command line, `wfeval score ... --group-by split` adds a group read from the answer key,
+named by its path; repeat it for more. What is reported, and how to read it:
+[METRICS.md](METRICS.md#per-group).
+
 ## Grading free text (`wfeval grade`)
 
 Free-text outputs have no answer key; a person grades them. `wfeval grade` takes a separate,

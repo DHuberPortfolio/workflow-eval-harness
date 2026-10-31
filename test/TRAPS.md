@@ -153,7 +153,7 @@ Nothing is specific to a platform; where things are is declared in the config's
 | G12 | A record the answer key blocks or suppresses, sent to a person (an email the key files, put on the owner's to-do list) | It must not go out, so it "needed a person" in the silent-error sense; counted that way in review precision, a queue padded with records nobody should have seen looks precise | RULE: review precision counts it as an unnecessary review, whatever its values, and the reports say the answer key leaves it out. Letting it out unseen is still a silent error (SP-FORBIDDEN, SP-DUPLICATE). `test/fixtures/queue/` |
 | G13 | "How many records to show it is under 5%?" | Done by hand, people take the break-even size (where the observed rate's range just clears the target), which a fresh test lands under only about half the time; or they keep testing until the range dips under the target and stop, which makes the range too optimistic | RULE: `--target` and `wfeval rate` give the plan (records for an 80% chance, exact binomial) and the hard minimum (a perfect run), the same as error-rate-calculator; no plan when the rate is already at or above the target; the report says to fix the number before testing |
 
-## H. Traps inside the trap labels
+## H. Traps inside the trap labels and group labels
 
 | # | Trap | Why it's dangerous | Action |
 |---|---|---|---|
@@ -162,6 +162,13 @@ Nothing is specific to a platform; where things are is declared in the config's
 | H3 | Record with several traps (e.g. a duplicate that also has a weak-but-correct value) | Which group does it count in? | RULE: the trap field may be a list; the record counts in each group; the table notes that group totals can exceed the record count |
 | H4 | Trap field present on **predictions** | The workflow may have seen what it was being tested on | STRICT, except for a combined format (the config reads the key from other fields than the predictions), where the key sits in each record by design |
 | H5 | A trap type with too few records (below `min_per_trap`, e.g. 3) | One record passing can be luck; it proves nothing about the trap | STRICT. The report always lists every trap type with its count |
+| H6 | A group's rate read alone, without its count and range ("chat: 100% silent errors, email: 0%") | A group holds a fraction of the records, so one record swings its rate: in the queue fixture both rates come from one record each, and their ranges overlap from 20.7% to 79.3% | RULE: every group rate carries its count and likely range, in every report, and the reports say to compare the ranges, not the percentages. `test/fixtures/queue/` |
+| H7 | A group value that is a list (a message that came in by chat and by email) | Counted in one group, it vanishes from the other; counted in each, the rows add up to more than the records and look like extra evidence | RULE: as H3, the record counts in each group, and the report says how many records carry several labels and that the rows add up to more than the records. A label listed twice counts once |
+| H8 | An object as a group value (`{ "value": "chat", "confidence": 0.9 }`, or one inside a list) | There is no label to show; as text every such record would read "[object Object]" and pool into one group | STOP, naming the record and the group, and suggesting a field inside the object (`"channel.value"`) |
+
+Groups (`groups` in the config, `score --group-by`) otherwise follow the trap labels' rules: a
+record with no label is grouped as "(none)" (H1), shown last; a number or true/false is read
+as text, so a spreadsheet's `7` and a JSON `7` are one group.
 
 ## I. Multiple runs (Day 3)
 

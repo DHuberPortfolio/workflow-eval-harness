@@ -93,7 +93,10 @@ What the projects that used the harness had to build around it, ranked by how ma
       showing it and the hard minimum; error-rate-calculator's arithmetic (trap G13)
 - [x] `compare` counts what a change fixed and broke on the same records, judged with Tango's
       paired range, so no repeated runs are needed (trap I9)
-- [ ] Rates per group (a field from the key or the predictions), then weighted to a real mix
+- [x] Rates per group: the headline rates for each value of a field from the key or the
+      predictions, each with its count and likely range (`groups`, `score --group-by`; traps
+      H6-H8, `test/fixtures/queue/`)
+- [ ] Weighted to a real mix: groups weighted by their share of real traffic (stratified estimation)
 - [ ] "Any of these is right" and equivalent values in the answer key
 - [ ] A rulings file for possible key gaps (add, reject, pending), and comparing two keys
 - [ ] Ranges that count clusters within a run (retellings of one story, one filing's statements)

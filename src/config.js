@@ -14,7 +14,8 @@ const GATE_USES = ['lead', 'weakest'];
 const FORMATS = ['json', 'jsonl', 'csv'];
 const DELIMITERS = [',', ';', '\t', '|'];
 const TOP_LEVEL_KEYS = ['id_field', 'input', 'outputs', 'routing', 'wrong_when', 'thresholds', 'trap_field',
-  'duplicate_of_field', 'allowed_values', 'severity', 'min_per_trap', 'calibration', 'whatif'];
+  'duplicate_of_field', 'allowed_values', 'severity', 'min_per_trap', 'calibration', 'whatif', 'groups'];
+const GROUP_FROM = ['key', 'predictions'];
 const SEVERITIES = ['critical', 'high', 'medium', 'low'];
 // What a declined label is read as on both sides (see outputs.<name>.decline below). In
 // parentheses so it can never be mistaken for a real label; no label may be this text.
@@ -63,6 +64,43 @@ function validateDecline(d, o, name, at, rawRouting, errors) {
   const routeField = isObj(rawRouting) ? (rawRouting.field === undefined ? 'route' : rawRouting.field) : null;
   if ((o.field || name) === routeField) errors.push(at + ': ' + 'outputs.' + name + ' is also the route (routing.field), and routing.map already says what each of its values does');
   return { values, field: d.field === undefined ? null : d.field };
+}
+
+// groups: the headline rates again for each label of a field, such as a tuning half against a
+// held-out half, or one kind of email against another. { "<name>": { "field": "...", "from": ... } }
+//   field - where each record's label is (a name or a dotted path)
+//   from  - "key" (the default) or "predictions": the only file the field is read from, even when
+//           both are one file. The key by default because a label there belongs to the test
+//           record, so no run can move a record from one group to another; "predictions" is for
+//           what the workflow itself reports, such as which branch decided.
+function validateGroups(raw, errors) {
+  const groups = {};
+  if (raw === undefined) return groups;
+  if (!isObj(raw)) { errors.push('groups must be an object: { "<name>": { "field": "<field>", "from": "key" } }'); return groups; }
+  for (const [name, g] of Object.entries(raw)) {
+    const at = 'groups.' + name;
+    if (name.trim() === '') { errors.push('groups: every group needs a name'); continue; }
+    if (!isObj(g)) { errors.push(at + ' must be { "field": "<field>", "from": "key" | "predictions" }'); continue; }
+    for (const k of Object.keys(g)) if (k !== 'field' && k !== 'from') errors.push('unknown key "' + at + '.' + k + '" (allowed: field, from)');
+    if (!isPath(g.field)) errors.push(at + '.field ' + PATH_RULE);
+    const from = g.from === undefined ? 'key' : g.from;
+    if (!GROUP_FROM.includes(from)) errors.push(at + '.from must be one of: ' + GROUP_FROM.join(', ') + ', got ' + JSON.stringify(from));
+    groups[name] = { field: g.field, from };
+  }
+  return groups;
+}
+
+// wfeval score --group-by <path>: one more group, read from the answer key and named by its path.
+// Returns a new config; the one passed in is not changed.
+function addGroupBy(config, paths) {
+  const groups = { ...config.groups };
+  for (const p of paths) {
+    if (!isPath(p)) throw new Error('--group-by ' + PATH_RULE + ', got ' + JSON.stringify(p));
+    const had = groups[p];
+    if (had && (had.field !== p || had.from !== 'key')) throw new Error('--group-by ' + p + ': the config already has a group named "' + p + '" that reads something else');
+    groups[p] = { field: p, from: 'key' };
+  }
+  return { ...config, groups };
 }
 
 function validateConfig(raw) {
@@ -358,9 +396,11 @@ function validateConfig(raw) {
     } else whatif = { movable_field: w.movable_field, movable_values: vals };
   }
 
+  const groups = validateGroups(raw.groups, errors);
+
   const config = errors.length ? null : {
     id_field: idField, input, outputs, routing, wrong_when: wrongWhen, thresholds, trap_field: trapField,
-    min_per_trap: minPerTrap, duplicate_of_field: duplicateOf, allowed_values: allowed, severity, calibration, whatif,
+    min_per_trap: minPerTrap, duplicate_of_field: duplicateOf, allowed_values: allowed, severity, calibration, whatif, groups,
   };
   return { config, errors };
 }
@@ -393,4 +433,4 @@ function loadConfig(configPath) {
   return resolveAllowedValues(config, configPath);
 }
 
-module.exports = { validateConfig, loadConfig, ROUTE_CLASSES, ERROR_TYPES, SEVERITIES, DECLINED };
+module.exports = { validateConfig, loadConfig, addGroupBy, ROUTE_CLASSES, ERROR_TYPES, SEVERITIES, DECLINED };

@@ -4,7 +4,8 @@
 // only show up when the two files are compared are caught (traps A8, B2-B6, B9, C1-C5).
 // Every metric after this works from the paired records it returns:
 //   { id, route, route_class, gold_route, gold_class, scored, movable, traps, duplicate_of, pred, key }
-// where pred and key are the two sides' outputs, as load.js produced them.
+// where pred and key are the two sides' outputs, as load.js produced them. With groups in the
+// config, each also carries groups: { name: [labels] }, each group's labels from its own side.
 
 const has = (obj, k) => Object.prototype.hasOwnProperty.call(obj, k);
 
@@ -102,6 +103,7 @@ function align(predictions, key, config, p, opts = {}) {
 
   // Pair up, in answer-key order (B6: never by position).
   const map = config.routing.map;
+  const groups = Object.entries(config.groups);
   const records = [];
   for (const [id, k] of answers) {
     const pr = preds.get(id);
@@ -120,7 +122,7 @@ function align(predictions, key, config, p, opts = {}) {
         p.strict('C11', keySource + ' ' + id, 'is marked as a duplicate of "' + dup + '", but its correct route is "' + k.gold_route + '", not a suppressing one');
       }
     }
-    records.push({
+    const rec = {
       id,
       route: typeof pr.route === 'string' ? pr.route.trim() : pr.route,
       route_class: routeClassOf,
@@ -132,7 +134,11 @@ function align(predictions, key, config, p, opts = {}) {
       duplicate_of: dup,
       pred: pr.outputs,
       key: k.outputs,
-    });
+    };
+    // A key-side group's labels come from the key record only, a prediction-side one's from the
+    // prediction only: in a combined format both sides are the same records, read twice.
+    if (groups.length) rec.groups = Object.fromEntries(groups.map(([name, g]) => [name, ((g.from === 'key' ? k : pr).groups || {})[name] || []]));
+    records.push(rec);
   }
 
   // A8: predictions identical to the key, and not one confidence anywhere. A real

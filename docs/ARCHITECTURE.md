@@ -6,6 +6,7 @@ config.json ──> config.js ──┐
 predictions ──> load.js ──> align.js ──> judge.js ──> routing.js ─────┐
 answer key  ──>  (csv.js)   (pairs by id)  (one judgment   classification.js │──> results ──> terminal / JSON / HTML
                                             per record)    traps.js          │
+                                                           groups.js         │
                                                            calibration.js ───┘
                                            variance · compare · whatif reuse the same judgments
 
@@ -21,7 +22,7 @@ free text:  grading config + forms ──> grading.js ──> grading-page.js �
   Totals can match while records do not: two misroutes in opposite directions cancel out.
 - **One judgment per record.** `judge.js` decides, once, whether each record needed a
   person, which error types apply and which safeguards failed. Every number, the per-trap
-  table and the what-ifs are counts over these judgments, so they cannot disagree.
+  and per-group tables and the what-ifs are counts over these judgments, so they cannot disagree.
 - **Metrics are pure functions.** Records in, numbers out; no files, no printing. That
   is what makes them testable with a few lines of data.
 - **One results object, three renderings.** Terminal, JSON and HTML all draw from it, and
