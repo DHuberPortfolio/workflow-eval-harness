@@ -421,6 +421,14 @@ the queue fixture (`test/fixtures/queue/`) the silent error rate falls from 50% 
 the same number of silent errors goes out: one fixed, one broken. The arithmetic is
 error-rate-calculator's paired mode, so the two tools agree.
 
+**Stopping a build that makes things worse.** `compare --fail-if-worse silent-errors,misroutes`
+exits with code 3 when any outcome named is judged **worse**, and says which, with the records it
+fixed and broke (`any` names every outcome the run measures; misroutes are the records routed
+against the answer key). "Unclear" never fails the build: failing on it would fail nearly every
+small change, since few records change, and "worse" already asks for more broken records than
+chance would give. An outcome named that the run does not measure (silent omissions with no
+correct route in the key) stops with an error rather than passing unchecked.
+
 ## Possible key gaps and rulings
 
 An answer key can be wrong too: it can leave out a value that is right. The harness counts

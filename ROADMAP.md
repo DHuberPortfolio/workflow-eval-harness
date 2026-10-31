@@ -119,6 +119,9 @@ What the projects that used the harness had to build around it, ranked by how ma
       `test/fixtures/gate/`)
 - [x] Records silent in at least one of the runs in `variance`, beside the worst run, with the
       share's likely range and always the number of runs (trap I18)
+- [x] A release gate on `compare`: `--fail-if-worse <outcomes>` exits 3 when a named paired
+      outcome is judged worse; never on "unclear"; an outcome the run does not measure stops
+      (trap I19)
 
 ## Out of scope for now
 - Snapshot backdating fixture: a test utility with nothing to score.

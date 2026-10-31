@@ -8,6 +8,7 @@ const { loadRun } = require('../src/load.js');
 const { loadRulings } = require('../src/rulings.js');
 const { loadMix } = require('../src/mix.js');
 const { scoreRun, varianceRun, compareRun, scoreGradesRun } = require('../src/score.js');
+const { gateNames, worseOutcomes } = require('../src/metrics/runs.js');
 const { renderTerminal, renderVariance, renderCompare, renderWhatif, renderGrades } = require('../src/report/terminal.js');
 const { resultsJson } = require('../src/report/json.js');
 
@@ -58,12 +59,16 @@ commands:
 
   compare   --config <file> --key <file> --before <file> --after <file>
             [--noise <run> --noise <run> ...] [--after-key <file>] [--rulings <file>]
-            [--lenient] [--json <file>]
+            [--lenient] [--json <file>] [--fail-if-worse <outcomes>]
             what changed between two runs: record by record, the records each outcome
             fixed and broke, judged on their own; and every rate, judged against the
             noise of repeated identical runs (give those with --noise). --after-key scores
             --after against another answer key: give the same run as --before and --after
-            to see what a new key changes. --rulings applies to both keys
+            to see what a new key changes. --rulings applies to both keys.
+            --fail-if-worse silent-errors,misroutes exits with code 3 when any of those
+            paired outcomes is judged worse (for CI). Takes silent-errors, silent-omissions,
+            unnecessary-reviews, misroutes or any; an outcome this compare does not
+            measure stops. "unclear" never fails: most small changes are unclear
 
   rate      <wrong> <tested> [--target <percent> [--chance 0.8|0.9|0.95]] [--json <file>]
             the likely range for any count (2 of 15), and with --target, how many
@@ -78,7 +83,7 @@ commands:
             records, with the chance that any certified gate is really at or above 5% held
             to 1 - confidence (default 0.95) across all the gates tried
 
-exit codes: 0 done · 1 input problems (listed) · 2 bad command · 3 --fail-on triggered`;
+exit codes: 0 done · 1 input problems (listed) · 2 bad command · 3 --fail-on or --fail-if-worse triggered`;
 
 const MODE = values => (values.lenient ? 'lenient' : 'strict');
 function need(values, names, cmd) {
@@ -255,15 +260,26 @@ function compare(args) {
     config: { type: 'string' }, key: { type: 'string' }, before: { type: 'string' }, after: { type: 'string' },
     noise: { type: 'string', multiple: true }, lenient: { type: 'boolean' }, json: { type: 'string' },
     'after-key': { type: 'string' }, rulings: { type: 'string' },
+    // Repeatable, and the lists add up: a second flag never silently replaces the first.
+    'fail-if-worse': { type: 'string', multiple: true },
   } });
+  const gates = values['fail-if-worse'] ? gateNames(values['fail-if-worse']) : null;
   need(values, ['config', 'key', 'before', 'after'], 'compare');
   const config = loadConfig(values.config);
   const c = compareRun({
     config, keyPath: values.key, afterKeyPath: values['after-key'] || null, beforePath: values.before, afterPath: values.after,
     noisePaths: values.noise || [], mode: MODE(values), rulings: rulingsOf(values, config),
   });
+  // Read before the report is printed, so a named outcome this compare does not measure stops
+  // as an input problem instead of following a report that looks like a pass (trap I19).
+  const worse = gates ? worseOutcomes(c.paired, gates) : [];
   process.stdout.write(renderCompare(c));
   if (values.json) writeFile(values.json, JSON.stringify(resultsJson(c), null, 2) + '\n');
+  if (worse.length) {
+    console.error('fail-if-worse ' + gates.join(',') + ': ' + worse.map(o => o.flag + ' (fixed ' + o.fixed + ', broke ' + o.broke + ')').join(', '));
+    return 3;
+  }
+  return 0;
 }
 
 function whatif(args) {

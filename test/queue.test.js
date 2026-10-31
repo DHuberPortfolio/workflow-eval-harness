@@ -1,12 +1,14 @@
-// The review queue, targets, paired compare and rates per group, checked against
-// test/fixtures/queue/EXPECTED.md.
+// The review queue, targets, paired compare (and the build gate on it) and rates per group,
+// checked against test/fixtures/queue/EXPECTED.md.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { loadConfig, validateConfig } = require('../src/config.js');
 const { scoreRun, compareRun } = require('../src/score.js');
+const { GATE_OUTCOMES, worseOutcomes } = require('../src/metrics/runs.js');
 const { renderTerminal, renderCompare } = require('../src/report/terminal.js');
 const { renderHtml } = require('../src/report/html.js');
 const { resultsJson } = require('../src/report/json.js');
@@ -138,6 +140,93 @@ test('I9: the silent error rate fell from 50% to 20% while the same number of si
   assert.match(t, /PAIRED  the same 10 records, before and after/);
   assert.match(t, /silent errors\s+1\s+1\s+1\s+1\s+0 \(likely -34\.2 to \+34\.2 pts\)\s+unclear/);
   assert.match(t, /unnecessary reviews\s+5\s+0\s+5\s+0\s+-5 \(likely -76\.3 to -8\.4 pts\)\s+better/);
+});
+
+// ---------- I19: compare --fail-if-worse stops a build ----------
+
+// Swapping before and after undoes the change: what it fixed, the swap breaks.
+const compareCli = (b, a, ...extra) => cli(['compare', '--config', path.join(dir, 'config.json'), '--key', keyPath, '--before', b, '--after', a, ...extra]);
+
+test('I19: every name --fail-if-worse takes reads one PAIRED row (the queue measures all four)', () => {
+  const c = compareRun({ config, keyPath, beforePath: before, afterPath: after });
+  assert.deepEqual(Object.values(GATE_OUTCOMES), c.paired.outcomes.map(o => o.name));
+  // With no record in both runs every row is "not measured": any has nothing to check, and stops.
+  const none = { records: 0, outcomes: c.paired.outcomes.map(o => ({ ...o, verdict: 'not measured' })) };
+  assert.throws(() => worseOutcomes(none, ['any']), /--fail-if-worse any: this compare measures no paired outcome/);
+  assert.throws(() => worseOutcomes(none, ['silent-errors']), /^Error: --fail-if-worse silent-errors: not measured by this compare\. "silent errors" has no record in both runs\. Leave it out, or name any$/);
+});
+
+test('I19: --fail-if-worse exits 3 when a named outcome got worse, naming it with its fixed and broken counts', () => {
+  const r = compareCli(after, before, '--fail-if-worse', 'unnecessary-reviews');
+  assert.equal(r.status, 3, r.stderr);
+  assert.match(r.stdout, /PAIRED  the same 10 records/);   // the report is still printed
+  assert.equal(r.stderr, 'fail-if-worse unnecessary-reviews: unnecessary-reviews (fixed 0, broke 5)\n');
+  const ok = compareCli(before, after, '--fail-if-worse', 'unnecessary-reviews');
+  assert.equal(ok.status, 0, ok.stderr);
+  assert.equal(ok.stderr, '');
+});
+
+test('I19: "unclear" never fails the build; any reads every outcome measured; repeated lists add up', () => {
+  // Silent errors: Q2 fixed and Q6 broken, unclear in either order.
+  for (const [b, a] of [[before, after], [after, before]]) {
+    const r = compareCli(b, a, '--fail-if-worse', 'silent-errors,silent-omissions');
+    assert.equal(r.status, 0, r.stderr);
+  }
+  assert.equal(compareCli(before, after, '--fail-if-worse', 'any').status, 0);
+  const any = compareCli(after, before, '--fail-if-worse', 'any');
+  assert.equal(any.status, 3);
+  assert.equal(any.stderr, 'fail-if-worse any: unnecessary-reviews (fixed 0, broke 5), misroutes (fixed 0, broke 7)\n');
+  const two = compareCli(after, before, '--fail-if-worse', 'silent-errors', '--fail-if-worse', ' misroutes');
+  assert.equal(two.status, 3);
+  assert.equal(two.stderr, 'fail-if-worse silent-errors,misroutes: misroutes (fixed 0, broke 7)\n');
+});
+
+test('I19: unknown names stop before any file is read, listing the valid ones', () => {
+  const gate = names => cli(['compare', '--config', 'no-such-config.json', '--key', 'k', '--before', 'b', '--after', 'a', '--fail-if-worse', names]);
+  const r = gate('silent-error,misroutes');
+  assert.equal(r.status, 1);
+  assert.equal(r.stderr, 'error: --fail-if-worse takes silent-errors, silent-omissions, unnecessary-reviews, misroutes or any, comma-separated; unknown: "silent-error"\n');
+  // A name every object has, and an empty name (a stray comma), are not outcomes either.
+  assert.match(gate('constructor').stderr, /unknown: "constructor"/);
+  assert.match(gate('misroutes,').stderr, /unknown: ""/);
+});
+
+test('I19: a named outcome this compare does not measure stops (exit 1) before the report', () => {
+  // The clusters fixture has no correct route and no output that declines: PAIRED has only
+  // silent errors and unnecessary reviews.
+  const K = path.join(__dirname, 'fixtures', 'clusters');
+  const args = ['compare', '--config', path.join(K, 'config.json'), '--key', path.join(K, 'key.json'),
+    '--before', path.join(K, 'predictions.json'), '--after', path.join(K, 'predictions-perfect.json')];
+  const r = cli([...args, '--fail-if-worse', 'silent-errors,silent-omissions,misroutes']);
+  assert.equal(r.status, 1);
+  assert.equal(r.stdout, '');
+  assert.equal(r.stderr, 'error: --fail-if-worse silent-omissions, misroutes: not measured by this compare. ' +
+    'PAIRED has no "silent omissions" row, which needs the answer key\'s correct route (routing.gold_field) or an output that can decline; ' +
+    'PAIRED has no "routed against the answer key" row, which needs the answer key\'s correct route (routing.gold_field). Leave them out, or name any\n');
+  // any reads only what is measured: here both rows are unclear (3 and 1 fixed, none broken).
+  assert.equal(cli([...args, '--fail-if-worse', 'any']).status, 0);
+});
+
+test('I19: --fail-if-worse works on one run against two answer keys (--after-key)', () => {
+  // An older key that agreed with every route the before run took (so no duplicates: Q8 is
+  // ASK, and a duplicate with a route a person sees would stop, C11). Against today's key the
+  // same run misroutes 7 records and sends 5 to a person needlessly: the new key broke them.
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'wfeval-gate-'));
+  try {
+    const routes = new Map(JSON.parse(fs.readFileSync(before, 'utf8')).map(p => [p.id, p.decision]));
+    const oldKey = path.join(d, 'key-old.json');
+    const old = JSON.parse(fs.readFileSync(keyPath, 'utf8')).map(({ duplicate_of, ...k }) => ({ ...k, expected_decision: routes.get(k.id) }));
+    fs.writeFileSync(oldKey, JSON.stringify(old));
+    const run = (k1, k2, names) => cli(['compare', '--config', path.join(dir, 'config.json'), '--key', k1, '--after-key', k2,
+      '--before', before, '--after', before, '--fail-if-worse', names]);
+    const r = run(oldKey, keyPath, 'misroutes,silent-errors');
+    assert.equal(r.status, 3, r.stderr);
+    assert.match(r.stdout, /the same predictions against two answer keys/);
+    assert.equal(r.stderr, 'fail-if-worse misroutes,silent-errors: misroutes (fixed 0, broke 7)\n');   // silent errors 0 -> 1: unclear
+    assert.equal(run(keyPath, oldKey, 'any').status, 0);
+  } finally {
+    fs.rmSync(d, { recursive: true });
+  }
 });
 
 // ---------- H6-H8: rates per group ----------

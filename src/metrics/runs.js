@@ -261,4 +261,44 @@ function pairedOf(before, after) {
   return { records: tested, outcomes };
 }
 
-module.exports = { varianceOf, compareOf, metricList, keyGapCandidates };
+// Trap I19: compare --fail-if-worse. The names a build gate takes, each the PAIRED row it reads.
+const GATE_OUTCOMES = { 'silent-errors': 'silent errors', 'silent-omissions': 'silent omissions', 'unnecessary-reviews': 'unnecessary reviews', misroutes: 'routed against the answer key' };
+// What the config needs before PAIRED has the row (pairedOutcomes); the other two are always there.
+const GATE_NEEDS = {
+  'silent-omissions': 'the answer key\'s correct route (routing.gold_field) or an output that can decline',
+  misroutes: 'the answer key\'s correct route (routing.gold_field)',
+};
+
+// "silent-errors,misroutes" (repeatable) to a list of names, checked before any file is read.
+// Object.hasOwn, so "constructor" is not taken for a name.
+function gateNames(lists) {
+  const names = [...new Set(lists.flatMap(l => l.split(',')).map(s => s.trim()))];
+  const unknown = names.filter(n => n !== 'any' && !Object.hasOwn(GATE_OUTCOMES, n));
+  if (unknown.length) {
+    throw new Error('--fail-if-worse takes ' + Object.keys(GATE_OUTCOMES).join(', ') + ' or any, comma-separated; unknown: ' + unknown.map(n => JSON.stringify(n)).join(', '));
+  }
+  return names;
+}
+
+// The named outcomes whose paired verdict is "worse", in PAIRED's order. A named outcome this
+// compare does not measure stops: ignored, it would pass every build unchecked. "any" reads
+// every outcome measured. "unclear" never trips the gate: "worse" already needs the broken
+// records to outnumber the fixed by more than chance, and a small change is nearly always unclear.
+function worseOutcomes(paired, names) {
+  const measured = new Map(paired.outcomes.filter(o => o.verdict !== 'not measured').map(o => [o.name, o]));
+  const missing = names.filter(n => n !== 'any' && !measured.has(GATE_OUTCOMES[n]));
+  if (missing.length) {
+    // A row that is there but "not measured" had no record in both runs; a row that is not there needs the config.
+    const rows = new Set(paired.outcomes.map(o => o.name));
+    const why = n => (rows.has(GATE_OUTCOMES[n]) ? '"' + GATE_OUTCOMES[n] + '" has no record in both runs'
+      : 'PAIRED has no "' + GATE_OUTCOMES[n] + '" row, which needs ' + GATE_NEEDS[n]);
+    throw new Error('--fail-if-worse ' + missing.join(', ') + ': not measured by this compare. ' + missing.map(why).join('; ') +
+      '. Leave ' + (missing.length > 1 ? 'them' : 'it') + ' out, or name any');
+  }
+  if (measured.size === 0) throw new Error('--fail-if-worse any: this compare measures no paired outcome (no record is in both runs)');
+  const flags = names.includes('any') ? Object.keys(GATE_OUTCOMES) : names;
+  return Object.keys(GATE_OUTCOMES).filter(f => flags.includes(f) && measured.get(GATE_OUTCOMES[f])?.verdict === 'worse')
+    .map(f => ({ flag: f, ...measured.get(GATE_OUTCOMES[f]) }));
+}
+
+module.exports = { varianceOf, compareOf, metricList, keyGapCandidates, GATE_OUTCOMES, gateNames, worseOutcomes };
