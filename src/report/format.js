@@ -117,6 +117,34 @@ function clusterLine(c) {
 const CLUSTER_GROUP_NOTE = 'These ranges count every record as independent; only the line under the headline counts clusters.';
 const CLUSTER_TARGET_NOTE = 'The verdict and the plan count records as independent; records that come in clusters need more of them.';
 
+// The silent error rate on a real mix (results.mix; traps G18-G21), as lines under the headline:
+// the reweighted rate beside the golden set's, called a reweighting so that it is not read as a
+// measurement of real traffic in turn (G18); the straight-through on the mix; and a note for each
+// group with a share that sent nothing out.
+const MIX_CAVEAT = 'A reweighting, not a measurement: it is only as good as the shares, and as the records tested in each group.';
+const CLUSTER_MIX_NOTE = 'The range on the mix counts every record as independent, not clusters.';
+const likely = r => 'likely ' + r.low_pct.toFixed(1) + '-' + r.high_pct.toFixed(1) + '%; about ' + worth(Math.round(r.effective_records));
+function mixLines(m, results) {
+  const on = 'On the real mix in ' + m.file + ' (' + m.strata.map(x => x.label + ' ' + x.share_pct + '%').join(', ') + '), the silent error rate ';
+  const se = m.silent_error_rate;
+  const st = m.straight_through;
+  const lines = [m.why === 'nothing_out'
+    ? on + 'cannot be estimated: no group with a share sent a record out without review, so nothing would go out on that mix.'
+    : on + 'would be about ' + se.pct.toFixed(1) + '% (' + likely(se) + '), against ' + pct(results.routing.silent_errors.rate) + ' on this golden set. ' + MIX_CAVEAT];
+  lines.push('On that mix, about ' + st.pct.toFixed(1) + '% of records would go out without review (' + likely(st) + '), against ' +
+    pct(results.routing.straight_through) + ' on this golden set.');
+  if (results.clusters) lines.push(CLUSTER_MIX_NOTE);
+  // With nothing out at all, the first line has said it already.
+  if (m.why === null) {
+    for (const label of m.none_out) {
+      const x = m.strata.find(s => s.label === label);
+      lines.push('Group "' + label + '" (' + x.share_pct + '% of the mix) sent none of its ' + x.records + ' record' + (x.records === 1 ? '' : 's') +
+        ' out without review: on the mix it lowers the straight-through, and adds nothing to the silent error rate, which rests on the other groups.');
+    }
+  }
+  return lines;
+}
+
 // The distinct types used by a list of records, in first-seen order.
 const typesIn = records => [...new Set(records.flatMap(x => x.types))];
 
@@ -167,5 +195,5 @@ function table(rows, right = [], indent = '  ') {
 module.exports = {
   pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines,
   groupSource, GROUP_RANGES, severalLabels, some, ruledValue, rulingsWords, pendingLine, rulingStatus, clusterLine, CLUSTER_GROUP_NOTE, CLUSTER_TARGET_NOTE,
-  thousands,
+  mixLines, thousands,
 };

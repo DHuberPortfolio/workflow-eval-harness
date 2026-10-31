@@ -6,6 +6,7 @@ const { parseArgs } = require('node:util');
 const { loadConfig, addGroupBy, addClusterBy, SEVERITIES } = require('../src/config.js');
 const { loadRun } = require('../src/load.js');
 const { loadRulings } = require('../src/rulings.js');
+const { loadMix } = require('../src/mix.js');
 const { scoreRun, varianceRun, compareRun, scoreGradesRun } = require('../src/score.js');
 const { renderTerminal, renderVariance, renderCompare, renderWhatif, renderGrades } = require('../src/report/terminal.js');
 const { resultsJson } = require('../src/report/json.js');
@@ -19,18 +20,23 @@ commands:
   score     --config <file> --pred <file> --key <file> [--lenient] [--rulings <file>]
             [--json <file>] [--html <file>] [--quiet] [--fail-on <severity>]
             [--target <percent> [--chance 0.8|0.9|0.95]] [--group-by <field> ...]
-            [--cluster-by <field>]
+            [--cluster-by <field>] [--mix <file>]
             score one run. --fail-on critical|high|medium|low exits with code 3 when a
             silent error or safeguard failure at or above that severity is found (for CI).
             --target 5 says whether the silent error rate is shown to be under 5%, and if
             not, how many records would show it. --group-by channel gives the rates again
             for each value of the answer key's "channel" (repeatable). --cluster-by story
             adds the silent error rate's likely range counting each value of the answer
-            key's "story" as one cluster of records that go together. Lists the possible
-            key gaps: applied values the answer key does not list. --rulings reads a person's
-            rulings on them (add, reject, pending): adds join the key for scoring (the key
-            file is never changed), rejected gaps are no longer listed, and with pending
-            rulings the silent error rate is also given as if they were all added
+            key's "story" as one cluster of records that go together. --mix real.json
+            weights each label of one group by its share of real traffic (the file:
+            { "group": "channel", "shares": { "email": 0.7, "chat": 0.3 } }) and gives the
+            silent error rate that mix would see, beside this golden set's: a reweighting,
+            not a measurement (the group comes from --group-by or the config's groups).
+            Lists the possible key gaps: applied values the answer key does not list.
+            --rulings reads a person's rulings on them (add, reject, pending): adds join the
+            key for scoring (the key file is never changed), rejected gaps are no longer
+            listed, and with pending rulings the silent error rate is also given as if they
+            were all added
 
   score     --grades <file> [--second-reviewer <file>] [--lenient]
             [--json <file>] [--quiet] [--fail-on <severity>]
@@ -122,6 +128,7 @@ function score(args) {
     'group-by': { type: 'string', multiple: true }, rulings: { type: 'string' },
     // Collected as a list only to refuse a second one: the last would otherwise win unseen.
     'cluster-by': { type: 'string', multiple: true },
+    mix: { type: 'string' },
   } });
   const failOn = values['fail-on'];
   if (failOn !== undefined && !SEVERITIES.includes(failOn)) throw new Error('--fail-on must be one of: ' + SEVERITIES.join(', '));
@@ -133,7 +140,9 @@ function score(args) {
   let config = loadConfig(values.config);
   if (values['group-by']) config = addGroupBy(config, values['group-by']);
   if (clusterBy.length) config = addClusterBy(config, clusterBy[0]);
-  const results = scoreRun({ config, predPath: values.pred, keyPath: values.key, mode: MODE(values), rulings: rulingsOf(values, config), ...targetOptions(values) });
+  // --mix <file>: read and checked before the run is scored, against the groups --group-by added (trap G18).
+  const mix = values.mix ? loadMix(values.mix, config) : null;
+  const results = scoreRun({ config, predPath: values.pred, keyPath: values.key, mode: MODE(values), rulings: rulingsOf(values, config), mix, ...targetOptions(values) });
   if (!values.quiet) process.stdout.write(renderTerminal(results));
   if (values.json) writeFile(values.json, JSON.stringify(resultsJson(results), null, 2) + '\n');
   if (values.html) writeFile(values.html, require('../src/report/html.js').renderHtml(results));
@@ -153,7 +162,7 @@ function score(args) {
 // score --grades: a person's grades of free-text fields, scored as labels.
 function scoreGrades(values, failOn) {
   if (!values.grades) throw new Error('--second-reviewer goes with --grades <file>');
-  const extra = ['config', 'pred', 'key', 'html', 'group-by', 'cluster-by', 'rulings'].filter(k => values[k]);
+  const extra = ['config', 'pred', 'key', 'html', 'group-by', 'cluster-by', 'rulings', 'mix'].filter(k => values[k]);
   if (extra.length) throw new Error('score --grades reads everything from the grades file; it does not take ' + extra.map(k => '--' + k).join(' '));
   const g = scoreGradesRun({ gradesPath: values.grades, secondPath: values['second-reviewer'] || null, mode: MODE(values) });
   if (!values.quiet) process.stdout.write(renderGrades(g));

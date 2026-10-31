@@ -36,7 +36,9 @@ drawn from the records you care about. Three common cases break that:
   it is, but it is not the rate real traffic would see, and no range can say how far off it
   is. The rate on real traffic needs a random sample of that traffic with its own answer key,
   or each kind of record weighted by its real share (stratified estimation; Cochran 1977,
-  ch. 5). The reports say "the true rate on records like these" for this reason.
+  ch. 5). `score --mix` does that weighting, for the kinds of record a group tells apart
+  ([below](#weighted-to-a-real-mix)). The reports say "the true rate on records like these" for
+  this reason.
 - **Repeated runs of the same records, added together.** A record's runs tend to go the same
   way, so three runs of 200 records are not 600 records' worth of evidence, and a range drawn
   from the added-up count comes out too narrow (records that repeat are clustered: the design
@@ -99,6 +101,56 @@ The headline range is unchanged, so nothing else in a report moves. **Per-group 
 `--target` still count every record as independent**, and the report says so beside them: a
 group's records may share clusters with other groups, and a target's plan is about records not
 yet tested. Records that come in clusters need more of them to show a target than the plan says.
+
+## Weighted to a real mix
+
+A golden set built from traps is mostly hard cases, so its silent error rate is a stress-test
+rate. A driving test taken mostly on icy roads says little about a sunny commute until each kind
+of road is weighted by how often it is icy. With `score --mix <file>`, each label of one group
+gets its share of real traffic ([CONFIG.md](CONFIG.md#weighting-to-a-real-mix---mix)), and the
+report adds the rate that mix would see, under the headline:
+
+> On the real mix in test/fixtures/clusters/mix.json (business 10%, general 90%), the silent error
+> rate would be about 5.1% (likely 0.4-43.7%; about 6 records' worth), against 25.0% on this
+> golden set. A reweighting, not a measurement: it is only as good as the shares, and as the
+> records tested in each group.
+
+That is the clusters fixture (`test/fixtures/clusters/`): every mistake is in business news,
+which is 8 of its 15 records but a tenth of the traffic in this mix. A second line gives the
+straight-through on the mix the same way (73.0%, against 80.0%).
+
+**How it is worked out.** Stratified estimation, as the combined ratio estimate (Cochran 1977,
+ch. 5-6). Each group (a stratum) has N records, a of them out without review and s silent
+errors, and a share W of real traffic (the shares divided by their total).
+
+1. On the mix, the silent errors per record are the sum over the groups of W x s / N, and the
+   records out without review per record the sum of W x a / N. The second is the **weighted
+   straight-through**.
+2. The **weighted silent error rate** is the first divided by the second: 0.0375 / 0.7304, or
+   5.1%, here.
+3. How much evidence is that? Each record out without review stands for W / N of the mix: a
+   general one for 0.9 / 7 = 0.129, a business one for 0.1 / 8 = 0.0125. When a few records
+   carry most of the weight, they are worth fewer records than there are, the way a poll that
+   counts a few people many times over knows less than its headcount suggests. Kish's (1965)
+   **effective number** says how many: the weights added up and squared, divided by the squared
+   weights added up. Here 6.4 records' worth, from 12 records out.
+4. The range is the usual Wilson range at that rate over that many records. It works at a rate
+   of 0 too: the five general records alone, 0 silent errors, reach 43.4%.
+
+With the golden set's own counts as the shares, every record weighs the same, and the rate and
+range come back exactly as the headline's: the weighting adds nothing of its own. When no group
+with a share sent anything out without review, nothing would go out on the mix and there is no
+rate, as with no records out at all; a group with a share that sent nothing out lowers the
+straight-through, adds nothing to the rate, and the report says so.
+
+**What it cannot do.** It reweights the records tested; it tests nothing new. A group with few
+records out gets a wide range however big its share: the five general records carry 90% of the
+traffic above, so the range runs to 43.7%. A kind of record the golden set never tested cannot be
+weighted at all, so a share for it stops scoring. Within a group, the records stand for that
+group's real traffic only as well as they were chosen: hard cases picked inside a group still
+make its rate a stress-test rate, which no weighting between groups can undo. The shares are
+taken as known, with no range of their own. And the range counts every record as independent,
+even with `clusters` (the report says so).
 
 ## How many records would show a target
 

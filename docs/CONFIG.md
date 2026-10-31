@@ -217,6 +217,45 @@ record's own id when it is the original" is not a field most answer keys have, s
 retellings' cluster. The headline, the per-group rows and `--target` are unchanged. What is
 reported, and how it is worked out: [METRICS.md](METRICS.md#ranges-that-count-clusters).
 
+## Weighting to a real mix (`--mix`)
+
+A golden set built from traps holds far more hard records than real traffic, so its silent error
+rate is a stress-test rate. A driving test taken mostly on icy roads says little about a sunny
+commute, until you weight each kind of road by how often it is icy. `--mix` does that weighting
+for one group: give each of its labels its share of real traffic, and `score` adds the silent
+error rate that mix would see, under the headline, beside the golden set's own.
+
+The mix is a file of its own, beside the config:
+
+```json
+{ "group": "channel", "shares": { "email": 0.7, "chat": 0.3 } }
+```
+
+| Key | Meaning |
+|---|---|
+| `group` | A group the run has: one of the config's `groups`, or a field given with `--group-by`. |
+| `shares` | Each label's share of real traffic: fractions (0.7), percentages (70) or counts (a month's 1,400 emails and 600 chats). They are divided by their total, so they need not add up to 1. A share of 0 says real traffic has none of that label: its records then weigh nothing. Records with no label in the group's field are the label "(none)". |
+
+```
+wfeval score --config test/fixtures/clusters/config.json --pred test/fixtures/clusters/predictions.json --key test/fixtures/clusters/key.json --group-by section --mix test/fixtures/clusters/mix.json
+```
+
+Weights need every record in exactly one group, and a weight for every group, so scoring stops,
+in lenient mode too, when:
+
+- a label of the run has no share: the report cannot guess the weight of a kind of record. A
+  record with no label needs a share for "(none)", and the stop names the record;
+- a share is for a label the run does not have, even a share of 0: those records were never
+  tested, so nothing can be said about them ("did you mean" for a label that differs only in case
+  or spaces);
+- a record has several labels in the group (a message that came in by chat and by email):
+  weighted in each, it would count twice;
+- the group is not one of the run's, or a share is text (`"0.7"`), negative, or every share is 0.
+
+The shares are taken as known, so the estimate is only as good as they are: count them from real
+traffic (a month of production logs by channel, say), not from memory. What is reported, and how
+it is worked out: [METRICS.md](METRICS.md#weighted-to-a-real-mix).
+
 ## Rulings on possible key gaps (`--rulings`)
 
 `score` and `variance` list **possible key gaps**: values the workflow applied that the answer

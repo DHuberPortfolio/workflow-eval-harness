@@ -3,7 +3,7 @@
 
 const {
   pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines,
-  groupSource, GROUP_RANGES, severalLabels, rulingsWords, pendingLine, rulingStatus, clusterLine, CLUSTER_GROUP_NOTE, CLUSTER_TARGET_NOTE, thousands,
+  groupSource, GROUP_RANGES, severalLabels, rulingsWords, pendingLine, rulingStatus, clusterLine, CLUSTER_GROUP_NOTE, CLUSTER_TARGET_NOTE, mixLines, thousands,
 } = require('./format.js');
 
 // "RULINGS  1 value added to the answer key by rulings in ...", and the rest indented (trap I11).
@@ -86,6 +86,8 @@ function headline(results) {
   }
   // Trap G14: the same rate's range counting clusters, only when the config names them.
   if (results.clusters) lines.push('  ' + clusterLine(results.clusters));
+  // Trap G18: the same rate weighted to a real mix of traffic, only with --mix.
+  if (results.mix) lines.push(...mixLines(results.mix, results).map(l => '  ' + l));
   return lines.join('\n');
 }
 

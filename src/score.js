@@ -11,6 +11,7 @@ const { scoreRouting } = require('./metrics/routing.js');
 const { scoreTraps } = require('./metrics/traps.js');
 const { scoreGroups } = require('./metrics/groups.js');
 const { scoreClusters } = require('./metrics/clusters.js');
+const { scoreMix } = require('./metrics/mix.js');
 const { scoreCalibration } = require('./metrics/calibration.js');
 const { targetCheck } = require('./metrics/target.js');
 
@@ -43,7 +44,9 @@ function scoreRecords(records, config) {
 // chance: the probability the plan for that target aims at.
 // rulings: a rulings file read by loadRulings (rulings.js), or null. Its adds join the answer
 // key for scoring, in memory only; results.rulings says what they were (trap I11).
-function scoreRun({ config, predPath, keyPath, mode = 'strict', target = null, chance = 0.8, rulings = null }) {
+// mix: a mix file read by loadMix (mix.js), or null. results.mix is the silent error rate weighted
+// to that real mix of traffic (traps G18-G21); nothing else in the results changes.
+function scoreRun({ config, predPath, keyPath, mode = 'strict', target = null, chance = 0.8, rulings = null, mix = null }) {
   const p = problems(mode);
   const run = loadRun({ config, predPath, keyPath, mode, p });
   const ruled = rulings ? applyRulings(rulings, run.key, config, p) : null;
@@ -52,6 +55,11 @@ function scoreRun({ config, predPath, keyPath, mode = 'strict', target = null, c
   // The silent error rate's range counting clusters (trap G14): only with clusters in the config.
   const clusters = scoreClusters(results.records, records, config);
   if (clusters) results.clusters = clusters;
+  // The rate on a real mix (trap G18). Its stops (G19-G21) join the run's, reported together below.
+  if (mix) {
+    const m = scoreMix(mix, results.records, records, config, { key: keyPath, predictions: predPath }, p);
+    if (m) results.mix = m;
+  }
   if (target !== null) {
     const se = results.routing.silent_errors.rate;
     results.target = targetCheck(se.n, se.d, target, { chance, out_of: { n: se.d, d: results.routing.total } });
@@ -69,7 +77,7 @@ function scoreRun({ config, predPath, keyPath, mode = 'strict', target = null, c
   if (ruled) results.rulings = { ...ruled, if_pending_added: pendingAdded(records, results, config, ruled) };
 
   return {
-    inputs: { predictions: predPath, key: keyPath, mode, wrong_when: config.wrong_when, ...(rulings ? { rulings: rulings.file } : {}) },
+    inputs: { predictions: predPath, key: keyPath, mode, wrong_when: config.wrong_when, ...(rulings ? { rulings: rulings.file } : {}), ...(mix ? { mix: mix.file } : {}) },
     ...results,
     problems: p.items,
     paired: records,   // the paired records themselves (with any added values); not written to the JSON results

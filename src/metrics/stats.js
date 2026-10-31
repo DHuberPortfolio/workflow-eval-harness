@@ -245,4 +245,53 @@ function clusteredRange(clusters, z = Z) {
   return { n, y, p, clusters: C, var_clustered: varC, var_simple: varSrs, design_effect: deff, effective: n / deff, low: b.low, high: b.high, method: 'design_effect', why: null };
 }
 
-module.exports = { Z, pct, wilson, rate, cohensKappa, recordsNeeded, chanceAtMost, planTest, pairedDifference, clusteredRange };
+// ---------- Groups weighted to a real mix ----------
+//
+// A golden set built from traps holds far more hard records than real traffic, so its silent
+// error rate is a stress-test rate. A driving test taken mostly on icy roads says little about a
+// sunny commute until each kind of road is weighted by how often it is icy. Weighting each group
+// (a stratum) by its share of real traffic does that: stratified estimation, here the combined
+// ratio estimate, since the rate is a ratio of two counts (Cochran 1977, ch. 5-6).
+//
+// strata: [{ share, N, a, s }] - each group's share of real traffic (fractions, percentages or
+// counts: divided by their total), its records (N), its records out without review (a) and its
+// silent errors (s). With W the share divided by the total:
+//   out = sum W a / N    records out without review per record, on the mix: the straight-through
+//   bad = sum W s / N    silent errors per record, on the mix
+//   R   = bad / out      the silent error rate on the mix; null when out is 0 (nothing would go out, G1)
+// Each record out without review in group h stands for w = W / N of the mix, so unequal weights
+// make the records worth fewer than there are: Kish's (1965) effective number for unequal
+// weights, n_eff = (sum w)^2 / sum w^2, over those records. The range is Wilson's at R over n_eff
+// records, as clusteredRange does (bounds() takes a non-integer count, and works at R = 0).
+// The straight-through counts every record, so its n_eff is 1 / sum W^2 / N.
+// With the golden set's own shares (W = N / all records) every weight is the same, and R, both
+// n_eff and both ranges are the run's own exactly: a check that the weighting adds nothing.
+// Returns the shares used (W), and both rates with their n_eff and range.
+function mixedRate(strata, z = Z) {
+  if (strata.length === 0) throw new RangeError('a mix needs at least one group');
+  for (const x of strata) {
+    if (!(Number.isFinite(x.share) && x.share >= 0)) throw new RangeError('each share must be a number of 0 or more');
+    if (!Number.isInteger(x.N) || !Number.isInteger(x.a) || !Number.isInteger(x.s) || x.N < 1 || x.s < 0 || x.s > x.a || x.a > x.N) {
+      throw new RangeError('each group needs whole counts with 0 <= s <= a <= N and N >= 1');
+    }
+  }
+  const total = strata.reduce((t, x) => t + x.share, 0);
+  if (!(total > 0)) throw new RangeError('the shares add up to 0: there is nothing to weight by');
+  const W = strata.map(x => x.share / total);
+  let out = 0, bad = 0, sw2 = 0, all2 = 0;
+  strata.forEach((x, i) => {
+    const w = W[i] / x.N;   // what one record of this group stands for
+    out += x.a * w;
+    bad += x.s * w;
+    sw2 += x.a * w * w;
+    all2 += x.N * w * w;
+  });
+  const stEff = 1 / all2;
+  const st = { rate: out, effective: stEff, ...bounds(out, stEff, z) };
+  if (out === 0) return { shares: W, rate: null, effective: null, low: null, high: null, straight_through: st };
+  const R = bad / out;
+  const effective = (out * out) / sw2;
+  return { shares: W, rate: R, effective, ...bounds(R, effective, z), straight_through: st };
+}
+
+module.exports = { Z, pct, wilson, rate, cohensKappa, recordsNeeded, chanceAtMost, planTest, pairedDifference, clusteredRange, mixedRate };

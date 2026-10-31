@@ -57,6 +57,7 @@ jobs:
           node bin/wfeval.js score --config $Q/config.json --pred $Q/predictions.json --key $Q/key.json --group-by channel
           K=test/fixtures/clusters
           node bin/wfeval.js score --config $K/config.json --pred $K/predictions.json --key $K/key.json --cluster-by story
+          node bin/wfeval.js score --config $K/config.json --pred $K/predictions.json --key $K/key.json --group-by section --mix $K/mix.json
           node bin/wfeval.js rate 2 15 --target 5
           D=test/fixtures/declines
           node bin/wfeval.js score --config $D/config.json --pred $D/predictions.json --key $D/key.json

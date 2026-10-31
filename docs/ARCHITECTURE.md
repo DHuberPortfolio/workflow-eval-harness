@@ -8,6 +8,7 @@ answer key  ──>  (csv.js)   (pairs by id)  (one judgment   classification.js
                                             per record)    traps.js          │
                                                            groups.js         │
                                                            clusters.js       │
+                                                           mix.js            │
                                                            calibration.js ───┘
                                            variance · compare · whatif reuse the same judgments
 

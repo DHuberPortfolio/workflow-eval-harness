@@ -143,7 +143,7 @@ by number.
 
 | Command | Question it answers |
 |---|---|
-| `wfeval score` | How did this run do? Silent errors by type and severity, routing, output quality, per-trap results, calibration. `--fail-on critical` exits non-zero, to stop a build. `--target 5` says whether the silent error rate is shown to be under 5%, and if not, how many records would show it. `--group-by split` (or `groups` in the config) gives the rates again for each value of a field, each with its count and likely range: the tuning half against the held-out half, one kind of record against another. Lists possible key gaps from this one run: applied values the answer key does not list, marking those that sit on a silent error. `--rulings` applies a person's recorded rulings on them (add, reject, pending), says which values it added to the key (the key file is never changed), and with pending rulings gives the silent error rate both ways. |
+| `wfeval score` | How did this run do? Silent errors by type and severity, routing, output quality, per-trap results, calibration. `--fail-on critical` exits non-zero, to stop a build. `--target 5` says whether the silent error rate is shown to be under 5%, and if not, how many records would show it. `--group-by split` (or `groups` in the config) gives the rates again for each value of a field, each with its count and likely range: the tuning half against the held-out half, one kind of record against another. `--mix real.json` weights each value of one of those fields by its share of real traffic and gives the silent error rate that mix would see, beside the golden set's stress-test rate: a reweighting, not a measurement. Lists possible key gaps from this one run: applied values the answer key does not list, marking those that sit on a silent error. `--rulings` applies a person's recorded rulings on them (add, reject, pending), says which values it added to the key (the key file is never changed), and with pending rulings gives the silent error rate both ways. |
 | `wfeval variance` | How much do the numbers move between runs of identical code? Mean, spread and range per metric; the worst run's silent error rate, the one to quote (runs are never added together); how many different records were a silent error in at least one run, given with the number of runs (the count only grows as runs are added); the records that behave differently run to run; and possible key gaps: values stated in every run that the answer key does not list, for a person to rule on. With `--rulings`, each shows its ruling, and the ones ruled not a gap are counted, not listed again. |
 | `wfeval compare` | Did a change help? On the same records, how many silent errors, unnecessary reviews and misroutes it fixed and how many it broke, judged better, worse or unclear with no repeated runs needed; every metric's change against the spread of repeated runs, when you have them; and every record that was fixed or broken. `--after-key` scores the same run against an old and a new answer key, to show what the new key changes. |
 | `wfeval rate` | What is the likely range for any count (2 of 15), and how many records would show a rate is under a target? |
@@ -222,8 +222,10 @@ produces today. Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - Every rate is only as strong as the golden set is large. The likely ranges say how strong
   that is.
 - A likely range covers chance only. It does not make a golden set like real traffic: a set
-  built from traps gives a stress-test rate, and the rate on real traffic needs a random sample
-  of it. Nor does it hold for repeated runs of the same records added together, which is why
+  built from traps gives a stress-test rate. `score --mix` reweights it to a real mix of
+  traffic, group by group, but only reweights the records tested: a kind of record never tested
+  cannot be weighted, and hard cases chosen within a group stay hard. The rate on real traffic
+  itself needs a random sample of it. Nor does it hold for repeated runs of the same records added together, which is why
   `variance` quotes the worst run instead. Within one run, records that come in clumps
   (retellings of one story, one filing's statements) get a second range that counts the clumps
   when the config names them (`clusters`, or `score --cluster-by`); without that, each record

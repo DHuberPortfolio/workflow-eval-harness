@@ -96,7 +96,11 @@ What the projects that used the harness had to build around it, ranked by how ma
 - [x] Rates per group: the headline rates for each value of a field from the key or the
       predictions, each with its count and likely range (`groups`, `score --group-by`; traps
       H6-H8, `test/fixtures/queue/`)
-- [ ] Weighted to a real mix: groups weighted by their share of real traffic (stratified estimation)
+- [x] Weighted to a real mix: groups weighted by their share of real traffic (stratified
+      estimation): `score --mix <file>`; the combined ratio estimate (Cochran 1977, ch. 5-6) with
+      the Wilson range over Kish's effective number of records (Kish 1965), and the weighted
+      straight-through, under the headline beside the golden set's rate (traps G18-G21,
+      `test/fixtures/clusters/`)
 - [x] "Any of these is right" and equivalent values in the answer key: `{ "any_of": [...] }` slots
       in a set output's key, resolved per record by every metric alike; `equivalents` in the
       config, read as one value on both sides (traps D20-D23, F13, I10, `test/fixtures/alternatives/`)

@@ -167,3 +167,18 @@ rates can be. Each comes from one record out without review, and their ranges, 2
 0.0-79.3%, overlap from 20.7% to 79.3%. These ten records cannot tell the two channels apart.
 That is why the report puts the count and range beside every group rate, and says to compare
 the ranges, not the percentages.
+
+## Weighted to a real mix: stops (G19, G21)
+
+`mix.json` weights the key's `channel` by a real mix, `{ "email": 0.7, "chat": 0.3 }`, scored with
+`--group-by channel --mix test/fixtures/queue/mix.json`. A mix needs each record in exactly one
+group, and two records here are not:
+
+- **Q10** came in by chat and by email (the key lists both). Weighted as email it would stand for
+  0.7 / 6 of the mix, as chat 0.3 / 4; counted in both, its weight would count twice. Stops:
+  **G21**, naming Q10.
+- **Q7** has no channel, so it is grouped as "(none)", and the mix gives "(none)" no share. Stops:
+  **G19**, naming Q7.
+
+Both are reported at once, in lenient mode too. Giving "(none)" a share (even 0) clears Q7; Q10
+needs one label. The weighted arithmetic itself is worked in the clusters fixture's EXPECTED.md.

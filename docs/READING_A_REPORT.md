@@ -47,6 +47,11 @@ clusters of records that go together, such as retellings of one story, instead o
 wider when the silent errors pile up in a few clusters, the same when they do not
 ([how it is worked out](METRICS.md#ranges-that-count-clusters)).
 
+With `--mix <file>`, two more lines estimate what a real mix of traffic would see: each group of
+the golden set weighted by its share of that traffic, the silent error rate beside this
+stress-test rate, then the straight-through. A reweighting of the records tested, not a
+measurement of real traffic ([how it is worked out](METRICS.md#weighted-to-a-real-mix)).
+
 ## 2. The row of tiles
 
 | Tile | Here | What it tells you |

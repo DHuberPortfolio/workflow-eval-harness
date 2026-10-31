@@ -5,7 +5,7 @@
 
 const {
   WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines, groupSource, GROUP_RANGES, severalLabels, rulingsWords, pendingLine,
-  clusterLine, CLUSTER_GROUP_NOTE, CLUSTER_TARGET_NOTE,
+  clusterLine, CLUSTER_GROUP_NOTE, CLUSTER_TARGET_NOTE, mixLines,
 } = require('./format.js');
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -223,6 +223,8 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
   if (pending && se.rate.d > 0) s.push('<p>' + esc(pendingLine(pending, se.rate)) + '</p>');   // trap I15
   // Trap G14: the range counting clusters. Only with clusters: a report without them is unchanged.
   if (results.clusters) s.push('<p>' + esc(clusterLine(results.clusters)) + '</p>');
+  // Trap G18: the rate weighted to a real mix. Only with --mix: a report without it is unchanged.
+  if (results.mix) s.push('<p>' + mixLines(results.mix, results).map(esc).join('<br>') + '</p>');
   s.push(tiles(r, results));
   if (results.target) {
     const [first, ...rest] = [...targetLines(results.target, TARGET_WORDS.run), ...(results.clusters ? [CLUSTER_TARGET_NOTE] : [])];
