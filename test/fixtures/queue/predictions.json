@@ -1,0 +1,12 @@
+[
+  { "id": "Q1",  "decision": "SEND", "TOPIC": ["billing"] },
+  { "id": "Q2",  "decision": "SEND", "TOPIC": ["billing"] },
+  { "id": "Q3",  "decision": "ASK",  "TOPIC": ["refund"] },
+  { "id": "Q4",  "decision": "ASK",  "TOPIC": ["billing"] },
+  { "id": "Q5",  "decision": "ASK",  "TOPIC": ["promo"] },
+  { "id": "Q6",  "decision": "ASK",  "TOPIC": ["billing"] },
+  { "id": "Q7",  "decision": "FILE", "TOPIC": [] },
+  { "id": "Q8",  "decision": "ASK",  "TOPIC": ["billing"] },
+  { "id": "Q9",  "decision": "ASK",  "TOPIC": ["refund"] },
+  { "id": "Q10", "decision": "ASK",  "TOPIC": ["billing"] }
+]

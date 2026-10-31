@@ -60,6 +60,32 @@ function declineRows(d) {
   return rows;
 }
 
+// A target ("under 5%") in words: the verdict first, then what would show it (trap G13).
+// `words` names what is counted: a run's records out without review, or a bare count's records.
+const TARGET_WORDS = {
+  run: { out: 'records out without review', mistake: 'silent error', source: 'run' },
+  count: { out: 'records', mistake: 'mistake', source: 'count' },
+};
+// 3372 -> "3,372". Written out rather than toLocaleString, so every machine prints the same.
+const thousands = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+function targetLines(t, words) {
+  const under = 'under ' + t.target_pct + '%';
+  if (t.tested === 0) return [under + ': nothing to show yet, with no ' + words.out + '.'];
+  if (t.shown) return [under + ': shown. The whole likely range is under it (it reaches ' + t.high_pct.toFixed(1) + '%).'];
+  const all = x => (x.all_records ? ' (about ' + thousands(x.all_records) + ' records in all, at this run\'s straight-through rate)' : '');
+  const lines = [under + ': not shown: the likely range reaches ' + t.high_pct.toFixed(1) + '%.'];
+  if (t.rate_at_or_above) {
+    lines.push('At ' + t.rate_pct.toFixed(1) + '%, no number of ' + words.out + ' can show it: the rate itself is at or above the target, and has to come down first.');
+  } else if (t.plan) {
+    const chance = Math.round(t.chance * 100);
+    lines.push('If the real rate is ' + t.plan.assumed_pct.toFixed(1) + '% (this ' + words.source + '\'s), about ' + thousands(t.plan.n) + ' ' + words.out + ' give ' +
+      (chance === 80 ? 'an ' : 'a ') + chance + '% chance of showing it' + all(t.plan) + (t.plan.exact ? '' : ' (a textbook estimate)') + '.');
+  }
+  lines.push('The least any test needs: ' + thousands(t.perfect_run.n) + ' ' + words.out + ' with no ' + words.mistake + ' at all' + all(t.perfect_run) + '.');
+  lines.push('Choose the number of ' + words.out + ' before testing: stopping as soon as the range dips under the target makes the result look better than it is.');
+  return lines;
+}
+
 // The distinct types used by a list of records, in first-seen order.
 const typesIn = records => [...new Set(records.flatMap(x => x.types))];
 
@@ -74,4 +100,4 @@ function table(rows, right = [], indent = '  ') {
   }).join('   ')).join('\n');
 }
 
-module.exports = { pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, typesIn, omissionWhat, declineRows };
+module.exports = { pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines };

@@ -50,8 +50,13 @@ With `gold_route`, only the key's verdict decides whether a record needed a huma
 - **Silent omissions** = records blocked or suppressed that the key says should go through or be reviewed /
   records the key says should go through or be reviewed = D6 of {D1, D4, D5, D6, D7, D8} = 1/6 = **16.7%**
   - D6: **SO-FALSE-BLOCK** (medium)
-- **Review-queue precision** = reviewed records whose key verdict is not pass / reviewed =
-  D4 (elevate) and D9 (fail) of {D4, D5, D9} = 2/3 = **66.7%**. D5 is the wasted review.
+- **Review-queue precision** = reviewed records whose key verdict is elevate / reviewed =
+  D4 of {D4, D5, D9} = 1/3 = **33.3%**. Two unnecessary reviews: D5 (the key says pass: it could
+  have gone out) and D9 (the key says fail: the workflow should have blocked it on its own, so no
+  person was needed either; trap G12). D9 went to a person because its model call failed, which is
+  the safe fallback, but the queue still paid for it.
+  (Until Oct 30, 2026 this counted D9 as needing a person, giving 2/3: any verdict but pass did.
+  That made a review queue full of records the key blocks look precise.)
 - **Block precision** = blocked records the key also says to block / blocked = D3 of {D3, D6} = 1/2 = **50.0%**
 
 ## Output quality
@@ -100,11 +105,11 @@ TP 3 · FP 1 · FN 2 → 75.0% / 60.0% / 0.667.
 |---|---|---|---|---|---|
 | borderline-testimonial | D6 | 0/1 | 0 | 1 | 0 |
 | clean-copy | D1 D5 D8 | 2/3 | 0 | 0 | 1 (D5) |
-| implied-guarantee | D2 D9 | 0/2 | 1 (D2) | 0 | 0 |
+| implied-guarantee | D2 D9 | 0/2 | 1 (D2) | 0 | 1 (D9) |
 | superlative | D3 | 1/1 | 0 | 0 | 0 |
 | unqualified-comparison | D4 | 1/1 | 0 | 0 | 0 |
 | weak-testimonial | D7 | 0/1 | 1 (D7) | 0 | 0 |
-| **total** | **9** | **4/9** | **2** | **1** | **1** |
+| **total** | **9** | **4/9** | **2** | **1** | **2** |
 
 The overall silent error rate cannot say that both silent errors came from implied or
 weak violations, the kinds keyword matching misses; this table can. "clean-copy" routes

@@ -85,6 +85,20 @@ the design is wrong.
       a reviewer; nothing has been graded yet
 - [ ] An HTML report for `score --grades` (terminal and JSON only for now)
 
+## From six projects' use (Oct 30, 2026)
+What the projects that used the harness had to build around it, ranked by how many needed it.
+- [x] Review precision no longer counts a record the key blocks or suppresses as needing a
+      person (trap G12, `test/fixtures/queue/`)
+- [x] `score --target` and `wfeval rate`: whether a rate is shown under a target, the plan for
+      showing it and the hard minimum; error-rate-calculator's arithmetic (trap G13)
+- [x] `compare` counts what a change fixed and broke on the same records, judged with Tango's
+      paired range, so no repeated runs are needed (trap I9)
+- [ ] Rates per group (a field from the key or the predictions), then weighted to a real mix
+- [ ] "Any of these is right" and equivalent values in the answer key
+- [ ] A rulings file for possible key gaps (add, reject, pending), and comparing two keys
+- [ ] Ranges that count clusters within a run (retellings of one story, one filing's statements)
+- [ ] A gate in `whatif` certified to keep silent errors under a target (Learn then Test)
+
 ## Out of scope for now
 - Snapshot backdating fixture: a test utility with nothing to score.
 

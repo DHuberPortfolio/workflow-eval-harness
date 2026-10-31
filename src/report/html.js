@@ -3,7 +3,7 @@
 // report. Every value that came from an input file is HTML-escaped: a record id is data,
 // and data must never be able to run as code in the report.
 
-const { WRONG_WHEN, TYPE_LABELS, typesIn, omissionWhat, declineRows } = require('./format.js');
+const { WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines } = require('./format.js');
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const pct = r => (!r || r.pct === null ? 'n/a' : r.pct.toFixed(1) + '%');
@@ -214,6 +214,10 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
   s.push('<section class="card hero"><div class="hero-label">Silent error rate</div><div class="hero-value">' + pct(se.rate) + '</div>' +
     '<div class="hero-note">' + heroNote(se.rate, se.one_record_moves_pct) + '</div></section>');
   s.push(tiles(r, results));
+  if (results.target) {
+    const [first, ...rest] = targetLines(results.target, TARGET_WORDS.run);
+    s.push('<p><strong>Target ' + esc(first) + '</strong>' + rest.map(l => '<br>' + esc(l)).join('') + '</p>');
+  }
 
   // Silent errors
   s.push('<h2>Silent errors</h2>');
@@ -243,7 +247,10 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
     : '<p>Went out without review although one of the safeguards built into the workflow should have held them. Not counted in the silent error rate, but critical: each is a workflow bug to find, even when the content is right. ' +
       'Find the branch that routed these records and why it skipped the check. If the answer key agrees with the record, the fix is a model that clears the threshold, not a lower threshold.</p>' +
       table(['Record', 'Severity', 'Type'], r.safeguard_failures.detail.map(d => ['<code>' + esc(d.id) + '</code>', severity('critical'), d.types.map(typeTag).join(', ')])));
-  s.push('<p>Unnecessary reviews (sent to a person, but could have gone out): ' + ids(r.review_queue.wasted) + (r.block ? ' · Wrongly blocked: ' + ids(r.block.wrongly_blocked) : '') + '</p>');
+  const leftOut = new Set(r.review_queue.key_leaves_out);
+  s.push('<p>Unnecessary reviews (sent to a person, but could have gone out): ' + ids(r.review_queue.wasted.filter(id => !leftOut.has(id))) +
+    (leftOut.size ? ' · Sent to a person, but the answer key blocks or suppresses them, so no person was needed: ' + ids(r.review_queue.key_leaves_out) : '') +
+    (r.block ? ' · Wrongly blocked: ' + ids(r.block.wrongly_blocked) : '') + '</p>');
 
   // Quality
   s.push('<h2>Output quality</h2>');
@@ -317,7 +324,8 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
   s.push('<h2>Every record</h2>');
   s.push(table(['Record', 'Went', 'Answer key', 'Needed a person', 'Outcome', 'Trap'], results.records.map(x => {
     const outcome = x.silent ? severity(x.silent.severity) + ' silent error' : x.omission ? severity(x.omission.severity) + ' silent omission'
-      : x.safeguards.length ? 'safeguard failure' : x.wasted_review ? 'unnecessary review' : '<span class="muted">ok</span>';
+      : x.safeguards.length ? 'safeguard failure' : x.wasted_review ? (x.key_leaves_out ? 'unnecessary review: the answer key leaves it out' : 'unnecessary review')
+        : '<span class="muted">ok</span>';
     return ['<code>' + esc(x.id) + '</code>', esc(x.route), esc(x.gold_route ?? ''), x.needs_human ? 'yes' : 'no', outcome, x.traps.map(esc).join(', ')];
   })));
 

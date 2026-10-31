@@ -17,8 +17,11 @@ commands:
 
   score     --config <file> --pred <file> --key <file> [--lenient]
             [--json <file>] [--html <file>] [--quiet] [--fail-on <severity>]
+            [--target <percent> [--chance 0.8|0.9|0.95]]
             score one run. --fail-on critical|high|medium|low exits with code 3 when a
-            silent error or safeguard failure at or above that severity is found (for CI)
+            silent error or safeguard failure at or above that severity is found (for CI).
+            --target 5 says whether the silent error rate is shown to be under 5%, and if
+            not, how many records would show it
 
   score     --grades <file> [--second-reviewer <file>] [--lenient]
             [--json <file>] [--quiet] [--fail-on <severity>]
@@ -37,8 +40,13 @@ commands:
 
   compare   --config <file> --key <file> --before <file> --after <file>
             [--noise <run> --noise <run> ...] [--lenient] [--json <file>]
-            what changed between two runs, and whether it is bigger than the noise
-            of repeated identical runs (give those with --noise)
+            what changed between two runs: record by record, the records each outcome
+            fixed and broke, judged on their own; and every rate, judged against the
+            noise of repeated identical runs (give those with --noise)
+
+  rate      <wrong> <tested> [--target <percent> [--chance 0.8|0.9|0.95]] [--json <file>]
+            the likely range for any count (2 of 15), and with --target, how many
+            records would show the rate is under it
 
   whatif    --config <file> --pred <file> --key <file> (--gate | --floor)
             [--output <name>] [--from <n>] [--to <n>] [--step <n>] [--lenient] [--json <file>]
@@ -52,6 +60,18 @@ function need(values, names, cmd) {
   const missing = names.filter(n => !values[n]);
   if (missing.length) throw new Error(cmd + ' needs ' + missing.map(n => '--' + n + ' <file>').join(' '));
 }
+// --target 5 and --chance 0.9, checked before any file is read.
+function targetOptions(values) {
+  if (values.target === undefined) {
+    if (values.chance !== undefined) throw new Error('--chance goes with --target <percent>');
+    return {};
+  }
+  const target = Number(values.target);
+  if (!(target > 0 && target < 100)) throw new Error('--target must be a percentage above 0 and below 100, got ' + JSON.stringify(values.target));
+  const chance = values.chance === undefined ? 0.8 : Number(values.chance);
+  if (![0.8, 0.9, 0.95].includes(chance)) throw new Error('--chance must be 0.8, 0.9 or 0.95');
+  return { target, chance };
+}
 function writeFile(file, text) {
   fs.writeFileSync(file, text);
   console.error('wrote ' + file);
@@ -61,14 +81,14 @@ function score(args) {
   const { values } = parseArgs({ args, options: {
     config: { type: 'string' }, pred: { type: 'string' }, key: { type: 'string' }, lenient: { type: 'boolean' },
     json: { type: 'string' }, html: { type: 'string' }, quiet: { type: 'boolean' }, 'fail-on': { type: 'string' },
-    grades: { type: 'string' }, 'second-reviewer': { type: 'string' },
+    grades: { type: 'string' }, 'second-reviewer': { type: 'string' }, target: { type: 'string' }, chance: { type: 'string' },
   } });
   const failOn = values['fail-on'];
   if (failOn !== undefined && !SEVERITIES.includes(failOn)) throw new Error('--fail-on must be one of: ' + SEVERITIES.join(', '));
   if (values.grades || values['second-reviewer']) return scoreGrades(values, failOn);
   need(values, ['config', 'pred', 'key'], 'score');
 
-  const results = scoreRun({ config: loadConfig(values.config), predPath: values.pred, keyPath: values.key, mode: MODE(values) });
+  const results = scoreRun({ config: loadConfig(values.config), predPath: values.pred, keyPath: values.key, mode: MODE(values), ...targetOptions(values) });
   if (!values.quiet) process.stdout.write(renderTerminal(results));
   if (values.json) writeFile(values.json, JSON.stringify(resultsJson(results), null, 2) + '\n');
   if (values.html) writeFile(values.html, require('../src/report/html.js').renderHtml(results));
@@ -220,7 +240,25 @@ function grade(args) {
   console.error(forms.length + ' form(s), ' + forms.length * config.fields.length + ' field(s) to grade. Open the page in a browser; it saves a grades file for: wfeval score --grades <file>');
 }
 
-const COMMANDS = { check, score, variance, compare, whatif, grade };
+// rate: the likely range for a bare count, and what a target needs. No files.
+function rateCmd(args) {
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
+    target: { type: 'string' }, chance: { type: 'string' }, json: { type: 'string' },
+  } });
+  const [wrong, tested] = positionals.map(Number);
+  if (positionals.length !== 2 || !positionals.every(s => /^\d+$/.test(s)) || tested < 1 || wrong > tested) {
+    throw new Error('rate needs two whole numbers: the mistakes, then the records tested (0 <= mistakes <= tested, tested >= 1)');
+  }
+  const { rate } = require('../src/metrics/stats.js');
+  const { targetCheck } = require('../src/metrics/target.js');
+  const { renderRate } = require('../src/report/terminal.js');
+  const opts = targetOptions(values);
+  const x = { kind: 'rate', rate: rate(wrong, tested), target: opts.target === undefined ? null : targetCheck(wrong, tested, opts.target, { chance: opts.chance }) };
+  process.stdout.write(renderRate(x));
+  if (values.json) writeFile(values.json, JSON.stringify(resultsJson(x), null, 2) + '\n');
+}
+
+const COMMANDS = { check, score, variance, compare, whatif, grade, rate: rateCmd };
 
 function main(argv) {
   const [cmd, ...rest] = argv;

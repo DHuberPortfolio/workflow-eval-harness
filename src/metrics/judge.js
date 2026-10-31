@@ -111,6 +111,10 @@ function judgeRecord(r, config, ctx) {
   const useGold = gold !== null && config.wrong_when !== 'any_mismatch';
   const useValues = config.wrong_when !== 'gold_route';
   const needsHuman = (useGold && gold !== 'auto') || (useValues && mismatch);
+  // A record the answer key blocks or suppresses must not go out (letting it out is a silent
+  // error), but it needs no person either: the workflow should leave it out on its own. Sent to
+  // a person, it is an unnecessary review, whatever its values (trap G12).
+  const keyLeavesOut = useGold && (gold === 'block' || gold === 'exclude');
 
   // What would be wrong if this record went out without review.
   const routeTypes = [];
@@ -176,7 +180,8 @@ function judgeRecord(r, config, ctx) {
     silent,
     safeguards,
     omission,
-    wasted_review: r.route_class === 'review' && !needsHuman,
+    key_leaves_out: keyLeavesOut,
+    wasted_review: r.route_class === 'review' && (!needsHuman || keyLeavesOut),
   };
 }
 

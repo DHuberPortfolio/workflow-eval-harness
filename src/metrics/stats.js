@@ -8,14 +8,22 @@
 // null (not 0) because "no auto-published records" is not "no errors".
 const pct = (n, d) => (d === 0 ? null : Number(((n / d) * 100).toFixed(1)));
 
+// 95% everywhere, the same as error-rate-calculator, so both tools report identical ranges.
+const Z = 1.96;
+
 // Wilson score interval: the range of true rates consistent with seeing
 // n successes in d trials, at 95% confidence (z = 1.96).
 // Chosen over the textbook "p +/- 1.96 * sqrt(p(1-p)/d)" because that one
 // breaks at small counts and at 0% or 100% - it says 0/7 has a range of
 // exactly 0 to 0, which is the overconfidence we are trying to expose.
-function wilson(n, d, z = 1.96) {
+function wilson(n, d, z = Z) {
   if (d === 0) return null;
-  const p = n / d;
+  return bounds(n / d, d, z);
+}
+
+// The Wilson range for an observed rate p over d records. Split from wilson() so planning
+// can ask "what would the range be at a bigger d?" without inventing whole-number counts.
+function bounds(p, d, z = Z) {
   const z2 = z * z;
   const denom = 1 + z2 / d;
   const center = (p + z2 / (2 * d)) / denom;
@@ -53,4 +61,137 @@ function cohensKappa(matrix, categories) {
   return Number(((observed - expected) / (1 - expected)).toFixed(3));
 }
 
-module.exports = { pct, wilson, rate, cohensKappa };
+// ---------- Planning: how many records to show a rate is under a target ----------
+//
+// The same arithmetic as error-rate-calculator (stats.js there), so the two tools give the same
+// answer for the same counts; test/stats.test.js pins the values both tools' tests pin.
+// Rates are proportions here (0.05 is 5%).
+
+const MAX_RECORDS = 1000000;
+
+// Smallest number of records whose whole likely range sits under `target`, if mistakes turn up at
+// exactly `rate`. At rate 0 it is the hard minimum anyone needs: a perfect run of this many. Above
+// 0 it is a break-even point, not a plan (a fresh test that size lands under the target only about
+// half the time); planTest() is the plan. null when rate >= target: no amount of testing shows a
+// rate is under a target it is already at or above. Infinity past a million records.
+function recordsNeeded(rate, target) {
+  checkPlan(rate, target);
+  if (rate >= target) return null;
+  for (let n = 1; n <= MAX_RECORDS; n++) if (bounds(rate, n).high < target) return n;
+  return Infinity;
+}
+
+function checkPlan(rate, target) {
+  if (!(target > 0 && target < 1)) throw new RangeError('target must be between 0 and 1');
+  if (!(rate >= 0 && rate <= 1)) throw new RangeError('rate must be between 0 and 1');
+}
+
+// ln(i!), grown on demand.
+const logFactorial = [0, 0];
+function lnFact(n) {
+  for (let i = logFactorial.length; i <= n; i++) logFactorial.push(logFactorial[i - 1] + Math.log(i));
+  return logFactorial[n];
+}
+
+// Exact chance of at most k mistakes in n records at a real rate p, summed in logarithms so a
+// large n cannot underflow to zero.
+function chanceAtMost(k, n, p) {
+  if (k < 0) return 0;
+  if (k >= n || p === 0) return 1;
+  const lp = Math.log(p), lq = Math.log1p(-p), ln = lnFact(n);
+  let total = 0;
+  for (let i = 0; i <= k; i++) total += Math.exp(ln - lnFact(i) - lnFact(n - i) + i * lp + (n - i) * lq);
+  return Math.min(1, total);
+}
+
+// Most mistakes n records can hold and still have their whole likely range under target (-1 if
+// even none is enough). More mistakes always push the range up, so it counts up from below.
+function mostMistakesAllowed(n, target, from = -1) {
+  let k = from;
+  while (k + 1 <= n && bounds((k + 1) / n, n).high < target) k++;
+  return k;
+}
+
+// z for the planning chances on offer (the normal curve's quantiles).
+const Z_FOR_CHANCE = { 0.8: 0.8416212335729143, 0.9: 1.2815515655446004, 0.95: 1.6448536269514722 };
+// Above this estimate a plan uses the textbook formula alone, and says so (exact: false).
+const EXACT_PLAN_LIMIT = 5000;
+
+// How many records to test to show the real rate is under `target`, with at least `chance`
+// probability, if the real rate is `rate`. Starts from the textbook estimate (the normal
+// approximation behind the Wilson range), then checks the exact chance at every size up to
+// double it. The answer is one past the last size that falls short, so it holds for that many
+// records or more: whole-number mistake counts make the chance zigzag as n grows.
+// Returns { n, chance, exact }, or null when rate >= target.
+function planTest(rate, target, chance = 0.8) {
+  checkPlan(rate, target);
+  const zb = Z_FOR_CHANCE[chance];
+  if (zb === undefined) throw new RangeError('chance must be 0.8, 0.9 or 0.95');
+  if (rate >= target) return null;
+  if (rate === 0) return { n: recordsNeeded(0, target), chance: 1, exact: true };
+  const est = ((Z * Math.sqrt(target * (1 - target)) + zb * Math.sqrt(rate * (1 - rate))) / (target - rate)) ** 2;
+  if (est > EXACT_PLAN_LIMIT) return { n: Math.ceil(est), chance: null, exact: false };
+  // If a size near the end still falls short, the estimate was low: keep checking further out,
+  // so the answer always has clear room after it.
+  let limit = Math.max(2 * Math.ceil(est), Math.ceil(est) + 100);
+  let lastShort = 0, k = -1;
+  const chances = [];
+  for (let n = 1; n <= limit; n++) {
+    k = mostMistakesAllowed(n, target, k);
+    chances[n] = chanceAtMost(k, n, rate);
+    if (chances[n] < chance) {
+      lastShort = n;
+      if (n > limit / 2) limit = 2 * n;
+    }
+  }
+  return { n: lastShort + 1, chance: chances[lastShort + 1], exact: true };
+}
+
+// ---------- A change on the same records (paired) ----------
+//
+// When both versions ran on the same records, the records that came out the same carry no
+// information about the change. Only two counts do: fixed (wrong before, right after) and broke
+// (right before, wrong after). The drop is exactly (fixed - broke) / tested. Its likely range is
+// Tango's score interval (1998), the paired twin of the Wilson range; its verdict agrees with
+// McNemar's test. Run-to-run noise flips records both ways equally, so a real change is one that
+// fixes more than it breaks by more than chance: no repeated runs are needed to judge it.
+
+// Tango's score statistic for "the real drop is d". It falls as d rises.
+function tangoScore(fixed, broke, tested, d) {
+  const num = fixed - broke - tested * d;
+  if (num === 0) return 0;
+  // The most likely "broke" probability if the real drop were d (the constrained maximum-
+  // likelihood estimate): a root of a quadratic.
+  const a = 2 * tested;
+  const b = -fixed - broke + (2 * tested - fixed + broke) * d;
+  const c = -broke * d * (1 - d);
+  const q = (Math.sqrt(Math.max(0, b * b - 4 * a * c)) - b) / (2 * a);
+  const variance = tested * (2 * q + d * (1 - d));
+  if (!(variance > 0)) return num > 0 ? Infinity : -Infinity;
+  return num / Math.sqrt(variance);
+}
+
+// The d where the score crosses `level`, between lo and hi. Halving 200 times is far past
+// double precision.
+function crossing(fixed, broke, tested, level, lo, hi) {
+  for (let i = 0; i < 200 && hi - lo > 1e-15; i++) {
+    const mid = (lo + hi) / 2;
+    if (tangoScore(fixed, broke, tested, mid) > level) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+// The likely range of the real drop (before minus after, as a share of the records tested).
+function pairedDifference(fixed, broke, tested) {
+  if (!Number.isInteger(tested) || tested < 1) throw new RangeError('tested must be a whole number of at least 1');
+  if (!Number.isInteger(fixed) || !Number.isInteger(broke) || fixed < 0 || broke < 0 || fixed + broke > tested) {
+    throw new RangeError('fixed and broke must be whole numbers that fit in tested');
+  }
+  const drop = (fixed - broke) / tested;
+  const low = tangoScore(fixed, broke, tested, -1) <= Z ? -1 : crossing(fixed, broke, tested, Z, -1, drop);
+  const high = tangoScore(fixed, broke, tested, 1) >= -Z ? 1 : crossing(fixed, broke, tested, -Z, drop, 1);
+  return { drop, low, high };
+}
+
+module.exports = { Z, pct, wilson, rate, cohensKappa, recordsNeeded, planTest, pairedDifference };

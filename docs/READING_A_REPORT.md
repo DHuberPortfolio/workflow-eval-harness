@@ -37,13 +37,18 @@ is not small. "Records like these" matters: these 40 documents were chosen to te
 reviewer (each is labelled with the layer that should catch it, and 26 have violations), so
 this is a stress-test rate. The rate on real copy needs a random sample of real copy.
 
+With `--target 10`, a line under the headline says whether the rate is shown to be under 10%
+(its whole likely range is), and if not, how many records would show it: the plan, for an 80%
+chance if the real rate is this run's, and the hard minimum, a perfect run
+([how it is worked out](METRICS.md#how-many-records-would-show-a-target)).
+
 ## 2. The row of tiles
 
 | Tile | Here | What it tells you |
 |---|---|---|
 | Straight-through | 50.0% (20 of 40) | The share that went out without review. Never read it alone: sending everything out scores 100% |
 | Silent omissions | 0.0% (0 of 40) | Records blocked or suppressed that should not have been |
-| Review precision | 100.0% (20 of 20) | Of the records sent to a person, the share that needed one. Low means reviewers are wasting their time |
+| Review precision | 100.0% (20 of 20) | Of the records sent to a person, the share that needed one. Low means reviewers are wasting their time. A record the answer key blocks or suppresses never needed one: the workflow should have left it out on its own |
 | Safeguard failures | 0 | Records that got past the workflow's own gate or floor. Critical when not 0: the workflow has a hole, even if the content happened to be right |
 
 The pairing that matters: straight-through says how much work the workflow saves, the silent
@@ -119,8 +124,11 @@ always named, never shown as zero.
   is. It also lists the records that changed route between runs, and **possible key gaps**:
   values stated in every run that the answer key does not list, for a person to rule on.
 - **`wfeval compare`**: what changed between two runs, and whether each change is bigger than
-  the spread of identical runs ("beyond noise") or not ("within noise"). Plus every record
-  whose route was fixed or broken.
+  the spread of identical runs ("beyond noise") or not ("within noise"). Its **paired** table
+  needs no repeated runs: on the same records, for silent errors, unnecessary reviews and the
+  rest, how many records the change fixed and how many it broke, and whether that is better,
+  worse or unclear. Plus every record whose route was fixed or broken.
+- **`wfeval rate 2 15 --target 5`**: the likely range for any count, and what a target needs.
 - **`wfeval whatif`**: what the numbers would be at another threshold. Read the silent error
   count beside the rate: a rate can fall only because correct records joined it.
 

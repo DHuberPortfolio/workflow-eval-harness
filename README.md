@@ -143,9 +143,10 @@ by number.
 
 | Command | Question it answers |
 |---|---|
-| `wfeval score` | How did this run do? Silent errors by type and severity, routing, output quality, per-trap results, calibration. `--fail-on critical` exits non-zero, to stop a build. |
+| `wfeval score` | How did this run do? Silent errors by type and severity, routing, output quality, per-trap results, calibration. `--fail-on critical` exits non-zero, to stop a build. `--target 5` says whether the silent error rate is shown to be under 5%, and if not, how many records would show it. |
 | `wfeval variance` | How much do the numbers move between runs of identical code? Mean, spread and range per metric; the worst run's silent error rate, the one to quote (runs are never added together); the records that behave differently run to run; and possible key gaps: values stated in every run that the answer key does not list, for a person to rule on. |
-| `wfeval compare` | Did a change help, or did it move within that noise? Every metric's change against the spread of repeated runs, and every record that was fixed or broken. |
+| `wfeval compare` | Did a change help? On the same records, how many silent errors, unnecessary reviews and misroutes it fixed and how many it broke, judged better, worse or unclear with no repeated runs needed; every metric's change against the spread of repeated runs, when you have them; and every record that was fixed or broken. |
+| `wfeval rate` | What is the likely range for any count (2 of 15), and how many records would show a rate is under a target? |
 | `wfeval whatif` | What would the numbers be at another threshold? Sweeps the confidence gate or the confidence floor. |
 | `wfeval check` | Is this config, and this pair of files, readable? Prints what it understood. |
 | `wfeval grade` | For free text: writes one HTML page in which a person grades each field against its source. |

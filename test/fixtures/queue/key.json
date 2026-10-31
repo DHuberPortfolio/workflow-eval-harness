@@ -1,0 +1,12 @@
+[
+  { "id": "Q1",  "expected_decision": "SEND",      "TOPIC": ["billing"] },
+  { "id": "Q2",  "expected_decision": "ASK",       "TOPIC": ["billing"] },
+  { "id": "Q3",  "expected_decision": "ASK",       "TOPIC": ["refund"] },
+  { "id": "Q4",  "expected_decision": "SEND",      "TOPIC": ["billing"] },
+  { "id": "Q5",  "expected_decision": "FILE",      "TOPIC": [] },
+  { "id": "Q6",  "expected_decision": "SEND",      "TOPIC": ["refund"] },
+  { "id": "Q7",  "expected_decision": "FILE",      "TOPIC": [] },
+  { "id": "Q8",  "expected_decision": "DUPLICATE", "TOPIC": ["billing"], "duplicate_of": "Q1" },
+  { "id": "Q9",  "expected_decision": "SEND",      "TOPIC": ["refund"] },
+  { "id": "Q10", "expected_decision": "SEND",      "TOPIC": ["billing"] }
+]

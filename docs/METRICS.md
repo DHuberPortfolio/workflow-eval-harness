@@ -42,6 +42,39 @@ drawn from the records you care about. Two common cases break that:
   from the added-up count comes out too narrow (records that repeat are clustered: the design
   effect; Kish 1965). `variance` never adds runs up; see below.
 
+**How often the range holds.** A 95% range should miss the true rate about 5% of the time.
+Wilson's does on average, but not at every rate. At very low true rates on small sets it
+misses more often, up to about 16% at 10 records, and every one of those extra misses is on
+the safe side: the range sits above the true rate, overstating the errors. Misses on the risky
+side, a range below the true rate, stay close to the promised 2.5%, at most 4.3% at 10 records.
+These figures were added up exactly, for thousands of rates and sizes, by error-rate-calculator's
+audit ([AUDIT.md](https://github.com/DHuberPortfolio/error-rate-calculator/blob/main/AUDIT.md),
+check 2.1), which runs the same formula with the same z = 1.96.
+
+## How many records would show a target
+
+`score --target 5` asks whether the silent error rate is shown to be under 5%: whether its
+whole likely range is. If not, it gives two numbers, in records out without review (and in
+all records, at the run's straight-through rate):
+
+- **The plan.** If the real rate is the one this run saw, how many records give an 80% chance
+  (`--chance 0.9` or `0.95` for more) that a fresh test shows it. The chance is added up
+  exactly from the binomial distribution, not estimated.
+- **The hard minimum.** A perfect run: how many records with no silent error at all. At 5%,
+  73; at 1%, 381. No test can show less.
+
+When the rate seen is already at or above the target, no number of records can show it is
+under; the report says the rate has to come down first.
+
+Why not the size where this run's range would just clear the target? A fresh test of that size
+often lands under the target only about half the time (error-rate-calculator measured 42% to
+92%), because the next sample's rate wobbles. And
+choose the number before testing: checking after every record and stopping as soon as the
+range dips under the target makes the result look better than it is.
+
+`wfeval rate 2 15 --target 5` gives the same for any count, without a run: a reviewer's spot
+check, a production sample. The arithmetic is error-rate-calculator's, so the two tools agree.
+
 ## Straight-through rate
 
 The share of all records that went out without review. The throughput number, and
@@ -58,6 +91,12 @@ should have gone out or to a person. Nobody sees these either.
 Of the records sent to a person, the share that needed one. A review queue full of records
 nobody changes teaches reviewers to rubber-stamp, and then the review protects nothing.
 Records sent to a person that could have gone out are listed as **unnecessary reviews**.
+
+So are records sent to a person that the answer key blocks or suppresses: an email the key
+files, a duplicate the key drops. Such a record must not go out (letting it out unseen is a
+silent error), but it needs no person either: the workflow should leave it out on its own.
+The report lists these apart, as "the answer key blocks or suppresses them", whatever their
+values.
 
 ## Block precision
 
@@ -179,6 +218,25 @@ different articles. Added up, 44 of 615 gives a range of 5.4-9.5%; the worst run
 `variance` also lists **possible key gaps**: values the workflow states in every run that
 the answer key does not list. Each is either the same mistake made every time, or a gap in
 the answer key; the tool cannot tell which, so a person decides.
+
+**Paired counts: judging a change without repeated runs.** Repeated runs cost money, and a
+change replayed on fixed inputs has no noise to measure. But both runs scored the same
+records, and only the records that changed say anything about the change. For each outcome
+(silent errors, silent omissions, unnecessary reviews, routed against the answer key),
+`compare` counts the records the change **fixed** and the ones it **broke**, and gives the
+likely range of the change (Tango's paired score interval, 1998; its verdict agrees with
+McNemar's test). It says **better** or **worse** only when that range clears zero, and
+**unclear** otherwise. Run-to-run noise flips records both ways alike, so a change that
+fixes far more than it breaks is real whether or not noise runs exist. On the compliance
+reviewer's 40 documents, the prompt fix fixed 5 silent errors and broke none: better, with
+no repeated runs. On the metadata tagger's Golden 500, from the v2 prompt's run to one of the
+v3 guard's runs, 18 silent errors were fixed and 4 broken (better) while unnecessary reviews
+rose by 31 (worse): the price, counted.
+
+These are counts of records, not rates, on purpose: a rate's base moves when routes move. On
+the queue fixture (`test/fixtures/queue/`) the silent error rate falls from 50% to 20% while
+the same number of silent errors goes out: one fixed, one broken. The arithmetic is
+error-rate-calculator's paired mode, so the two tools agree.
 
 ## What-if
 

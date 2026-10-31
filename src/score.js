@@ -9,13 +9,14 @@ const { scoreQuality } = require('./metrics/classification.js');
 const { scoreRouting } = require('./metrics/routing.js');
 const { scoreTraps } = require('./metrics/traps.js');
 const { scoreCalibration } = require('./metrics/calibration.js');
+const { targetCheck } = require('./metrics/target.js');
 
 // Per-record summary kept in the results, for reports and for comparing runs.
 function recordSummary(j) {
   return {
     id: j.id, route: j.route, route_class: j.route_class, gold_route: j.gold_route, gold_class: j.gold_class,
     traps: j.traps, needs_human: j.needs_human,
-    silent: j.silent, omission: j.omission, safeguards: j.safeguards, wasted_review: j.wasted_review,
+    silent: j.silent, omission: j.omission, safeguards: j.safeguards, wasted_review: j.wasted_review, key_leaves_out: j.key_leaves_out,
     differences: j.values,
   };
 }
@@ -33,10 +34,16 @@ function scoreRecords(records, config) {
   };
 }
 
-function scoreRun({ config, predPath, keyPath, mode = 'strict' }) {
+// target: a percentage the silent error rate should be shown to be under (5 for 5%), or null.
+// chance: the probability the plan for that target aims at.
+function scoreRun({ config, predPath, keyPath, mode = 'strict', target = null, chance = 0.8 }) {
   const p = problems(mode);
   const run = loadRun({ config, predPath, keyPath, mode, p });
   const results = scoreRecords(run.records, config);
+  if (target !== null) {
+    const se = results.routing.silent_errors.rate;
+    results.target = targetCheck(se.n, se.d, target, { chance, out_of: { n: se.d, d: results.routing.total } });
+  }
 
   // H5: trap types with too few records to prove anything.
   if (results.traps) {

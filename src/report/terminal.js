@@ -1,7 +1,24 @@
 // The score report as plain text for the terminal. Headline first: what went out without
 // review but needed a person, how sure we can be of that number, then everything else.
 
-const { pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, typesIn, omissionWhat, declineRows } = require('./format.js');
+const { pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines } = require('./format.js');
+
+// "TARGET  under 5%: ..." and its indented details.
+function targetSection(t, words) {
+  const [first, ...rest] = targetLines(t, words);
+  return ['TARGET  ' + first, ...rest.map(l => '  ' + l)].join('\n');
+}
+
+// "Q4 Q9 Q10   (sent to a person, but could have gone out)", then the ones the answer key
+// leaves out, which never needed a person either (trap G12).
+function unnecessaryReviews(q) {
+  const leftOut = new Set(q.key_leaves_out);
+  const couldGo = q.wasted.filter(id => !leftOut.has(id));
+  const lines = [];
+  if (couldGo.length) lines.push(list(couldGo) + '   (sent to a person, but could have gone out)');
+  if (leftOut.size) lines.push(list(q.key_leaves_out) + '   (sent to a person, but the answer key blocks or suppresses them: no person was needed)');
+  return 'UNNECESSARY REVIEWS  ' + (lines.length ? lines.join('\n                     ') : '-');
+}
 
 // "SUBJECT  applied, not in the answer key: SUBJ-ANTI" lines for one record's differences.
 function differenceLines(d) {
@@ -141,6 +158,7 @@ function renderTerminal(results) {
   parts.push('SCORE  ' + results.inputs.predictions + '  vs  ' + results.inputs.key);
   parts.push(r.total + ' records · ' + results.inputs.mode + ' mode · a record needed a person if ' + WRONG_WHEN[results.inputs.wrong_when]);
   parts.push(headline(results));
+  if (results.target) parts.push(targetSection(results.target, TARGET_WORDS.run));
   parts.push(silentSection('SILENT ERRORS', 'went out without review, but needed a person', r.silent_errors, true));
   if (r.silent_omissions) parts.push(silentSection('SILENT OMISSIONS', omissionWhat(results), r.silent_omissions, false));
   parts.push(r.safeguard_failures.records === 0 ? 'SAFEGUARD FAILURES  none'
@@ -148,7 +166,7 @@ function renderTerminal(results) {
       '\n  Critical, and a workflow bug even when the content is right: find the branch that routed these records\n' +
       '  and why it did not apply the check (SG-GATE: lead confidence below the gate; SG-FLOOR: a value below the floor was applied).\n' +
       '  If the answer key agrees with the record, the fix is a model that clears the threshold, not a lower threshold.');
-  parts.push('UNNECESSARY REVIEWS  ' + list(r.review_queue.wasted) + (r.review_queue.wasted.length ? '   (sent to a person, but could have gone out)' : '') +
+  parts.push(unnecessaryReviews(r.review_queue) +
     (r.block && r.block.wrongly_blocked.length ? '\nWRONGLY BLOCKED  ' + list(r.block.wrongly_blocked) : ''));
   const CLASSES = ['auto', 'review', 'block', 'exclude'];
   const should = { auto: 0, review: 0, block: 0, exclude: 0 };
@@ -218,13 +236,27 @@ function renderVariance(v) {
   return parts.join('\n\n') + '\n';
 }
 
+// Trap I9: on the same records, a change is judged by the records it fixed against those it
+// broke. Counts, not rates: a rate's base moves when routes move.
+function pairedSection(p) {
+  const signedPts = x => (x > 0 ? '+' : '') + x.toFixed(1);
+  const change = o => (o.low_pct === null ? 'n/a' : (o.change > 0 ? '+' : '') + o.change + ' (likely ' + signedPts(o.low_pct) + ' to ' + signedPts(o.high_pct) + ' pts)');
+  const rows = [['outcome', 'before', 'after', 'fixed', 'broke', 'change', 'verdict'],
+    ...p.outcomes.map(o => [o.name, o.before, o.after, o.fixed, o.broke, change(o), o.verdict])];
+  return ['PAIRED  the same ' + p.records + ' records, before and after. A change is real when it fixes more records than it breaks,',
+    '  by more than chance would (95% range, Tango; the verdict agrees with McNemar\'s test). No repeated runs needed.',
+    table(rows, [1, 2, 3, 4]),
+    '  These are counts of records, not rates: a rate can fall just because correct records joined its base, with no error prevented.'].join('\n');
+}
+
 function renderCompare(c) {
   const parts = ['COMPARE  ' + c.inputs.before + '  ->  ' + c.inputs.after];
   parts.push(c.noise_runs ? 'noise baseline: ' + c.noise_runs.length + ' runs of identical code (' + c.noise_runs.join(', ') + ')'
-    : 'no noise baseline: pass --noise with repeated runs of the unchanged workflow to tell a real change from run-to-run noise');
+    : 'no noise baseline: the rates below need repeated runs of the unchanged workflow (--noise) to be judged; the PAIRED counts after them do not');
   const rows = [['metric', 'before', 'after', 'change', 'noise range', 'verdict']];
   for (const m of c.metrics) rows.push([m.name, fmt(m.before, m.unit), fmt(m.after, m.unit), fmtDelta(m.delta, m.unit), m.noise_range === null ? '' : fmtSpread(m.noise_range, m.unit), m.verdict]);
   parts.push(table(rows, [1, 2, 3, 4]));
+  parts.push(pairedSection(c.paired));
   const r = c.records;
   const lines = ['RECORDS THAT CHANGED  routes fixed ' + c.summary.routes_fixed + ' · routes broken ' + c.summary.routes_broken];
   for (const x of r.route_changed) lines.push('  ' + x.id.padEnd(8) + x.before + ' -> ' + x.after + (x.should ? '   should: ' + x.should + (x.outcome ? '   ' + x.outcome : '') : ''));
@@ -236,6 +268,16 @@ function renderCompare(c) {
   if (lines.length === 1) lines.push('  none');
   parts.push(lines.join('\n'));
   if (c.problems.length) parts.push('WARNINGS\n' + c.problems.map(i => '  [' + i.trap + '] ' + i.where + ': ' + i.message).join('\n'));
+  return parts.join('\n\n') + '\n';
+}
+
+// ---------- A bare count (wfeval rate) ----------
+
+function renderRate(x) {
+  const parts = ['RATE  ' + pct(x.rate) + '  ' + count(x.rate) + '  likely ' + range(x.rate) + ' (95%)\n' +
+    '  The likely range is where the true rate on records like these probably sits.' +
+    (x.rate.d > 1 ? ' With ' + x.rate.d + ' records, each record moves it by ' + (100 / x.rate.d).toFixed(1) + ' points.' : '')];
+  if (x.target) parts.push(targetSection(x.target, TARGET_WORDS.count));
   return parts.join('\n\n') + '\n';
 }
 
@@ -330,4 +372,4 @@ function renderGrades(g) {
   return parts.join('\n\n') + '\n';
 }
 
-module.exports = { renderTerminal, renderVariance, renderCompare, renderWhatif, renderGrades };
+module.exports = { renderTerminal, renderVariance, renderCompare, renderWhatif, renderGrades, renderRate };

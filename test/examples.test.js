@@ -137,3 +137,20 @@ test('Golden 500, metadata: v3 run by run on the tuning and held-out halves, and
   assert.equal(silent.filter(r => missing(r, 'SUBJ-REG') || missing(r, 'SUBJ-LIT')).length, 36);
   assert.deepEqual(silent.filter(r => missing(r, 'SUBJ-REG') && missing(r, 'SUBJ-LIT')).map(r => r.id), ['B223']);
 });
+
+// Trap I9: paired counts judge a change on the same records without repeated runs. The figures
+// METRICS.md quotes ("Paired counts").
+test('paired: the compliance prompt fix and the metadata v3 guard, judged without noise runs', () => {
+  const { compareRun } = require('../src/score.js');
+  const C = path.join(__dirname, '..', 'examples', 'compliance-reviewer');
+  const comp = compareRun({ config: loadConfig(path.join(C, 'config.json')), keyPath: path.join(C, 'key.json'),
+    beforePath: path.join(C, 'runs', 'exec-50.harness.json'), afterPath: path.join(C, 'runs', 'exec-56.harness.json') });
+  const row = (c, name) => { const o = c.paired.outcomes.find(x => x.name === name); return [o.before, o.after, o.fixed, o.broke, o.verdict]; };
+  assert.equal(comp.paired.records, 40);
+  assert.deepEqual(row(comp, 'silent errors'), [6, 1, 5, 0, 'better']);
+  const G = path.join(dir, 'golden500');
+  const run = n => path.join(G, 'exec-' + n + '.json');
+  const meta = compareRun({ config: loadConfig(path.join(G, 'config.json')), keyPath: run(70), beforePath: run(69), afterPath: run(71) });
+  assert.deepEqual(row(meta, 'silent errors'), [27, 13, 18, 4, 'better']);
+  assert.deepEqual(row(meta, 'unnecessary reviews'), [123, 154, 23, 54, 'worse']);
+});

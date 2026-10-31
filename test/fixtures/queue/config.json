@@ -1,0 +1,17 @@
+{
+  "id_field": "id",
+  "duplicate_of_field": "duplicate_of",
+  "outputs": {
+    "TOPIC": { "type": "set" }
+  },
+  "routing": {
+    "field": "decision",
+    "gold_field": "expected_decision",
+    "map": {
+      "SEND": "auto",
+      "ASK": "review",
+      "FILE": "block",
+      "DUPLICATE": "exclude"
+    }
+  }
+}

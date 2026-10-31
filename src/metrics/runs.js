@@ -4,6 +4,8 @@
 // Every run is scored against the same key and config, so the runs always cover the same
 // records (trap I2) and are judged by the same rules (I4) by construction.
 
+const { pairedDifference } = require('./stats.js');
+
 const round = (x, d = 1) => (x === null ? null : Number(x.toFixed(d)));
 
 // A rate as an exact percentage, never the rounded one (trap G6).
@@ -195,7 +197,48 @@ function compareOf(before, after, noise = null) {
   }
   const fixed = changes.route_changed.filter(c => c.outcome === 'fixed').length;
   const broke = changes.route_changed.filter(c => c.outcome === 'broke').length;
-  return { noise_runs: noise ? noise.runs : null, metrics, records: changes, summary: { routes_fixed: fixed, routes_broken: broke } };
+  return {
+    noise_runs: noise ? noise.runs : null, metrics, paired: pairedOf(before, after), records: changes,
+    summary: { routes_fixed: fixed, routes_broken: broke },
+  };
+}
+
+// The record-by-record outcomes a change can fix or break.
+function pairedOutcomes(after) {
+  const list = [{ name: 'silent errors', is: r => Boolean(r.silent) }];
+  if (after.routing.silent_omissions) list.push({ name: 'silent omissions', is: r => Boolean(r.omission) });
+  list.push({ name: 'unnecessary reviews', is: r => r.wasted_review });
+  if (after.records.some(r => r.gold_class !== null)) {
+    list.push({ name: 'routed against the answer key', is: r => r.gold_class !== null && r.route_class !== r.gold_class });
+  }
+  return list;
+}
+
+// Trap I9: on the same records, only the records that changed say anything about a change.
+// For each outcome: how many records it fixed and broke, and the likely range of the change, as
+// points of all the records (Tango's paired range; better or worse only when the range clears 0).
+// Run-to-run noise flips records both ways alike, so this needs no repeated runs, which the
+// metrics above do. Counts, not rates: a rate's base moves when routes move.
+function pairedOf(before, after) {
+  const beforeById = new Map(before.records.map(r => [r.id, r]));
+  const pairs = after.records.filter(a => beforeById.has(a.id)).map(a => [beforeById.get(a.id), a]);
+  const tested = pairs.length;
+  const outcomes = pairedOutcomes(after).map(o => {
+    const fixed = pairs.filter(([b, a]) => o.is(b) && !o.is(a)).map(([, a]) => a.id);
+    const broke = pairs.filter(([b, a]) => !o.is(b) && o.is(a)).map(([, a]) => a.id);
+    const row = {
+      name: o.name, before: pairs.filter(([b]) => o.is(b)).length, after: pairs.filter(([, a]) => o.is(a)).length,
+      fixed: fixed.length, broke: broke.length,
+    };
+    row.change = row.after - row.before;
+    if (tested === 0) return { ...row, low_pct: null, high_pct: null, verdict: 'not measured', fixed_ids: fixed, broke_ids: broke };
+    // The range is for the drop (before minus after); the change is that turned round (+ 0
+    // turns a -0 into 0).
+    const d = pairedDifference(fixed.length, broke.length, tested);
+    const verdict = fixed.length + broke.length === 0 ? 'no change' : d.low > 0 ? 'better' : d.high < 0 ? 'worse' : 'unclear';
+    return { ...row, low_pct: round(-d.high * 100) + 0, high_pct: round(-d.low * 100) + 0, verdict, fixed_ids: fixed, broke_ids: broke };
+  });
+  return { records: tested, outcomes };
 }
 
 module.exports = { varianceOf, compareOf, metricList };

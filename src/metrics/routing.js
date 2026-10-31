@@ -8,6 +8,7 @@
 //                            the share blocked or suppressed with nobody told.
 //   review precision - of the records sent to a person, the share that needed one. A
 //                            queue full of records nobody changes teaches reviewers to rubber-stamp.
+//                            A record the key blocks or suppresses never needed one (trap G12).
 //   block precision        - of the records blocked, the share the key also blocks.
 //   safeguard failures     - records that went through although a safeguard (the confidence
 //                            gate, the floor) should have held them. Counted apart from the
@@ -109,8 +110,11 @@ function scoreRouting(judgments, config, records = []) {
       })),
     } : null,
     review_queue: {
-      precision: rate(reviewed.filter(j => j.needs_human).length, reviewed.length),
+      precision: rate(reviewed.filter(j => !j.wasted_review).length, reviewed.length),
       wasted: ids(reviewed.filter(j => j.wasted_review)),
+      // The unnecessary reviews the answer key leaves out (blocks or suppresses): no person was
+      // needed, though going out would have been wrong (trap G12).
+      key_leaves_out: ids(reviewed.filter(j => j.wasted_review && j.key_leaves_out)),
     },
     // Only when some decision blocks: a workflow without a block route has no block precision.
     block: gold && Object.values(config.routing.map).includes('block') ? {

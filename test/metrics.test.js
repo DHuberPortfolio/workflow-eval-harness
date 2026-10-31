@@ -116,8 +116,9 @@ test('compliance: headline routing numbers', () => {
   assert.deepEqual(pcts(r.straight_through), [4, 9, 44.4]);
   assert.deepEqual([...pcts(r.silent_errors.rate), r.silent_errors.rate.low_pct, r.silent_errors.rate.high_pct], [2, 4, 50, 15, 85]);
   assert.deepEqual(pcts(r.silent_omissions.rate), [1, 6, 16.7]);
-  assert.deepEqual(pcts(r.review_queue.precision), [2, 3, 66.7]);
-  assert.deepEqual(r.review_queue.wasted, ['D5']);
+  assert.deepEqual(pcts(r.review_queue.precision), [1, 3, 33.3]);   // G12: D9, which the key blocks, needed no person
+  assert.deepEqual(r.review_queue.wasted, ['D5', 'D9']);
+  assert.deepEqual(r.review_queue.key_leaves_out, ['D9']);
   assert.deepEqual(pcts(r.block.precision), [1, 2, 50]);
   assert.deepEqual(r.block.wrongly_blocked, ['D6']);
 });
@@ -178,7 +179,7 @@ test('compliance: per trap', () => {
   assert.deepEqual(rows, [
     ['borderline-testimonial', '0/1', '', 'D6', ''],
     ['clean-copy', '2/3', '', '', 'D5'],
-    ['implied-guarantee', '0/2', 'D2', '', ''],
+    ['implied-guarantee', '0/2', 'D2', '', 'D9'],
     ['superlative', '1/1', '', '', ''],
     ['unqualified-comparison', '1/1', '', '', ''],
     ['weak-testimonial', '0/1', 'D7', '', ''],
@@ -190,7 +191,8 @@ test('with wrong_when "either", D5\'s false flag would count as needing a human 
   const config = loadConfig(path.join(dir, 'config.json'));
   config.wrong_when = 'either';
   const r = scoreRun({ config, predPath: path.join(dir, 'predictions.csv'), keyPath: path.join(dir, 'key.csv') });
-  assert.deepEqual(r.routing.review_queue.wasted, []);
+  // D9 stays an unnecessary review either way: the key blocks it (G12).
+  assert.deepEqual(r.routing.review_queue.wasted, ['D9']);
 });
 
 // ---------- H5: trap coverage ----------
