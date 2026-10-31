@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const { parseArgs } = require('node:util');
 const { loadConfig, addGroupBy, SEVERITIES } = require('../src/config.js');
 const { loadRun } = require('../src/load.js');
+const { loadRulings } = require('../src/rulings.js');
 const { scoreRun, varianceRun, compareRun, scoreGradesRun } = require('../src/score.js');
 const { renderTerminal, renderVariance, renderCompare, renderWhatif, renderGrades } = require('../src/report/terminal.js');
 const { resultsJson } = require('../src/report/json.js');
@@ -15,14 +16,18 @@ commands:
   check     --config <file> [--pred <file> --key <file>] [--lenient]
             validate a config, and optionally read a predictions file and answer key
 
-  score     --config <file> --pred <file> --key <file> [--lenient]
+  score     --config <file> --pred <file> --key <file> [--lenient] [--rulings <file>]
             [--json <file>] [--html <file>] [--quiet] [--fail-on <severity>]
             [--target <percent> [--chance 0.8|0.9|0.95]] [--group-by <field> ...]
             score one run. --fail-on critical|high|medium|low exits with code 3 when a
             silent error or safeguard failure at or above that severity is found (for CI).
             --target 5 says whether the silent error rate is shown to be under 5%, and if
             not, how many records would show it. --group-by channel gives the rates again
-            for each value of the answer key's "channel" (repeatable)
+            for each value of the answer key's "channel" (repeatable). Lists the possible
+            key gaps: applied values the answer key does not list. --rulings reads a person's
+            rulings on them (add, reject, pending): adds join the key for scoring (the key
+            file is never changed), rejected gaps are no longer listed, and with pending
+            rulings the silent error rate is also given as if they were all added
 
   score     --grades <file> [--second-reviewer <file>] [--lenient]
             [--json <file>] [--quiet] [--fail-on <severity>]
@@ -36,14 +41,19 @@ commands:
             field faithful, invented or missing against its source, and saves the grades
 
   variance  --config <file> --key <file> <run> <run> [<run> ...] [--lenient] [--json <file>]
-            several runs of identical code: mean and spread of every metric, and the
-            records that behave differently from run to run
+            [--rulings <file>]
+            several runs of identical code: mean and spread of every metric, the records
+            that behave differently from run to run, and the possible key gaps, each with
+            its ruling when --rulings is given
 
   compare   --config <file> --key <file> --before <file> --after <file>
-            [--noise <run> --noise <run> ...] [--lenient] [--json <file>]
+            [--noise <run> --noise <run> ...] [--after-key <file>] [--rulings <file>]
+            [--lenient] [--json <file>]
             what changed between two runs: record by record, the records each outcome
             fixed and broke, judged on their own; and every rate, judged against the
-            noise of repeated identical runs (give those with --noise)
+            noise of repeated identical runs (give those with --noise). --after-key scores
+            --after against another answer key: give the same run as --before and --after
+            to see what a new key changes. --rulings applies to both keys
 
   rate      <wrong> <tested> [--target <percent> [--chance 0.8|0.9|0.95]] [--json <file>]
             the likely range for any count (2 of 15), and with --target, how many
@@ -77,13 +87,15 @@ function writeFile(file, text) {
   fs.writeFileSync(file, text);
   console.error('wrote ' + file);
 }
+// --rulings <file>: read and checked once, before any run is scored (traps I12, I13).
+const rulingsOf = (values, config) => (values.rulings ? loadRulings(values.rulings, config, MODE(values)) : null);
 
 function score(args) {
   const { values } = parseArgs({ args, options: {
     config: { type: 'string' }, pred: { type: 'string' }, key: { type: 'string' }, lenient: { type: 'boolean' },
     json: { type: 'string' }, html: { type: 'string' }, quiet: { type: 'boolean' }, 'fail-on': { type: 'string' },
     grades: { type: 'string' }, 'second-reviewer': { type: 'string' }, target: { type: 'string' }, chance: { type: 'string' },
-    'group-by': { type: 'string', multiple: true },
+    'group-by': { type: 'string', multiple: true }, rulings: { type: 'string' },
   } });
   const failOn = values['fail-on'];
   if (failOn !== undefined && !SEVERITIES.includes(failOn)) throw new Error('--fail-on must be one of: ' + SEVERITIES.join(', '));
@@ -92,7 +104,7 @@ function score(args) {
 
   let config = loadConfig(values.config);
   if (values['group-by']) config = addGroupBy(config, values['group-by']);
-  const results = scoreRun({ config, predPath: values.pred, keyPath: values.key, mode: MODE(values), ...targetOptions(values) });
+  const results = scoreRun({ config, predPath: values.pred, keyPath: values.key, mode: MODE(values), rulings: rulingsOf(values, config), ...targetOptions(values) });
   if (!values.quiet) process.stdout.write(renderTerminal(results));
   if (values.json) writeFile(values.json, JSON.stringify(resultsJson(results), null, 2) + '\n');
   if (values.html) writeFile(values.html, require('../src/report/html.js').renderHtml(results));
@@ -112,7 +124,7 @@ function score(args) {
 // score --grades: a person's grades of free-text fields, scored as labels.
 function scoreGrades(values, failOn) {
   if (!values.grades) throw new Error('--second-reviewer goes with --grades <file>');
-  const extra = ['config', 'pred', 'key', 'html', 'group-by'].filter(k => values[k]);
+  const extra = ['config', 'pred', 'key', 'html', 'group-by', 'rulings'].filter(k => values[k]);
   if (extra.length) throw new Error('score --grades reads everything from the grades file; it does not take ' + extra.map(k => '--' + k).join(' '));
   const g = scoreGradesRun({ gradesPath: values.grades, secondPath: values['second-reviewer'] || null, mode: MODE(values) });
   if (!values.quiet) process.stdout.write(renderGrades(g));
@@ -190,10 +202,11 @@ function check(args) {
 
 function variance(args) {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
-    config: { type: 'string' }, key: { type: 'string' }, lenient: { type: 'boolean' }, json: { type: 'string' },
+    config: { type: 'string' }, key: { type: 'string' }, lenient: { type: 'boolean' }, json: { type: 'string' }, rulings: { type: 'string' },
   } });
   need(values, ['config', 'key'], 'variance');
-  const v = varianceRun({ config: loadConfig(values.config), keyPath: values.key, predPaths: positionals, mode: MODE(values) });
+  const config = loadConfig(values.config);
+  const v = varianceRun({ config, keyPath: values.key, predPaths: positionals, mode: MODE(values), rulings: rulingsOf(values, config) });
   process.stdout.write(renderVariance(v));
   if (values.json) writeFile(values.json, JSON.stringify(resultsJson(v), null, 2) + '\n');
 }
@@ -202,11 +215,13 @@ function compare(args) {
   const { values } = parseArgs({ args, options: {
     config: { type: 'string' }, key: { type: 'string' }, before: { type: 'string' }, after: { type: 'string' },
     noise: { type: 'string', multiple: true }, lenient: { type: 'boolean' }, json: { type: 'string' },
+    'after-key': { type: 'string' }, rulings: { type: 'string' },
   } });
   need(values, ['config', 'key', 'before', 'after'], 'compare');
+  const config = loadConfig(values.config);
   const c = compareRun({
-    config: loadConfig(values.config), keyPath: values.key, beforePath: values.before, afterPath: values.after,
-    noisePaths: values.noise || [], mode: MODE(values),
+    config, keyPath: values.key, afterKeyPath: values['after-key'] || null, beforePath: values.before, afterPath: values.after,
+    noisePaths: values.noise || [], mode: MODE(values), rulings: rulingsOf(values, config),
   });
   process.stdout.write(renderCompare(c));
   if (values.json) writeFile(values.json, JSON.stringify(resultsJson(c), null, 2) + '\n');

@@ -264,7 +264,8 @@ different articles. Added up, 44 of 615 gives a range of 5.4-9.5%; the worst run
 
 `variance` also lists **possible key gaps**: values the workflow states in every run that
 the answer key does not list. Each is either the same mistake made every time, or a gap in
-the answer key; the tool cannot tell which, so a person decides.
+the answer key; the tool cannot tell which, so a person decides
+([below](#possible-key-gaps-and-rulings)).
 
 **Paired counts: judging a change without repeated runs.** Repeated runs cost money, and a
 change replayed on fixed inputs has no noise to measure. But both runs scored the same
@@ -284,6 +285,71 @@ These are counts of records, not rates, on purpose: a rate's base moves when rou
 the queue fixture (`test/fixtures/queue/`) the silent error rate falls from 50% to 20% while
 the same number of silent errors goes out: one fixed, one broken. The arithmetic is
 error-rate-calculator's paired mode, so the two tools agree.
+
+## Possible key gaps and rulings
+
+An answer key can be wrong too: it can leave out a value that is right. The harness counts
+every applied value the key does not list as wrong, so a gap in the key looks exactly like a
+mistake by the workflow. Only a person reading the record can tell them apart.
+
+**Possible key gaps.** `score` lists, from one run, every value the workflow applied that the
+answer key does not list (repeated runs cost money); `variance` lists them across runs, those
+stated in every run first. Both leave out what cannot be a gap: a value outside
+`allowed_values` (invented, not missing from the key), a value inherited from another (it
+follows from one already stated), a suppressed duplicate, a record whose model call failed,
+and an alternative of an any_of slot (the key already has it). Stated in every run is still not
+proof: the tiny fixture's R2 states the wrong SUBJ-ANTI in all three runs.
+
+`score` marks each gap that sits on a silent error, and says whether adding it to the key would
+clear that silent error (with every gap listed on that record added). Usually it would. But a
+record the key routes to a person stays a silent error whatever its values: "stays one if
+added: SP-SHOULD-REVIEW". No ruling on its values can change that.
+
+**Rulings.** A person rules on each gap: **add** (the key is missing it), **reject** (it is a
+mistake) or **pending** (not decided yet), in a rulings file with who decided and when
+([CONFIG.md](CONFIG.md#rulings-on-possible-key-gaps---rulings)). The tool never edits the key.
+Think of the answer key as a printed exam key and the rulings as the teacher's dated notes
+clipped to it ("7b is also right"): whoever marks the exams reads the key and the notes, and
+the report says the notes were used and which values they added. A rejected gap is never listed
+again, only counted; an added one is part of the key from then on.
+
+### The bracket for pending rulings
+
+A pending value is counted as wrong: the strict reading, which gives the higher silent error
+rate. `score` also scores the run again as if every pending ruling were an add, and prints the
+two side by side, under the headline:
+
+```
+If the 2 pending rulings were all added to the answer key: 42.9% (3 of 7, likely 15.8-75.0%),
+against 57.1% with them counted wrong. However they are ruled, the rate lands between the two.
+```
+
+Why it is a bracket: each pending value was applied by the workflow in this run. Adding an
+applied value to the key can only turn a wrong value into a right one; it can never create an
+error. So as pending rulings become adds, a record can only go from silent error to fine, never
+back, and the records that went out without review (the rate's base) do not depend on the key
+at all. Whatever the person decides, all add, all reject or any mix, the count lands between
+the two figures: here, 3 or 4 of the same 7 records.
+
+One exception, and the report names it. A pending value this run did **not** apply (stated in
+another run, say) becomes, once added, a value the run should have given and did not: a miss,
+which can create a silent error. Then "all added" is not the low end, and the line says how
+many such values there are and that the two figures are not a bracket.
+
+The bracket is about decisions; each figure's likely range is about chance. Both matter: in
+the fixture, the open decisions move the count by one record, and chance alone allows each
+rate a range more than 50 points wide (`test/fixtures/rulings/`).
+
+### One run against two keys
+
+`compare --key old.json --after-key new.json --before run.json --after run.json` scores the
+same predictions against two answer keys. Routes do not change, so every change in the rates
+comes from the key ("from the key" in the verdict column), and the paired table names the
+records the new key turned from silent errors into fine (fixed) and the reverse (broke). It is
+how to say how much of an apparent improvement was the key, as the compliance reviewer's key
+review did by hand ([KEY_GAPS.md](../examples/compliance-reviewer/KEY_GAPS.md)). The two keys
+must cover the same records, or it stops. Given two different runs, each change mixes the
+workflow's and the key's, and a warning says so.
 
 ## What-if
 

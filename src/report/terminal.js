@@ -3,8 +3,36 @@
 
 const {
   pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines,
-  groupSource, GROUP_RANGES, severalLabels,
+  groupSource, GROUP_RANGES, severalLabels, rulingsWords, pendingLine, rulingStatus,
 } = require('./format.js');
+
+// "RULINGS  1 value added to the answer key by rulings in ...", and the rest indented (trap I11).
+function rulingsSection(r, against = '') {
+  const [first, ...rest] = rulingsWords(r, against);
+  return ['RULINGS  ' + first, ...rest.map(l => '  ' + l)].join('\n');
+}
+
+// Possible key gaps from this one run (results.key_gaps; trap I16). At most 12 rows, like the
+// other lists; the full list is in --json.
+function keyGapSection(results) {
+  const g = results.key_gaps;
+  const n = g.candidates.length;
+  const ruled = results.rulings || null;
+  const lines = ['POSSIBLE KEY GAPS  ' + (n
+    ? n + ' applied value' + (n === 1 ? '' : 's') + ' the answer key does not list. Each is a mistake, or a value the answer key is missing: a person rules on ' + (n === 1 ? 'it' : 'each') + '.'
+    : g.rejected ? 'none left to rule on: every other applied value is in the answer key' : 'none: every applied value is in the answer key')];
+  const classOf = new Map(results.records.map(x => [x.id, x.route_class]));
+  const where = c => (c.silent_error
+    ? 'silent error, ' + (c.silent_error.if_added.length ? 'stays one if added: ' + c.silent_error.if_added.join(', ') : 'clears if added')
+    : 'not a silent error (' + CLASS_LABELS[classOf.get(c.id)] + ')');
+  const rows = g.candidates.slice(0, 12).map(c => [c.id, c.output, c.value, c.confidence === null ? '-' : c.confidence.toFixed(2), where(c), ...(ruled ? [rulingStatus(c)] : [])]);
+  if (rows.length) lines.push(table(rows, [3]));
+  if (n > 12) lines.push('  +' + (n - 12) + ' more (all in --json)');
+  if (g.rejected) lines.push('  ' + g.rejected + ' ruled not a gap in ' + ruled.file + ', not listed.');
+  if (g.candidates.some(c => c.silent_error)) lines.push('  "If added": if every gap listed for that record were added to the answer key.');
+  if (n && !ruled) lines.push('  Record a ruling on each (add, reject or pending) in a rulings file, and pass it with --rulings (docs/CONFIG.md).');
+  return lines.join('\n');
+}
 
 // "TARGET  under 5%: ..." and its indented details.
 function targetSection(t, words) {
@@ -49,6 +77,9 @@ function headline(results) {
   rows.push(['Safeguard failures', '', r.safeguard_failures.records + ' record(s)', '', "went out past the workflow's own confidence gate or floor"]);
   const lines = ['HEADLINE', table(rows, [1, 2])];
   const se = r.silent_errors;
+  // Trap I15: the rate with pending rulings counted wrong (above), and counted as added.
+  const b = results.rulings && results.rulings.if_pending_added;
+  if (b && se.rate.d > 0) lines.push('  ' + pendingLine(b, se.rate));
   if (se.one_record_moves_pct !== null && se.rate.d > 1) {
     lines.push('  The likely range is where the true rate on records like these probably sits (95%). With ' + se.rate.d +
       ' records out without review, each one moves the silent error rate by ' + se.one_record_moves_pct.toFixed(1) + ' points.');
@@ -187,6 +218,7 @@ function renderTerminal(results) {
   const parts = [];
   parts.push('SCORE  ' + results.inputs.predictions + '  vs  ' + results.inputs.key);
   parts.push(r.total + ' records · ' + results.inputs.mode + ' mode · a record needed a person if ' + WRONG_WHEN[results.inputs.wrong_when]);
+  if (results.rulings) parts.push(rulingsSection(results.rulings));
   parts.push(headline(results));
   if (results.target) parts.push(targetSection(results.target, TARGET_WORDS.run));
   parts.push(silentSection('SILENT ERRORS', 'went out without review, but needed a person', r.silent_errors, true));
@@ -205,6 +237,7 @@ function renderTerminal(results) {
   if (results.records.some(x => x.gold_class)) routeRows.push(['  answer key', ...CLASSES.map(k => should[k])]);
   parts.push(table(routeRows, [1, 2, 3, 4], ''));
   parts.push(quality(results));
+  if (results.key_gaps) parts.push(keyGapSection(results));
   const t = traps(results);
   if (t) parts.push(t);
   parts.push(...groupSections(results));
@@ -224,6 +257,7 @@ const fmtSpread = (v, unit) => (v === null ? 'n/a' : unit === 'points' ? v.toFix
 function renderVariance(v) {
   const parts = ['VARIANCE  ' + v.runs.length + ' runs against ' + v.inputs.key];
   parts.push(v.runs.map((r, i) => '  run ' + (i + 1) + '  ' + r).join('\n'));
+  if (v.rulings) parts.push(rulingsSection(v.rulings));
   const rows = [['metric', ...v.runs.map((_, i) => 'run ' + (i + 1)), 'mean', 'spread (sd)', 'min', 'max', 'range']];
   for (const m of v.metrics) {
     rows.push([m.name, ...m.values.map(x => fmt(x, m.unit)), fmt(m.mean, m.unit), fmtSpread(m.sd, m.unit), fmt(m.min, m.unit), fmt(m.max, m.unit), fmtSpread(m.range, m.unit)]);
@@ -255,13 +289,17 @@ function renderVariance(v) {
     sc.map(r => '\n  ' + r.id.padEnd(8) + r.silent.map(s => (s ? 'silent' : 'ok')).join(' / ')).join(''));
   const gaps = v.records.key_gap_candidates;
   const every = gaps.filter(g => g.runs === g.of);
+  const rejected = v.records.key_gaps_rejected || 0;
   const lines = ['POSSIBLE KEY GAPS  ' + (every.length
     ? 'stated in every run, not in the answer key: the same mistake every time, or a value the answer key is missing. A person decides which.'
-    : 'none stated in every run')];
+    : rejected ? 'none left to rule on: every value stated in every run is in the answer key or ruled not a gap' : 'none stated in every run')];
   const conf = c => (c === null ? '' : ' · confidence ' + (c.min === c.max ? c.min.toFixed(2) : c.min.toFixed(2) + '-' + c.max.toFixed(2)));
-  for (const g of every) lines.push('  ' + g.id.padEnd(8) + g.output + '  ' + g.value + '   applied in ' + g.applied + ' of ' + g.of + conf(g.confidence));
+  // With a rulings file, each gap shows its ruling (trap I11); without one, nothing changes.
+  const status = g => (g.ruling === undefined ? '' : '   ' + rulingStatus(g));
+  for (const g of every) lines.push('  ' + g.id.padEnd(8) + g.output + '  ' + g.value + '   applied in ' + g.applied + ' of ' + g.of + conf(g.confidence) + status(g));
   const some = gaps.length - every.length;
   if (some) lines.push('  ' + some + ' more stated in some runs only (listed in --json)');
+  if (rejected) lines.push('  ' + rejected + ' ruled not a gap in ' + v.rulings.file + ', not listed');
   parts.push(lines.join('\n'));
   if (v.problems.length) parts.push('WARNINGS\n' + v.problems.map(i => '  [' + i.trap + '] ' + i.where + ': ' + i.message).join('\n'));
   return parts.join('\n\n') + '\n';
@@ -281,9 +319,20 @@ function pairedSection(p) {
 }
 
 function renderCompare(c) {
-  const parts = ['COMPARE  ' + c.inputs.before + '  ->  ' + c.inputs.after];
+  const i = c.inputs;
+  const twoKeys = i.after_key !== undefined;
+  const parts = ['COMPARE  ' + (twoKeys ? i.before + ' against ' + i.key + '  ->  ' + i.after + ' against ' + i.after_key : i.before + '  ->  ' + i.after)];
+  if (c.rulings) {
+    // Rulings apply to each key; when the two keys take them alike, say it once.
+    const same = JSON.stringify(c.rulings.before) === JSON.stringify(c.rulings.after);
+    if (same) parts.push(rulingsSection(c.rulings.before));
+    else parts.push(rulingsSection(c.rulings.before, ' (' + i.key + ')'), rulingsSection(c.rulings.after, ' (' + i.after_key + ')'));
+  }
   parts.push(c.noise_runs ? 'noise baseline: ' + c.noise_runs.length + ' runs of identical code (' + c.noise_runs.join(', ') + ')'
-    : 'no noise baseline: the rates below need repeated runs of the unchanged workflow (--noise) to be judged; the PAIRED counts after them do not');
+    : twoKeys && c.same_predictions ? 'the same predictions against two answer keys: every change below comes from the key, not the workflow. ' +
+      'The PAIRED counts say which records the new key fixed and broke.'
+      : twoKeys ? 'two different runs against two answer keys: each change below mixes the workflow\'s and the key\'s (see the warning)'
+        : 'no noise baseline: the rates below need repeated runs of the unchanged workflow (--noise) to be judged; the PAIRED counts after them do not');
   const rows = [['metric', 'before', 'after', 'change', 'noise range', 'verdict']];
   for (const m of c.metrics) rows.push([m.name, fmt(m.before, m.unit), fmt(m.after, m.unit), fmtDelta(m.delta, m.unit), m.noise_range === null ? '' : fmtSpread(m.noise_range, m.unit), m.verdict]);
   parts.push(table(rows, [1, 2, 3, 4]));

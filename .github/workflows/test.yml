@@ -59,6 +59,10 @@ jobs:
           node bin/wfeval.js check --config examples/competitor-registry/config.json
           node bin/wfeval.js score --config test/fixtures/alternatives/config.json \
             --pred test/fixtures/alternatives/predictions.json --key test/fixtures/alternatives/key.json
+          R=test/fixtures/rulings
+          node bin/wfeval.js score --config $R/config.json --pred $R/predictions.json --key $R/key.json --rulings $R/rulings.json
+          node bin/wfeval.js compare --config $R/config.json --key $R/key.json --after-key $R/key-v2.json \
+            --before $R/predictions.json --after $R/predictions.json
           F=test/fixtures/freetext
           node bin/wfeval.js grade --config $F/grading.json --pred $F/forms.json --out "$out/grading.html"
           node bin/wfeval.js score --grades $F/grades-a.json --second-reviewer $F/grades-b.json --json "$out/grades.json"

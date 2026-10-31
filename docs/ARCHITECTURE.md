@@ -16,7 +16,7 @@ free text:  grading config + forms ──> grading.js ──> grading-page.js �
 ```
 
 - **Messy input is handled in one place.** `load.js` (and `csv.js` for spreadsheets) is
-  the only code that reads files. After it, every id is trimmed text, every confidence
+  the only code that reads predictions and answer keys. After it, every id is trimmed text, every confidence
   is a number or null, every `applied` a real true or false. Nothing downstream re-checks.
 - **Pairs, never totals.** `align.js` pairs each prediction with its answer by id.
   Totals can match while records do not: two misroutes in opposite directions cancel out.
@@ -25,6 +25,10 @@ free text:  grading config + forms ──> grading.js ──> grading-page.js �
   and per-group tables and the what-ifs are counts over these judgments, so they cannot disagree.
 - **Metrics are pure functions.** Records in, numbers out; no files, no printing. That
   is what makes them testable with a few lines of data.
+- **A person's rulings, never the tool's.** `rulings.js` reads a rulings file (`--rulings`):
+  a person's add, reject and pending decisions on possible key gaps. Adds join the paired
+  records' answer key in memory, before judging, so every metric counts them alike; the key
+  file is never written, and every report names the values added.
 - **One results object, three renderings.** Terminal, JSON and HTML all draw from it, and
   share their wording (`src/report/format.js`), so the same idea has the same name everywhere.
 - **The core knows no workflow.** Anything specific to one workflow lives in

@@ -100,7 +100,10 @@ What the projects that used the harness had to build around it, ranked by how ma
 - [x] "Any of these is right" and equivalent values in the answer key: `{ "any_of": [...] }` slots
       in a set output's key, resolved per record by every metric alike; `equivalents` in the
       config, read as one value on both sides (traps D20-D23, F13, I10, `test/fixtures/alternatives/`)
-- [ ] A rulings file for possible key gaps (add, reject, pending), and comparing two keys
+- [x] A rulings file for possible key gaps (add, reject, pending), and comparing two keys:
+      `--rulings` on score, variance and compare; possible key gaps from one run in `score`; the
+      silent error rate with pending rulings counted wrong and as added; `compare --after-key`
+      (traps I11-I17, `test/fixtures/rulings/`)
 - [ ] Ranges that count clusters within a run (retellings of one story, one filing's statements)
 - [ ] A gate in `whatif` certified to keep silent errors under a target (Learn then Test)
 

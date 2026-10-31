@@ -3,7 +3,9 @@
 // report. Every value that came from an input file is HTML-escaped: a record id is data,
 // and data must never be able to run as code in the report.
 
-const { WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines, groupSource, GROUP_RANGES, severalLabels } = require('./format.js');
+const {
+  WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines, groupSource, GROUP_RANGES, severalLabels, rulingsWords, pendingLine,
+} = require('./format.js');
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const pct = r => (!r || r.pct === null ? 'n/a' : r.pct.toFixed(1) + '%');
@@ -208,11 +210,16 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
   s.push('<h1>Workflow evaluation</h1>');
   s.push('<p class="meta">' + esc(results.inputs.predictions) + ' scored against ' + esc(results.inputs.key) + ' · ' + r.total + ' records · ' +
     esc(results.inputs.mode) + ' mode · generated ' + esc(generatedAt) + '<br>A record needed a person if ' + esc(WRONG_WHEN[results.inputs.wrong_when]) + '.</p>');
+  // Trap I11: with a rulings file, the key in use is not the key file alone. Only then: a report
+  // scored without rulings comes out exactly as before.
+  if (results.rulings) s.push('<p class="meta">' + rulingsWords(results.rulings).map(esc).join('<br>') + '</p>');
 
   // Headline
   const se = r.silent_errors;
   s.push('<section class="card hero"><div class="hero-label">Silent error rate</div><div class="hero-value">' + pct(se.rate) + '</div>' +
     '<div class="hero-note">' + heroNote(se.rate, se.one_record_moves_pct) + '</div></section>');
+  const pending = results.rulings && results.rulings.if_pending_added;
+  if (pending && se.rate.d > 0) s.push('<p>' + esc(pendingLine(pending, se.rate)) + '</p>');   // trap I15
   s.push(tiles(r, results));
   if (results.target) {
     const [first, ...rest] = targetLines(results.target, TARGET_WORDS.run);

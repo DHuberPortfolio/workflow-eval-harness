@@ -1,0 +1,37 @@
+[
+  { "id": "K1", "route": "AUTO_PUBLISH",
+    "SUBJECT":   [{ "value": "SUBJ-MNA", "confidence": 0.95 }, { "value": "SUBJ-ANTI", "confidence": 0.90 }],
+    "GEOGRAPHY": [{ "value": "GEO-US", "confidence": 0.90 }] },
+
+  { "id": "K2", "route": "AUTO_PUBLISH",
+    "SUBJECT":   [{ "value": "SUBJ-EARN", "confidence": 0.92 }, { "value": "SUBJ-MNA", "confidence": 0.88 }],
+    "GEOGRAPHY": [{ "value": "GEO-US", "confidence": 0.90 }] },
+
+  { "id": "K3", "route": "AUTO_PUBLISH",
+    "SUBJECT":   [{ "value": "SUBJ-EARN", "confidence": 0.90 }, { "value": "SUBJ-ANTI", "confidence": 0.86 }],
+    "GEOGRAPHY": [{ "value": "GEO-UK", "confidence": 0.90 }] },
+
+  { "id": "K4", "route": "AUTO_PUBLISH",
+    "SUBJECT":   [{ "value": "SUBJ-MNA", "confidence": 0.93 }, { "value": "SUBJ-LAB", "confidence": 0.50, "applied": false }],
+    "GEOGRAPHY": [{ "value": "GEO-US", "confidence": 0.90 }, { "value": "GEO-UK", "confidence": 0.85 }] },
+
+  { "id": "K5", "route": "AUTO_PUBLISH",
+    "SUBJECT":   [{ "value": "SUBJ-MNA", "confidence": 0.90 }, { "value": "SUBJ-EARN", "confidence": 0.88 }],
+    "GEOGRAPHY": [{ "value": "GEO-US", "confidence": 0.90 }] },
+
+  { "id": "K6", "route": "EDITOR_REVIEW",
+    "SUBJECT":   [{ "value": "SUBJ-LAB", "confidence": 0.80 }, { "value": "SUBJ-ANTI", "confidence": 0.70 }],
+    "GEOGRAPHY": [{ "value": "GEO-UK", "confidence": 0.70 }, { "value": "GEO-EU", "confidence": 0.70, "inherited_from": "GEO-UK" }] },
+
+  { "id": "K7", "route": "AUTO_PUBLISH",
+    "SUBJECT":   [{ "value": "SUBJ-EARN", "confidence": 0.90 }],
+    "GEOGRAPHY": [{ "value": "GEO-EU", "confidence": 0.90 }] },
+
+  { "id": "K8", "route": "DUPLICATE_SUPPRESSED",
+    "SUBJECT":   [{ "value": "SUBJ-MNA", "confidence": 0.99 }, { "value": "SUBJ-ANTI", "confidence": 0.99 }],
+    "GEOGRAPHY": [{ "value": "GEO-US", "confidence": 0.99 }] },
+
+  { "id": "K9", "route": "AUTO_PUBLISH",
+    "SUBJECT":   [{ "value": "SUBJ-EARN", "confidence": 0.95 }],
+    "GEOGRAPHY": [{ "value": "GEO-US", "confidence": 0.90 }] }
+]

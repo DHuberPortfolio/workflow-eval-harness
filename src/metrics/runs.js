@@ -160,7 +160,10 @@ function varianceOf(runs, config) {
 
 // before, after: results objects. noise: a varianceOf() result from repeated runs of
 // identical code, or null. A change no larger than the noise range is "within noise".
-function compareOf(before, after, noise = null) {
+// opts.without_noise: the verdict for a change when there is no noise to judge it against.
+// The same predictions against two keys have none: every change there is the key's (I17).
+function compareOf(before, after, noise = null, opts = {}) {
+  const withoutNoise = opts.without_noise || 'no noise baseline';
   const metrics = metricList(after).map(m => {
     const b = m.get(before);
     const a = m.get(after);
@@ -170,7 +173,7 @@ function compareOf(before, after, noise = null) {
     let verdict;
     if (delta === null) verdict = 'not measured';
     else if (round(delta, d) === 0) verdict = 'no change';
-    else if (!band || band.range === null) verdict = 'no noise baseline';
+    else if (!band || band.range === null) verdict = withoutNoise;
     else verdict = Math.abs(round(delta, d)) <= band.range ? 'within noise' : 'beyond noise';
     return { name: m.name, unit: m.unit, before: round(b, d), after: round(a, d), delta: round(delta, d), noise_range: band ? band.range : null, verdict };
   });
@@ -243,4 +246,4 @@ function pairedOf(before, after) {
   return { records: tested, outcomes };
 }
 
-module.exports = { varianceOf, compareOf, metricList };
+module.exports = { varianceOf, compareOf, metricList, keyGapCandidates };

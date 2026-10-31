@@ -1,0 +1,23 @@
+{
+  "id_field": "id",
+  "outputs": {
+    "SUBJECT": { "type": "set" },
+    "GEOGRAPHY": { "type": "set" }
+  },
+  "routing": {
+    "field": "route",
+    "gold_field": "expected_route",
+    "map": {
+      "AUTO_PUBLISH": "auto",
+      "EDITOR_REVIEW": "review",
+      "DUPLICATE_SUPPRESSED": "exclude"
+    }
+  },
+  "thresholds": {
+    "floor": 0.60,
+    "auto_publish": { "SUBJECT": 0.85 }
+  },
+  "equivalents": {
+    "SUBJECT": [["SUBJ-MNA", "SUBJ-MERGERS"]]
+  }
+}

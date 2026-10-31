@@ -1,0 +1,7 @@
+{ "rulings": [
+  { "id": "K1", "output": "SUBJECT", "value": "SUBJ-ANTI", "ruling": "pending", "by": "DH", "on": "2026-10-30", "note": "the deal is under antitrust review; ask the desk" },
+  { "id": "K2", "output": "SUBJECT", "value": "SUBJ-MERGERS", "ruling": "add", "by": "DH", "on": "2026-10-30", "note": "the earnings release announces an acquisition" },
+  { "id": "K3", "output": "SUBJECT", "value": "SUBJ-ANTI", "ruling": "reject", "by": "DH", "on": "2026-10-30", "note": "no antitrust angle in the article" },
+  { "id": "K5", "output": "SUBJECT", "value": "SUBJ-EARN", "ruling": "pending", "by": "DH", "on": "2026-10-30" },
+  { "id": "K7", "output": "SUBJECT", "value": "SUBJ-LAB", "ruling": "add", "by": "DH", "on": "2026-10-30", "note": "already one of the key's alternatives" }
+] }

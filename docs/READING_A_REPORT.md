@@ -127,6 +127,20 @@ gone, whether it needed a person, and the outcome. **Not measured** lists what t
 could not check and why (here, no confidence floor in the config). A missing measurement is
 always named, never shown as zero.
 
+## In the terminal: possible key gaps and rulings
+
+The terminal report (not the HTML one) adds **POSSIBLE KEY GAPS**: the values the workflow
+applied that the answer key does not list. Each is a mistake, or a value the key is missing,
+and a person decides which. "Silent error, clears if added" marks the ones a ruling could turn
+from a silent error into a correct record; "stays one if added" means the key sends that record
+to a person anyway. The decisions go in a rulings file (`--rulings`,
+[CONFIG.md](CONFIG.md#rulings-on-possible-key-gaps---rulings)). With one, a **RULINGS** line at
+the top names the values added to the key for this report (the key file itself is unchanged),
+rejected gaps are counted instead of listed, and if any ruling is still pending, a line under
+the headline gives the silent error rate as if every pending ruling were added. Once they are
+decided, the rate lands between the two, unless that line says otherwise
+([why](METRICS.md#the-bracket-for-pending-rulings)).
+
 ## Across runs
 
 - **`wfeval variance`**: the same metrics over repeated runs of identical code. The range
@@ -134,12 +148,14 @@ always named, never shown as zero.
   the worst run's silent error rate with its likely range, and never adds the runs together:
   they repeat the same records, so the added-up count would look like more evidence than it
   is. It also lists the records that changed route between runs, and **possible key gaps**:
-  values stated in every run that the answer key does not list, for a person to rule on.
+  values stated in every run that the answer key does not list, for a person to rule on (with
+  `--rulings`, each shows its ruling, and rejected ones are only counted).
 - **`wfeval compare`**: what changed between two runs, and whether each change is bigger than
   the spread of identical runs ("beyond noise") or not ("within noise"). Its **paired** table
   needs no repeated runs: on the same records, for silent errors, unnecessary reviews and the
   rest, how many records the change fixed and how many it broke, and whether that is better,
-  worse or unclear. Plus every record whose route was fixed or broken.
+  worse or unclear. Plus every record whose route was fixed or broken. With `--after-key`, the
+  same run against an old and a new answer key: every change is the key's.
 - **`wfeval rate 2 15 --target 5`**: the likely range for any count, and what a target needs.
 - **`wfeval whatif`**: what the numbers would be at another threshold. Read the silent error
   count beside the rate: a rate can fall only because correct records joined it.

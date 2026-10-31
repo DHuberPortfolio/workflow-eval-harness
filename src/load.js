@@ -598,4 +598,15 @@ function loadRun({ config, predPath, keyPath, mode = 'strict', p = problems(mode
   return { predictions, key, records, problems: p.items };
 }
 
-module.exports = { getPath, formatOf, parseRecords, readRecords, readId, normalizePredictions, normalizeKey, loadRun };
+// The answer key alone, read as loadRun reads it. compare --after-key checks that two keys
+// cover the same records before pairing either with a run (trap I17). Throws on any stop.
+function loadKey({ config, keyPath, mode = 'strict' }) {
+  const p = problems(mode);
+  let raws = readRecords(keyPath, p, config.input.key);
+  if (formatOf(keyPath, config.input.key) === 'csv') raws = decodeCsvRecords(raws, config, 'key', config.input.key, keyPath, p);
+  const key = normalizeKey(raws, config, keyPath, p);
+  p.throwIfStopped();
+  return key;
+}
+
+module.exports = { getPath, formatOf, parseRecords, readRecords, readId, normalizePredictions, normalizeKey, loadRun, loadKey };

@@ -185,6 +185,58 @@ On the command line, `wfeval score ... --group-by split` adds a group read from 
 named by its path; repeat it for more. What is reported, and how to read it:
 [METRICS.md](METRICS.md#per-group).
 
+## Rulings on possible key gaps (`--rulings`)
+
+`score` and `variance` list **possible key gaps**: values the workflow applied that the answer
+key does not list. Each one is either a mistake or a value the key is missing, and only a person
+can say which. A rulings file records what that person decided, so each one is decided once:
+
+```json
+{ "rulings": [
+  { "id": "R2", "output": "SUBJECT", "value": "SUBJ-ANTI", "ruling": "reject", "by": "DH", "on": "2026-10-30", "note": "the article is about M&A only" },
+  { "id": "R7", "output": "SUBJECT", "value": "SUBJ-LAB", "ruling": "add", "by": "DH", "on": "2026-10-30" },
+  { "id": "R9", "output": "GEOGRAPHY", "value": "GEO-CA", "ruling": "pending", "by": "DH", "on": "2026-10-31", "note": "ask the desk" }
+] }
+```
+
+Pass it with `--rulings <file>` to `score`, `variance` or `compare`. It sits beside the answer
+key and is read with it; the key file itself is never changed.
+
+| Field | Meaning |
+|---|---|
+| `id` | The answer key record the ruling is for. |
+| `output` | A set output from the config. Labels have one answer per record, so a key cannot be missing one. |
+| `value` | The value ruled on. Trimmed, and read through the config's `equivalents`, so a ruling written with an alias rules on the value it stands for. |
+| `ruling` | `add`, `reject` or `pending` (below). |
+| `by`, `on` | Who decided, and when. Required: an untraceable ruling is what the file replaces. Missing, scoring stops (strict mode) or warns (`--lenient`). |
+| `note` | Optional: why. |
+
+What each ruling does:
+
+- **`add`**: the value belongs in the key. For scoring, it joins that record's key as a plain
+  value: one more value the workflow has to give. Every report says how many values the rulings
+  added and names them ("1 value added to the answer key by rulings in rulings.json: K2 SUBJECT
+  SUBJ-MNA"), so a reader knows the key in use is not the key file alone.
+- **`reject`**: not a gap. The value stays wrong, and it is never listed as a possible key gap
+  again; reports count it instead ("1 ruled not a gap").
+- **`pending`**: not decided yet. Scored as wrong, the strict reading. `score` also gives the
+  silent error rate as if every pending ruling were an add, so you can see how much the open
+  questions could move it ([METRICS.md](METRICS.md#possible-key-gaps-and-rulings)).
+
+The file stops scoring, naming the entry, when it is not this shape, has an unknown key, a ruling
+other than the three (with "did you mean" for `"Add"`), an output that is not a set output, or
+rules on the same value of the same record twice (an alias and its value count as the same). In
+strict mode it also stops on a ruling with no `by` or `on`, a record that is not in the answer
+key, or an `add` for a value outside the output's `allowed_values` (a typo would add a value
+nothing can fill). `--lenient` turns those into warnings: a ruling for an unknown record or a
+value not allowed is set aside, and one without `by` or `on` still applies. A ruling for
+a value the key already accepts (a plain value, an alternative of an any_of slot, or an
+equivalent of either) changes nothing: it is set aside with a warning.
+
+`compare --key old.json --after-key new.json --before run.json --after run.json` scores the same
+run against two answer keys, to see what a new key changes; `--rulings` then applies to both
+keys ([METRICS.md](METRICS.md#possible-key-gaps-and-rulings)).
+
 ## Grading free text (`wfeval grade`)
 
 Free-text outputs have no answer key; a person grades them. `wfeval grade` takes a separate,

@@ -1,0 +1,11 @@
+[
+  { "id": "K1", "expected_route": "AUTO_PUBLISH",         "SUBJECT": ["SUBJ-MNA", "SUBJ-ANTI"],  "GEOGRAPHY": ["GEO-US"] },
+  { "id": "K2", "expected_route": "AUTO_PUBLISH",         "SUBJECT": ["SUBJ-EARN", "SUBJ-MNA"],  "GEOGRAPHY": ["GEO-US"] },
+  { "id": "K3", "expected_route": "AUTO_PUBLISH",         "SUBJECT": ["SUBJ-EARN"],              "GEOGRAPHY": ["GEO-UK"] },
+  { "id": "K4", "expected_route": "AUTO_PUBLISH",         "SUBJECT": ["SUBJ-MNA"],               "GEOGRAPHY": ["GEO-US"] },
+  { "id": "K5", "expected_route": "EDITOR_REVIEW",        "SUBJECT": ["SUBJ-MNA", "SUBJ-EARN"],  "GEOGRAPHY": ["GEO-US"] },
+  { "id": "K6", "expected_route": "EDITOR_REVIEW",        "SUBJECT": ["SUBJ-LAB"],               "GEOGRAPHY": ["GEO-UK"] },
+  { "id": "K7", "expected_route": "AUTO_PUBLISH",         "SUBJECT": [{ "any_of": ["SUBJ-EARN", "SUBJ-LAB"] }], "GEOGRAPHY": ["GEO-EU"] },
+  { "id": "K8", "expected_route": "DUPLICATE_SUPPRESSED", "SUBJECT": ["SUBJ-MNA"],               "GEOGRAPHY": ["GEO-US"] },
+  { "id": "K9", "expected_route": "AUTO_PUBLISH",         "SUBJECT": ["SUBJ-EARN"],              "GEOGRAPHY": ["GEO-US"] }
+]

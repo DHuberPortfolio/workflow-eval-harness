@@ -95,6 +95,39 @@ const severalLabels = (n, total) => n + ' record(s) carry several labels and cou
 // The distinct types used by a list of records, in first-seen order.
 const typesIn = records => [...new Set(records.flatMap(x => x.types))];
 
+// Like list(), for entries that hold spaces themselves ("K2 SUBJECT SUBJ-MNA").
+const some = (items, max = 12) => items.slice(0, max).join(', ') + (items.length > max ? ', +' + (items.length - max) + ' more' : '');
+const ruledValue = x => x.id + ' ' + x.output + ' ' + x.value;
+
+// What a rulings file did to the answer key (results.rulings), as sentences (trap I11). The key
+// in use is not the key file alone, so every report says so, and names the values it added.
+// against: which key, when a report has two (" (key-v2.json)").
+function rulingsWords(r, against = '') {
+  const n = r.added.length;
+  const words = [n
+    ? n + ' value' + (n === 1 ? '' : 's') + ' added to the answer key' + against + ' by rulings in ' + r.file + ': ' + some(r.added.map(ruledValue)) + '.'
+    : 'no values added to the answer key' + against + ' by rulings in ' + r.file + '.'];
+  if (n) words.push('Every number below scores against the key file plus ' + (n === 1 ? 'this value' : 'these values') + '; the key file itself is unchanged.');
+  const also = [r.rejected.length + ' ruled not a gap', r.pending.length + ' pending (counted wrong)'];
+  if (r.set_aside.length) also.push(r.set_aside.length + ' set aside (see the warnings)');
+  words.push('Also in the file: ' + also.join(', ') + '.');
+  return words;
+}
+
+// The bracket for pending rulings (results.rulings.if_pending_added; trap I15), beside the strict
+// silent error rate: pending scored as wrong, against pending scored as added.
+function pendingLine(b, strict) {
+  const n = b.pending;
+  const k = b.not_applied.length;
+  const s = 'If the ' + n + ' pending ruling' + (n === 1 ? ' were' : 's were all') + ' added to the answer key: ' + pct(b.silent_errors) +
+    ' (' + count(b.silent_errors) + ', likely ' + range(b.silent_errors) + '), against ' + pct(strict) + ' with ' + (n === 1 ? 'it' : 'them') + ' counted wrong.';
+  if (k === 0) return s + ' However ' + (n === 1 ? 'it is' : 'they are') + ' ruled, the rate lands between the two.';
+  return s + ' ' + (n === 1 ? 'It is a value' : k + ' of them ' + (k === 1 ? 'is a value' : 'are values')) + ' this run did not apply: added, ' +
+    (k === 1 ? 'it is a miss' : 'they are misses') + ' here, so the two are not a bracket.';
+}
+// "pending (DH, 2026-10-30)" or "unruled": a possible key gap's ruling, when a rulings file is in use.
+const rulingStatus = g => (g.ruling === 'pending' ? 'pending' + (g.by || g.on ? ' (' + [g.by, g.on].filter(Boolean).join(', ') + ')' : '') : 'unruled');
+
 // Rows of cells -> aligned lines. `right` lists the columns aligned right (numbers).
 function table(rows, right = [], indent = '  ') {
   const widths = [];
@@ -108,5 +141,5 @@ function table(rows, right = [], indent = '  ') {
 
 module.exports = {
   pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines,
-  groupSource, GROUP_RANGES, severalLabels,
+  groupSource, GROUP_RANGES, severalLabels, some, ruledValue, rulingsWords, pendingLine, rulingStatus,
 };
