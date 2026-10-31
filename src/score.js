@@ -10,6 +10,7 @@ const { scoreQuality } = require('./metrics/classification.js');
 const { scoreRouting } = require('./metrics/routing.js');
 const { scoreTraps } = require('./metrics/traps.js');
 const { scoreGroups } = require('./metrics/groups.js');
+const { scoreClusters } = require('./metrics/clusters.js');
 const { scoreCalibration } = require('./metrics/calibration.js');
 const { targetCheck } = require('./metrics/target.js');
 
@@ -48,6 +49,9 @@ function scoreRun({ config, predPath, keyPath, mode = 'strict', target = null, c
   const ruled = rulings ? applyRulings(rulings, run.key, config, p) : null;
   const records = ruled ? addToKey(run.records, ruled.added) : run.records;
   const results = scoreRecords(records, config);
+  // The silent error rate's range counting clusters (trap G14): only with clusters in the config.
+  const clusters = scoreClusters(results.records, records, config);
+  if (clusters) results.clusters = clusters;
   if (target !== null) {
     const se = results.routing.silent_errors.rate;
     results.target = targetCheck(se.n, se.d, target, { chance, out_of: { n: se.d, d: results.routing.total } });

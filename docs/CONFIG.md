@@ -185,6 +185,38 @@ On the command line, `wfeval score ... --group-by split` adds a group read from 
 named by its path; repeat it for more. What is reported, and how to read it:
 [METRICS.md](METRICS.md#per-group).
 
+## Records that come in clusters
+
+Some records come in clumps that tend to go right or wrong together: several retellings of one
+news story, or the many statements of one company filing (they share a unit, so one misread unit
+makes them all wrong). Ten reviews of one restaurant written by the same person are one opinion,
+not ten. The silent error rate's likely range assumes every record is a separate piece of
+evidence, so with clumps it comes out too narrow. Name the field that says which clump each
+record belongs to, and `score` adds a second range under the headline that counts the clumps
+(clusters) instead.
+
+```json
+"clusters": { "field": "story" }
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `clusters.field` | required | Where each record's cluster is (a name or a dotted path): text, a number or true/false, read as text. A record is in one cluster, so a list is an error, naming the record (as is an object: point `field` at the value inside it). A record with no value (missing, `null` or empty) is a cluster of its own, and the report says how many records were. |
+| `clusters.from` | `"key"` | `key` or `predictions`: the only file the field is read from, as for a group. |
+
+On the command line, `--cluster-by` does the same, reading the answer key:
+
+```
+wfeval score --config test/fixtures/clusters/config.json --pred test/fixtures/clusters/predictions.json --key test/fixtures/clusters/key.json --cluster-by story
+```
+
+It takes one field; a config that already names clusters reading something else is refused
+rather than overridden. The field must hold the cluster itself: "the story this retells, or the
+record's own id when it is the original" is not a field most answer keys have, so add one (a
+`story` field) rather than pointing at `duplicate_of`, which leaves each original out of its own
+retellings' cluster. The headline, the per-group rows and `--target` are unchanged. What is
+reported, and how it is worked out: [METRICS.md](METRICS.md#ranges-that-count-clusters).
+
 ## Rulings on possible key gaps (`--rulings`)
 
 `score` and `variance` list **possible key gaps**: values the workflow applied that the answer

@@ -5,6 +5,7 @@
 
 const {
   WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines, groupSource, GROUP_RANGES, severalLabels, rulingsWords, pendingLine,
+  clusterLine, CLUSTER_GROUP_NOTE, CLUSTER_TARGET_NOTE,
 } = require('./format.js');
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -220,9 +221,11 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
     '<div class="hero-note">' + heroNote(se.rate, se.one_record_moves_pct) + '</div></section>');
   const pending = results.rulings && results.rulings.if_pending_added;
   if (pending && se.rate.d > 0) s.push('<p>' + esc(pendingLine(pending, se.rate)) + '</p>');   // trap I15
+  // Trap G14: the range counting clusters. Only with clusters: a report without them is unchanged.
+  if (results.clusters) s.push('<p>' + esc(clusterLine(results.clusters)) + '</p>');
   s.push(tiles(r, results));
   if (results.target) {
-    const [first, ...rest] = targetLines(results.target, TARGET_WORDS.run);
+    const [first, ...rest] = [...targetLines(results.target, TARGET_WORDS.run), ...(results.clusters ? [CLUSTER_TARGET_NOTE] : [])];
     s.push('<p><strong>Target ' + esc(first) + '</strong>' + rest.map(l => '<br>' + esc(l)).join('') + '</p>');
   }
 
@@ -313,7 +316,8 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
     const cell = x => pct(x) + '<br><span class="muted">' + cnt(x) + (rng(x) ? ' · likely ' + rng(x) : '') + '</span>';
     s.push('<h2>Per group</h2>');
     s.push('<p>The same rates as at the top, for each label of one field: one kind of record against another, or a tuning half against a held-out half. ' +
-      'A record with several labels counts in each; a record with none is grouped as (none). ' + esc(GROUP_RANGES) + '</p>');
+      'A record with several labels counts in each; a record with none is grouped as (none). ' + esc(GROUP_RANGES) +
+      (results.clusters ? ' ' + esc(CLUSTER_GROUP_NOTE) : '') + '</p>');
     for (const g of results.groups) {
       const routed = g.rows.some(x => x.routed_correctly);
       s.push('<h3>' + esc(g.name) + ' <span class="muted">(' + esc(groupSource(g)) + ')</span></h3>');

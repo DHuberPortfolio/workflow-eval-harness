@@ -1,0 +1,17 @@
+[
+  { "id": "N1",  "decision": "PUBLISH", "SUBJECT": ["merger"] },
+  { "id": "N2",  "decision": "PUBLISH", "SUBJECT": ["merger"] },
+  { "id": "N3",  "decision": "PUBLISH", "SUBJECT": ["merger"] },
+  { "id": "N4",  "decision": "PUBLISH", "SUBJECT": ["merger"] },
+  { "id": "N5",  "decision": "PUBLISH", "SUBJECT": ["earnings"] },
+  { "id": "N6",  "decision": "PUBLISH", "SUBJECT": ["earnings"] },
+  { "id": "N7",  "decision": "PUBLISH", "SUBJECT": ["earnings"] },
+  { "id": "N8",  "decision": "REVIEW",  "SUBJECT": ["earnings", "layoffs"] },
+  { "id": "N9",  "decision": "PUBLISH", "SUBJECT": ["court"] },
+  { "id": "N10", "decision": "PUBLISH", "SUBJECT": ["court"] },
+  { "id": "N11", "decision": "PUBLISH", "SUBJECT": ["weather"] },
+  { "id": "N12", "decision": "PUBLISH", "SUBJECT": ["weather"] },
+  { "id": "N13", "decision": "PUBLISH", "SUBJECT": ["sports"] },
+  { "id": "N14", "decision": "REVIEW",  "SUBJECT": ["court"] },
+  { "id": "N15", "decision": "REVIEW",  "SUBJECT": ["court"] }
+]

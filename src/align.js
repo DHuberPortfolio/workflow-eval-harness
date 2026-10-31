@@ -5,7 +5,8 @@
 // Every metric after this works from the paired records it returns:
 //   { id, route, route_class, gold_route, gold_class, scored, movable, traps, duplicate_of, pred, key }
 // where pred and key are the two sides' outputs, as load.js produced them. With groups in the
-// config, each also carries groups: { name: [labels] }, each group's labels from its own side.
+// config, each also carries groups: { name: [labels] }, each group's labels from its own side;
+// with clusters, cluster: its cluster's value from its own side, or null for a cluster of its own.
 
 const { resolveSet } = require('./metrics/slots.js');
 
@@ -141,6 +142,7 @@ function align(predictions, key, config, p, opts = {}) {
     // A key-side group's labels come from the key record only, a prediction-side one's from the
     // prediction only: in a combined format both sides are the same records, read twice.
     if (groups.length) rec.groups = Object.fromEntries(groups.map(([name, g]) => [name, ((g.from === 'key' ? k : pr).groups || {})[name] || []]));
+    if (config.clusters) rec.cluster = (config.clusters.from === 'key' ? k : pr).cluster ?? null;
     records.push(rec);
   }
 

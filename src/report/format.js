@@ -92,6 +92,31 @@ const groupSource = g => (g.from === 'key' ? 'answer key' : 'predictions') + ' f
 const GROUP_RANGES = 'Small groups have wide ranges, so compare the ranges, not the percentages.';
 const severalLabels = (n, total) => n + ' record(s) carry several labels and count in each, so the rows add up to more than the ' + total + ' records.';
 
+// The silent error rate's range counting clusters (results.clusters; traps G14-G17), as one
+// sentence under the headline: how many clusters, the range, and how much evidence that is.
+const CLUSTER_FALLBACK = { no_silent_errors: 'With no silent errors', all_silent_errors: 'With every record a silent error', one_cluster: 'With one cluster' };
+// "4 independent records' worth", "1 record's worth".
+const worth = (n, kind = '') => thousands(n) + ' ' + kind + (n === 1 ? "record's" : "records'") + ' worth';
+function clusterLine(c) {
+  const src = groupSource(c);
+  if (c.records === 0) return 'Clusters (' + src + '): nothing went out without review, so there is nothing to count.';
+  let s = 'Records out without review came from ' + thousands(c.clusters) + ' cluster' + (c.clusters === 1 ? '' : 's') + ' (' + src +
+    '); counting clusters, the likely range is ' + c.low_pct.toFixed(1) + '-' + c.high_pct.toFixed(1) + '%';
+  if (c.method === 'design_effect') {
+    // At exactly 1 (often the floor), the range is the headline's, and the line says so.
+    s += c.design_effect === 1 ? ' (design effect 1: the clusters show no clumping, so this is the range above).'
+      : ' (design effect ' + c.design_effect.toFixed(1) + ': about ' + worth(Math.round(c.effective_records), 'independent ') + ').';
+  } else {
+    s += '. ' + CLUSTER_FALLBACK[c.why] + ", nothing shows how far a cluster's records go together, so each cluster counts as one record (" + worth(c.clusters) + '): the cautious choice.';
+  }
+  const k = c.records_own_cluster;
+  if (k) s += ' ' + (k === 1 ? '1 record had no value there and is a cluster of its own.' : thousands(k) + ' records had no value there and are each a cluster of their own.');
+  return s;
+}
+// Per-group rows and --target count records as independent (trap G14): said beside them.
+const CLUSTER_GROUP_NOTE = 'These ranges count every record as independent; only the line under the headline counts clusters.';
+const CLUSTER_TARGET_NOTE = 'The verdict and the plan count records as independent; records that come in clusters need more of them.';
+
 // The distinct types used by a list of records, in first-seen order.
 const typesIn = records => [...new Set(records.flatMap(x => x.types))];
 
@@ -141,5 +166,5 @@ function table(rows, right = [], indent = '  ') {
 
 module.exports = {
   pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines,
-  groupSource, GROUP_RANGES, severalLabels, some, ruledValue, rulingsWords, pendingLine, rulingStatus,
+  groupSource, GROUP_RANGES, severalLabels, some, ruledValue, rulingsWords, pendingLine, rulingStatus, clusterLine, CLUSTER_GROUP_NOTE, CLUSTER_TARGET_NOTE,
 };

@@ -42,6 +42,11 @@ With `--target 10`, a line under the headline says whether the rate is shown to 
 chance if the real rate is this run's, and the hard minimum, a perfect run
 ([how it is worked out](METRICS.md#how-many-records-would-show-a-target)).
 
+With `clusters` in the config (or `--cluster-by`), one more line gives the likely range counting
+clusters of records that go together, such as retellings of one story, instead of every record:
+wider when the silent errors pile up in a few clusters, the same when they do not
+([how it is worked out](METRICS.md#ranges-that-count-clusters)).
+
 ## 2. The row of tiles
 
 | Tile | Here | What it tells you |

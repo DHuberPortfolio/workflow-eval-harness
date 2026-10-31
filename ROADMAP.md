@@ -104,7 +104,11 @@ What the projects that used the harness had to build around it, ranked by how ma
       `--rulings` on score, variance and compare; possible key gaps from one run in `score`; the
       silent error rate with pending rulings counted wrong and as added; `compare --after-key`
       (traps I11-I17, `test/fixtures/rulings/`)
-- [ ] Ranges that count clusters within a run (retellings of one story, one filing's statements)
+- [x] Ranges that count clusters within a run (retellings of one story, one filing's statements):
+      `clusters` in the config or `score --cluster-by`; one line under the headline with the
+      silent error rate's range from the design effect (Kish 1965; Miller 2024, Eq. 4), each
+      cluster counted as one record when that cannot be measured (traps G14-G17,
+      `test/fixtures/clusters/`)
 - [ ] A gate in `whatif` certified to keep silent errors under a target (Learn then Test)
 
 ## Out of scope for now

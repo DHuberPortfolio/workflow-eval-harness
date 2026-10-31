@@ -14,7 +14,7 @@ const GATE_USES = ['lead', 'weakest'];
 const FORMATS = ['json', 'jsonl', 'csv'];
 const DELIMITERS = [',', ';', '\t', '|'];
 const TOP_LEVEL_KEYS = ['id_field', 'input', 'outputs', 'routing', 'wrong_when', 'thresholds', 'trap_field',
-  'duplicate_of_field', 'allowed_values', 'severity', 'min_per_trap', 'calibration', 'whatif', 'groups', 'equivalents'];
+  'duplicate_of_field', 'allowed_values', 'severity', 'min_per_trap', 'calibration', 'whatif', 'groups', 'clusters', 'equivalents'];
 const GROUP_FROM = ['key', 'predictions'];
 const SEVERITIES = ['critical', 'high', 'medium', 'low'];
 // What a declined label is read as on both sides (see outputs.<name>.decline below). In
@@ -78,16 +78,30 @@ function validateGroups(raw, errors) {
   if (raw === undefined) return groups;
   if (!isObj(raw)) { errors.push('groups must be an object: { "<name>": { "field": "<field>", "from": "key" } }'); return groups; }
   for (const [name, g] of Object.entries(raw)) {
-    const at = 'groups.' + name;
     if (name.trim() === '') { errors.push('groups: every group needs a name'); continue; }
-    if (!isObj(g)) { errors.push(at + ' must be { "field": "<field>", "from": "key" | "predictions" }'); continue; }
-    for (const k of Object.keys(g)) if (k !== 'field' && k !== 'from') errors.push('unknown key "' + at + '.' + k + '" (allowed: field, from)');
-    if (!isPath(g.field)) errors.push(at + '.field ' + PATH_RULE);
-    const from = g.from === undefined ? 'key' : g.from;
-    if (!GROUP_FROM.includes(from)) errors.push(at + '.from must be one of: ' + GROUP_FROM.join(', ') + ', got ' + JSON.stringify(from));
-    groups[name] = { field: g.field, from };
+    const read = validateFieldFrom(g, 'groups.' + name, errors);
+    if (read) groups[name] = read;
   }
   return groups;
+}
+
+// { "field": "<path>", "from": "key" | "predictions" }, as groups and clusters both name a field.
+function validateFieldFrom(g, at, errors) {
+  if (!isObj(g)) { errors.push(at + ' must be { "field": "<field>", "from": "key" | "predictions" }'); return null; }
+  for (const k of Object.keys(g)) if (k !== 'field' && k !== 'from') errors.push('unknown key "' + at + '.' + k + '" (allowed: field, from)');
+  if (!isPath(g.field)) errors.push(at + '.field ' + PATH_RULE);
+  const from = g.from === undefined ? 'key' : g.from;
+  if (!GROUP_FROM.includes(from)) errors.push(at + '.from must be one of: ' + GROUP_FROM.join(', ') + ', got ' + JSON.stringify(from));
+  return { field: g.field, from };
+}
+
+// clusters: which records go together, so the silent error rate's likely range counts clusters
+// rather than records (retellings of one story, one filing's statements). { "field": "...", "from": ... },
+// read as a group's field is, except that a record is in one cluster: a list stops (trap G15), and a
+// record with no value is a cluster of its own. null without it.
+function validateClusters(raw, errors) {
+  if (raw === undefined) return null;
+  return validateFieldFrom(raw, 'clusters', errors);
 }
 
 // equivalents: values that are one thing under several names (an episode re-released under a new
@@ -153,6 +167,18 @@ function addGroupBy(config, paths) {
     groups[p] = { field: p, from: 'key' };
   }
   return { ...config, groups };
+}
+
+// wfeval score --cluster-by <path>: clusters read from the answer key. A run has one way of
+// clustering, so a config that already clusters by something else is refused, not overridden.
+// Returns a new config; the one passed in is not changed.
+function addClusterBy(config, p) {
+  if (!isPath(p)) throw new Error('--cluster-by ' + PATH_RULE + ', got ' + JSON.stringify(p));
+  const had = config.clusters;
+  if (had && (had.field !== p || had.from !== 'key')) {
+    throw new Error('--cluster-by ' + p + ': the config already has clusters, read from the ' + (had.from === 'key' ? 'answer key' : 'predictions') + ' field "' + had.field + '"');
+  }
+  return { ...config, clusters: { field: p, from: 'key' } };
 }
 
 function validateConfig(raw) {
@@ -456,12 +482,13 @@ function validateConfig(raw) {
   }
 
   const groups = validateGroups(raw.groups, errors);
+  const clusters = validateClusters(raw.clusters, errors);
   const equivalents = validateEquivalents(raw.equivalents, outputs, raw.routing, errors);
   for (const [name, v] of Object.entries(allowed)) if (Array.isArray(v)) allowed[name] = allowedAsRead(v, equivalents, name);
 
   const config = errors.length ? null : {
     id_field: idField, input, outputs, routing, wrong_when: wrongWhen, thresholds, trap_field: trapField,
-    min_per_trap: minPerTrap, duplicate_of_field: duplicateOf, allowed_values: allowed, severity, calibration, whatif, groups, equivalents,
+    min_per_trap: minPerTrap, duplicate_of_field: duplicateOf, allowed_values: allowed, severity, calibration, whatif, groups, clusters, equivalents,
   };
   return { config, errors };
 }
@@ -494,4 +521,4 @@ function loadConfig(configPath) {
   return resolveAllowedValues(config, configPath);
 }
 
-module.exports = { validateConfig, loadConfig, addGroupBy, equivalentOf, ROUTE_CLASSES, ERROR_TYPES, SEVERITIES, DECLINED };
+module.exports = { validateConfig, loadConfig, addGroupBy, addClusterBy, equivalentOf, ROUTE_CLASSES, ERROR_TYPES, SEVERITIES, DECLINED };

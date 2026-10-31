@@ -1,0 +1,13 @@
+{
+  "id_field": "id",
+  "outputs": {
+    "SUBJECT": { "type": "set" }
+  },
+  "routing": {
+    "field": "decision",
+    "map": {
+      "PUBLISH": "auto",
+      "REVIEW": "review"
+    }
+  }
+}

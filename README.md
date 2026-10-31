@@ -224,7 +224,10 @@ produces today. Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - A likely range covers chance only. It does not make a golden set like real traffic: a set
   built from traps gives a stress-test rate, and the rate on real traffic needs a random sample
   of it. Nor does it hold for repeated runs of the same records added together, which is why
-  `variance` quotes the worst run instead.
+  `variance` quotes the worst run instead. Within one run, records that come in clumps
+  (retellings of one story, one filing's statements) get a second range that counts the clumps
+  when the config names them (`clusters`, or `score --cluster-by`); without that, each record
+  counts as independent. Per-group rows and `--target` always count records that way.
 
 ## Docs
 

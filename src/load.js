@@ -474,8 +474,8 @@ function readGroups(raw, config, side, where, p) {
     const labels = [];
     for (const x of Array.isArray(v) ? v : [v]) {
       if (x === undefined || x === null) continue;
-      if (typeof x !== 'string' && typeof x !== 'boolean' && !(typeof x === 'number' && Number.isFinite(x))) {
-        const inner = isObj(x) ? Object.keys(x).find(k => typeof x[k] === 'string') : undefined;
+      if (!isLabel(x)) {
+        const inner = innerText(x);
         p.stop('H8', where, 'group "' + name + '" ("' + g.field + '") is ' + (isObj(x) ? 'an object' : describe(x)) +
           (Array.isArray(v) ? ' inside a list' : '') + '; it must be text, a number, true/false, or a list of them' +
           (inner ? '. Point the group\'s field at the label inside it, such as "' + g.field + '.' + inner + '"' : ''));
@@ -490,11 +490,38 @@ function readGroups(raw, config, side, where, p) {
   return out;
 }
 
+// What a group label or a cluster may be: text, a number or true/false, each read as text.
+const isLabel = x => typeof x === 'string' || typeof x === 'boolean' || (typeof x === 'number' && Number.isFinite(x));
+// For an object where a label was expected: the first field inside it holding text, to suggest.
+const innerText = x => (isObj(x) ? Object.keys(x).find(k => typeof x[k] === 'string') : undefined);
+
+// The record's cluster (config.clusters), when it is read from this side; undefined otherwise, so
+// records stay unchanged without clusters. Read as a group label is (trimmed text, so a CSV's "7"
+// and a JSON 7 are one cluster), except that a record is in one cluster: a list stops, even of one
+// value, and so does an object, naming a field inside it (trap G15). Missing, null or empty is
+// null: the record is a cluster of its own, and the report counts how many were.
+function readCluster(raw, config, side, where, p) {
+  const c = config.clusters;
+  if (!c || c.from !== side) return undefined;
+  const v = getPath(raw, c.field);
+  if (v === undefined || v === null) return null;
+  if (!isLabel(v)) {
+    const inner = innerText(v);
+    p.stop('G15', where, 'cluster field "' + c.field + '" is ' + (Array.isArray(v)
+      ? 'a list; a record is in one cluster. Give each record one value, such as the id of the story or filing it belongs to'
+      : (isObj(v) ? 'an object' : describe(v)) + '; it must be text, a number or true/false' +
+        (inner ? '. Point clusters.field at the value inside it, such as "' + c.field + '.' + inner + '"' : '')));
+    return null;
+  }
+  const t = String(v).trim();
+  return t === '' ? null : t;
+}
+
 // ---------- Whole files ----------
 
 // Predictions: what the workflow did.
-// Each becomes { id, route, scored, movable, outputs }, plus groups when the config reads any
-// from the predictions. The route is passed through as given;
+// Each becomes { id, route, scored, movable, outputs }, plus groups and a cluster when the config
+// reads them from the predictions. The route is passed through as given;
 // align.js checks it against the config, because that needs the key too.
 // opts.sameFile: the answer key is in the same records (see H4 below).
 function normalizePredictions(raws, config, source, p, opts = {}) {
@@ -531,6 +558,8 @@ function normalizePredictions(raws, config, source, p, opts = {}) {
     const rec = { id, route: getPath(raw, rf), scored, movable: readMovable(raw, config), outputs: readOutputs(raw, config, where, p, false, eq, scored) };
     const groups = readGroups(raw, config, 'predictions', where, p);
     if (groups) rec.groups = groups;
+    const cluster = readCluster(raw, config, 'predictions', where, p);
+    if (cluster !== undefined) rec.cluster = cluster;
     out.push(rec);
   });
   eq.report(p, source, 'predicted');
@@ -538,8 +567,8 @@ function normalizePredictions(raws, config, source, p, opts = {}) {
 }
 
 // Answer key: what the workflow should have done.
-// Each becomes { id, gold_route, traps, duplicate_of, outputs }, plus groups when the config
-// reads any from the key.
+// Each becomes { id, gold_route, traps, duplicate_of, outputs }, plus groups and a cluster when
+// the config reads them from the key.
 function normalizeKey(raws, config, source, p) {
   if (raws.length === 0) return [];
   if (!idsFound(raws, config.id_field, source, 'key', p)) return [];
@@ -569,6 +598,8 @@ function normalizeKey(raws, config, source, p) {
     const rec = { id, gold_route: goldRoute, traps, duplicate_of: duplicateOf, outputs: readOutputs(raw, config, where, p, true, eq) };
     const groups = readGroups(raw, config, 'key', where, p);
     if (groups) rec.groups = groups;
+    const cluster = readCluster(raw, config, 'key', where, p);
+    if (cluster !== undefined) rec.cluster = cluster;
     out.push(rec);
   });
   eq.report(p, source, 'answer key');

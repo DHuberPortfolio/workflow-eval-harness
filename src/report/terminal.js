@@ -3,7 +3,7 @@
 
 const {
   pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines,
-  groupSource, GROUP_RANGES, severalLabels, rulingsWords, pendingLine, rulingStatus,
+  groupSource, GROUP_RANGES, severalLabels, rulingsWords, pendingLine, rulingStatus, clusterLine, CLUSTER_GROUP_NOTE, CLUSTER_TARGET_NOTE,
 } = require('./format.js');
 
 // "RULINGS  1 value added to the answer key by rulings in ...", and the rest indented (trap I11).
@@ -34,10 +34,10 @@ function keyGapSection(results) {
   return lines.join('\n');
 }
 
-// "TARGET  under 5%: ..." and its indented details.
-function targetSection(t, words) {
+// "TARGET  under 5%: ..." and its indented details. extra: lines to add after them.
+function targetSection(t, words, extra = []) {
   const [first, ...rest] = targetLines(t, words);
-  return ['TARGET  ' + first, ...rest.map(l => '  ' + l)].join('\n');
+  return ['TARGET  ' + first, ...[...rest, ...extra].map(l => '  ' + l)].join('\n');
 }
 
 // "Q4 Q9 Q10   (sent to a person, but could have gone out)", then the ones the answer key
@@ -84,6 +84,8 @@ function headline(results) {
     lines.push('  The likely range is where the true rate on records like these probably sits (95%). With ' + se.rate.d +
       ' records out without review, each one moves the silent error rate by ' + se.one_record_moves_pct.toFixed(1) + ' points.');
   }
+  // Trap G14: the same rate's range counting clusters, only when the config names them.
+  if (results.clusters) lines.push('  ' + clusterLine(results.clusters));
   return lines.join('\n');
 }
 
@@ -189,6 +191,7 @@ function groupSections(results) {
     const lines = ['PER GROUP  ' + g.name + '  (' + groupSource(g) + ')', table(rows, [1]).replace(/ +$/gm, ''), table(idRows)];
     if (g.records_with_several_labels) lines.push('  ' + severalLabels(g.records_with_several_labels, results.routing.total));
     lines.push('  ' + GROUP_RANGES);
+    if (results.clusters) lines.push('  ' + CLUSTER_GROUP_NOTE);
     return lines.join('\n');
   });
 }
@@ -220,7 +223,7 @@ function renderTerminal(results) {
   parts.push(r.total + ' records · ' + results.inputs.mode + ' mode · a record needed a person if ' + WRONG_WHEN[results.inputs.wrong_when]);
   if (results.rulings) parts.push(rulingsSection(results.rulings));
   parts.push(headline(results));
-  if (results.target) parts.push(targetSection(results.target, TARGET_WORDS.run));
+  if (results.target) parts.push(targetSection(results.target, TARGET_WORDS.run, results.clusters ? [CLUSTER_TARGET_NOTE] : []));
   parts.push(silentSection('SILENT ERRORS', 'went out without review, but needed a person', r.silent_errors, true));
   if (r.silent_omissions) parts.push(silentSection('SILENT OMISSIONS', omissionWhat(results), r.silent_omissions, false));
   parts.push(r.safeguard_failures.records === 0 ? 'SAFEGUARD FAILURES  none'

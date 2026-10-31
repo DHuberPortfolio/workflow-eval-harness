@@ -28,7 +28,7 @@ The report also says how far one record moves the rate at this size: with 7 reco
 record is 14 points.
 
 **What the range does not cover.** It assumes each record is a separate piece of evidence,
-drawn from the records you care about. Two common cases break that:
+drawn from the records you care about. Three common cases break that:
 
 - **A golden set built from traps.** It holds far more hard cases than real traffic, so its
   rate is a stress-test rate: how the workflow does on records chosen to trip it. That is the
@@ -41,6 +41,11 @@ drawn from the records you care about. Two common cases break that:
   way, so three runs of 200 records are not 600 records' worth of evidence, and a range drawn
   from the added-up count comes out too narrow (records that repeat are clustered: the design
   effect; Kish 1965). `variance` never adds runs up; see below.
+- **Records that come in clumps within one run.** Retellings of one news story, or the
+  statements of one filing, tend to go right or wrong together, so ten of them are not ten
+  independent pieces of evidence either. Within one run, `clusters` in the config (or
+  `score --cluster-by`) now covers this: a second range under the headline that counts the
+  clumps ([below](#ranges-that-count-clusters)).
 
 **How often the range holds.** A 95% range should miss the true rate about 5% of the time.
 Wilson's does on average, but not at every rate. At very low true rates on small sets it
@@ -50,6 +55,50 @@ side, a range below the true rate, stay close to the promised 2.5%, at most 4.3%
 These figures were added up exactly, for thousands of rates and sizes, by error-rate-calculator's
 audit ([AUDIT.md](https://github.com/DHuberPortfolio/error-rate-calculator/blob/main/AUDIT.md),
 check 2.1), which runs the same formula with the same z = 1.96.
+
+## Ranges that count clusters
+
+Ten reviews of one restaurant written by the same person are one opinion, not ten. In the same
+way, three retellings of one news story that the workflow tagged wrong for the same reason are
+closer to one mistake seen three times than to three separate mistakes. A range that counts them
+as three records is too narrow: it claims more evidence than there is.
+
+With `clusters` in the config (or `score --cluster-by <field>`), each record belongs to a cluster
+(its story, its filing), and the report adds one line under the headline:
+
+> Records out without review came from 5 clusters (answer key field "story"); counting clusters,
+> the likely range is 4.7-69.1% (design effect 2.8: about 4 independent records' worth).
+
+That is the clusters fixture (`test/fixtures/clusters/`): 3 silent errors in 12 records out
+without review, all three in one story. Counted as 12 independent records the range is 8.9-53.2%;
+counted by story, 4.7-69.1%.
+
+**How it is worked out.** The standard survey-sampling answer for a rate when records come in
+clusters (Kish 1965; for evals, Miller 2024, "Adding Error Bars to Evals", Eq. 4). Only the
+records out without review count, as in the silent error rate itself.
+
+1. For each cluster, compare its silent errors with what the overall rate would give it: a
+   cluster of 4 records at a rate of 25% "should" have 1; story A has 3, two more. Square each
+   difference and add them up. Clusters whose errors pile up give big differences.
+2. That sum, times C/(C-1) for C clusters (a correction for having few of them), divided by the
+   number of records squared, is the rate's variance counting clusters. The variance counting
+   every record as independent is p(1-p)/n.
+3. The **design effect** is the first divided by the second: how many times less certain the
+   clusters make the rate (2.8 here). It is never taken below 1: clusters that vary less than
+   separate records would still never count as more evidence than the records themselves.
+4. The records divided by the design effect are the **independent records' worth** (12 / 2.8,
+   about 4), and the range is the usual Wilson range for the same rate over that many records.
+
+With no silent errors (or nothing but), or a single cluster, nothing shows how far a cluster's
+records go together. The range then counts each cluster as one record, the cautious choice, and
+says so: 0 of 12 records in 5 clusters reaches 43.4%, where 0 of 12 independent records reaches
+24.3%. With every record a cluster of its own, the C/(C-1) correction costs one record (12
+records give 11 records' worth); Miller's formula gives the same in that case.
+
+The headline range is unchanged, so nothing else in a report moves. **Per-group rows and
+`--target` still count every record as independent**, and the report says so beside them: a
+group's records may share clusters with other groups, and a target's plan is about records not
+yet tested. Records that come in clusters need more of them to show a target than the plan says.
 
 ## How many records would show a target
 
@@ -239,7 +288,9 @@ not the percentages: when two groups' ranges overlap widely, these records canno
 groups apart (the queue fixture's two channels, 100% and 0%, overlap from 20.7% to 79.3%). A
 record with several labels counts in each group, so the rows can add up to more than the
 records; the report says when. And a group of a golden set built from traps is still a
-stress-test rate, not the rate real traffic would see, however the group is chosen.
+stress-test rate, not the rate real traffic would see, however the group is chosen. With
+`clusters`, a group's range still counts every record as independent
+([above](#ranges-that-count-clusters)).
 
 ## Calibration
 

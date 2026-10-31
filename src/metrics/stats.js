@@ -194,4 +194,54 @@ function pairedDifference(fixed, broke, tested) {
   return { drop, low, high };
 }
 
-module.exports = { Z, pct, wilson, rate, cohensKappa, recordsNeeded, planTest, pairedDifference };
+// ---------- Records that come in clusters ----------
+//
+// The Wilson range assumes every record is a separate piece of evidence. Retellings of one news
+// story, or the statements of one filing, tend to go right or wrong together: ten reviews of one
+// restaurant by the same person are one opinion, not ten. Counted as independent, they make the
+// range too narrow. This is the standard survey-sampling answer for a rate (a ratio of two
+// counts) when records come in clusters: Kish (1965), Survey Sampling (the variance of a ratio
+// mean over clusters, and the design effect); for evals, Miller (2024), "Adding Error Bars to
+// Evals", arXiv 2411.00640, Eq. 4 (the clustered standard error).
+//
+// clusters: [{ n, y }] - each cluster's records out without review (n) and its silent errors (y).
+// Clusters with n = 0 have nothing out and are not counted. p = sum y / sum n.
+//   var_c   = C/(C-1) x sum_c (y_c - p n_c)^2 / n^2   C: clusters with records out
+//   var_srs = p(1-p) / n                              as if every record were independent
+//   deff    = var_c / var_srs, floored at 1           the design effect (Kish)
+//   n_eff   = n / deff                                records' worth of evidence
+// and the range is Wilson's at p over n_eff records (bounds() takes a non-integer count).
+// sum_c (y_c - p n_c)^2 is Miller's Eq. 4 sum written per cluster: within one cluster,
+// (sum_i (s_i - p))^2 is every pair (s_i - p)(s_j - p), a record with itself included.
+// C/(C-1) is the usual small-sample correction for few clusters; with every record alone it
+// gives p(1-p)/(n-1), as Miller's Eq. 4 does (its plain standard error divides by n - 1 too).
+// The floor at 1: when the clusters vary less than independent records would, the range still
+// never claims more evidence than the records themselves.
+// When p is 0 or 1 every term is 0, and the design effect is 0 / 0; with one cluster there is no
+// spread between clusters to measure. Either way the data cannot say how far a cluster's records
+// go together, so each cluster counts as one record (n_eff = C): the cautious choice, which
+// assumes they go together entirely. `why` says which case it was.
+// Returns null when nothing went out.
+function clusteredRange(clusters, z = Z) {
+  for (const c of clusters) {
+    if (!Number.isInteger(c.n) || !Number.isInteger(c.y) || c.y < 0 || c.y > c.n) throw new RangeError('each cluster needs whole counts with 0 <= y <= n');
+  }
+  const used = clusters.filter(c => c.n > 0);
+  const C = used.length;
+  const n = used.reduce((s, c) => s + c.n, 0);
+  const y = used.reduce((s, c) => s + c.y, 0);
+  if (n === 0) return null;
+  const p = y / n;
+  const varSrs = p * (1 - p) / n;
+  const why = p === 0 ? 'no_silent_errors' : p === 1 ? 'all_silent_errors' : C < 2 ? 'one_cluster' : null;
+  if (why) {
+    const b = bounds(p, C, z);
+    return { n, y, p, clusters: C, var_clustered: null, var_simple: varSrs, design_effect: null, effective: C, low: b.low, high: b.high, method: 'cluster_count', why };
+  }
+  const varC = (C / (C - 1)) * used.reduce((s, c) => s + (c.y - p * c.n) ** 2, 0) / (n * n);
+  const deff = Math.max(1, varC / varSrs);
+  const b = bounds(p, n / deff, z);
+  return { n, y, p, clusters: C, var_clustered: varC, var_simple: varSrs, design_effect: deff, effective: n / deff, low: b.low, high: b.high, method: 'design_effect', why: null };
+}
+
+module.exports = { Z, pct, wilson, rate, cohensKappa, recordsNeeded, planTest, pairedDifference, clusteredRange };
