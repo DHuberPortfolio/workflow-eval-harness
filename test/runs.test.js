@@ -96,6 +96,26 @@ test('I8: variance quotes the worst run, never the runs added together', () => {
   assert.match(renderVariance(V), /The figure to quote is the worst run, run 1: 50\.0% \(1 of 2; likely 9\.5-90\.5%\)\. Not the runs added together: their 6 records out without review are 3 different records/);
 });
 
+test('I18: records silent in at least one of the 3 runs: R2, of the 3 records that went out in any run', () => {
+  const a = V.silent_error_rate.any_run;
+  assert.deepEqual(a, { runs: 3, n: 1, d: 3, pct: 33.3, low_pct: 6.1, high_pct: 79.2, ids: ['R2'] });
+  const { renderVariance } = require('../src/report/terminal.js');
+  const text = renderVariance(V);
+  assert.match(text, /In at least one of the 3 runs, 1 of the 3 different records that went out without review was a silent error: 33\.3% \(likely 6\.1-79\.2%\)\./);
+  assert.match(text, /"how many records can this workflow get wrong unseen, at least sometimes\?"/);
+  assert.match(text, /the worst run answers "how bad is one run\?"/);
+});
+
+test('I18: the any-run count depends on how many runs there are, and is always given with it', () => {
+  const two = varianceRun({ config, keyPath, predPaths: [run('a'), run('b')] });
+  assert.deepEqual([two.silent_error_rate.any_run.runs, two.silent_error_rate.any_run.n, two.silent_error_rate.any_run.d], [2, 1, 2]);
+  // Adding run c adds R4 to the records out; R2 stays counted. Neither count can fall.
+  const three = V.silent_error_rate.any_run;
+  assert.ok(three.n >= two.silent_error_rate.any_run.n && three.d >= two.silent_error_rate.any_run.d);
+  const { renderVariance } = require('../src/report/terminal.js');
+  assert.match(renderVariance(two), /In at least one of the 2 runs, 1 of the 2 different records/);
+});
+
 test('compare a -> b: a 50-point drop in silent errors, yet within the noise of identical runs', () => {
   const c = compareRun({ config, keyPath, beforePath: run('a'), afterPath: run('b'), noisePaths: [run('a'), run('b'), run('c')] });
   const m = metric(c, 'silent error rate');

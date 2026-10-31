@@ -167,4 +167,5 @@ function table(rows, right = [], indent = '  ') {
 module.exports = {
   pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines,
   groupSource, GROUP_RANGES, severalLabels, some, ruledValue, rulingsWords, pendingLine, rulingStatus, clusterLine, CLUSTER_GROUP_NOTE, CLUSTER_TARGET_NOTE,
+  thousands,
 };

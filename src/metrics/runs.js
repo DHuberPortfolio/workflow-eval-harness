@@ -4,7 +4,7 @@
 // Every run is scored against the same key and config, so the runs always cover the same
 // records (trap I2) and are judged by the same rules (I4) by construction.
 
-const { pairedDifference } = require('./stats.js');
+const { pairedDifference, rate } = require('./stats.js');
 const { accepted } = require('./slots.js');
 
 const round = (x, d = 1) => (x === null ? null : Number(x.toFixed(d)));
@@ -105,6 +105,14 @@ function keyGapCandidates(runs, config) {
 // likely range comes out too narrow. Worst means the highest rate, compared as exact fractions
 // (trap G6); on a tie, the run with the wider range. times_out counts a record once per run it
 // went out in; records_out counts it once.
+//
+// any_run (trap I18): the different records that were a silent error in at least one run, of the
+// records_out. Different runs fail on different records, so it is a stricter count than the worst
+// run (an idea from Inspect AI's epoch reducers): it answers "how many records can this workflow
+// get wrong unseen, at least sometimes?", where the worst run answers "how bad is one run?". A
+// record counted stays counted whatever later runs do, so it can only grow as runs are added: it
+// is never given without its number of runs. Each record counts once, so the range is Wilson's
+// over different records, not the runs added together (I8).
 function silentToQuote(runs) {
   const rates = runs.map(run => run.results.routing.silent_errors.rate);
   let worst = null;
@@ -114,11 +122,18 @@ function silentToQuote(runs) {
     if (w === null || r.n * w.d > w.n * r.d || (r.n * w.d === w.n * r.d && r.high_pct > w.high_pct)) worst = i;
   });
   const out = new Set();
-  for (const run of runs) for (const rec of run.results.records) if (rec.route_class === 'auto') out.add(rec.id);
+  const silent = new Set();
+  for (const run of runs) {
+    for (const rec of run.results.records) {
+      if (rec.route_class === 'auto') out.add(rec.id);
+      if (rec.silent) silent.add(rec.id);   // only a record that went out can be a silent error
+    }
+  }
   return {
     worst_run: worst === null ? null : { run: worst + 1, label: runs[worst].label, ...rates[worst] },
     times_out: rates.reduce((s, r) => s + r.d, 0),
     records_out: out.size,
+    any_run: { runs: runs.length, ...rate(silent.size, out.size), ids: [...silent] },
   };
 }
 

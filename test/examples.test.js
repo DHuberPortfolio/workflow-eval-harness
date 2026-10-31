@@ -107,6 +107,20 @@ test('Golden 500, metadata: v3 below 10% in three identical runs, beyond the noi
   assert.deepEqual([original.filter(r => r.silent).length, original.length], [0, 9]);
 });
 
+// Trap I18: the records that were a silent error in at least one of the three runs, of the 254
+// different articles that went out without review in at least one. Pinned here, not published:
+// it grows with every run added, so it is only quoted with its number of runs.
+test('Golden 500, metadata: articles silent in at least one of runs 70-72', () => {
+  const { varianceRun } = require('../src/score.js');
+  const G = path.join(dir, 'golden500');
+  const run = n => path.join(G, 'exec-' + n + '.json');
+  const v = varianceRun({ config: loadConfig(path.join(G, 'config.json')), keyPath: run(70), predPaths: [run(70), run(71), run(72)] });
+  const a = v.silent_error_rate.any_run;
+  assert.deepEqual([a.runs, a.n, a.d, a.pct, a.low_pct, a.high_pct], [3, 27, 254, 10.6, 7.4, 15]);
+  // At least the worst run's 18, and at most every run's silent errors added up (13 + 13 + 18).
+  assert.ok(a.n >= v.silent_error_rate.worst_run.n && a.n <= 44);
+});
+
 // The guard's 0.40 was chosen on the articles whose id's CRC-32 (zlib's) is even, and checked
 // on the odd ones. Written out because zlib.crc32 needs Node 22.2.
 const CRC = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });

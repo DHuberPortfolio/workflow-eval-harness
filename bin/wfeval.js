@@ -45,9 +45,10 @@ commands:
 
   variance  --config <file> --key <file> <run> <run> [<run> ...] [--lenient] [--json <file>]
             [--rulings <file>]
-            several runs of identical code: mean and spread of every metric, the records
-            that behave differently from run to run, and the possible key gaps, each with
-            its ruling when --rulings is given
+            several runs of identical code: mean and spread of every metric, the worst
+            run's silent error rate (the one to quote), how many different records were a
+            silent error in at least one run, the records that behave differently from run
+            to run, and the possible key gaps, each with its ruling when --rulings is given
 
   compare   --config <file> --key <file> --before <file> --after <file>
             [--noise <run> --noise <run> ...] [--after-key <file>] [--rulings <file>]
@@ -64,8 +65,12 @@ commands:
 
   whatif    --config <file> --pred <file> --key <file> (--gate | --floor)
             [--output <name>] [--from <n>] [--to <n>] [--step <n>] [--lenient] [--json <file>]
+            [--target <percent> [--confidence 0.9|0.95|0.99]]
             what the numbers would be at other thresholds. --gate sweeps the auto-publish
-            gate (all gated outputs, or one with --output); --floor sweeps the value floor
+            gate (all gated outputs, or one with --output); --floor sweeps the value floor.
+            --gate --target 5 marks the gates certified under 5%: each tested on its own
+            records, with the chance that any certified gate is really at or above 5% held
+            to 1 - confidence (default 0.95) across all the gates tried
 
 exit codes: 0 done · 1 input problems (listed) · 2 bad command · 3 --fail-on triggered`;
 
@@ -75,16 +80,32 @@ function need(values, names, cmd) {
   if (missing.length) throw new Error(cmd + ' needs ' + missing.map(n => '--' + n + ' <file>').join(' '));
 }
 // --target 5 and --chance 0.9, checked before any file is read.
+function targetPercent(values) {
+  const target = Number(values.target);
+  if (!(target > 0 && target < 100)) throw new Error('--target must be a percentage above 0 and below 100, got ' + JSON.stringify(values.target));
+  return target;
+}
 function targetOptions(values) {
   if (values.target === undefined) {
     if (values.chance !== undefined) throw new Error('--chance goes with --target <percent>');
     return {};
   }
-  const target = Number(values.target);
-  if (!(target > 0 && target < 100)) throw new Error('--target must be a percentage above 0 and below 100, got ' + JSON.stringify(values.target));
+  const target = targetPercent(values);
   const chance = values.chance === undefined ? 0.8 : Number(values.chance);
   if (![0.8, 0.9, 0.95].includes(chance)) throw new Error('--chance must be 0.8, 0.9 or 0.95');
   return { target, chance };
+}
+// whatif --gate --target 5 [--confidence 0.99]: the gates certified under 5%, checked the same way.
+function certifyOptions(values) {
+  if (values.target === undefined) {
+    if (values.confidence !== undefined) throw new Error('--confidence goes with --target <percent>');
+    return {};
+  }
+  if (!values.gate) throw new Error('--target goes with --gate: the floor what-if certifies nothing');
+  const target = targetPercent(values);
+  const confidence = values.confidence === undefined ? 0.95 : Number(values.confidence);
+  if (![0.9, 0.95, 0.99].includes(confidence)) throw new Error('--confidence must be 0.9, 0.95 or 0.99');
+  return { target, confidence };
 }
 function writeFile(file, text) {
   fs.writeFileSync(file, text);
@@ -241,9 +262,11 @@ function whatif(args) {
     config: { type: 'string' }, pred: { type: 'string' }, key: { type: 'string' }, lenient: { type: 'boolean' },
     gate: { type: 'boolean' }, floor: { type: 'boolean' }, output: { type: 'string' },
     from: { type: 'string' }, to: { type: 'string' }, step: { type: 'string' }, json: { type: 'string' },
+    target: { type: 'string' }, confidence: { type: 'string' },
   } });
   need(values, ['config', 'pred', 'key'], 'whatif');
   if (Boolean(values.gate) === Boolean(values.floor)) throw new Error('whatif needs exactly one of --gate or --floor');
+  const certify = certifyOptions(values);
   const config = loadConfig(values.config);
   const { paired } = scoreRun({ config, predPath: values.pred, keyPath: values.key, mode: MODE(values) });
   const opts = {};
@@ -253,7 +276,7 @@ function whatif(args) {
     if (!Number.isFinite(opts[k])) throw new Error('--' + k + ' must be a number');
   }
   const { gateSweep, floorSweep } = require('../src/metrics/whatif.js');
-  const w = values.gate ? gateSweep(paired, config, { ...opts, outputs: values.output ? [values.output] : null }) : floorSweep(paired, config, opts);
+  const w = values.gate ? gateSweep(paired, config, { ...opts, ...certify, outputs: values.output ? [values.output] : null }) : floorSweep(paired, config, opts);
   process.stdout.write(renderWhatif(w));
   if (values.json) writeFile(values.json, JSON.stringify(resultsJson({ inputs: { predictions: values.pred, key: values.key }, ...w }), null, 2) + '\n');
 }

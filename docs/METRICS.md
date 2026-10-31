@@ -313,6 +313,17 @@ really are: on the metadata tagger's Golden 500, three runs sent out 615 records
 different articles. Added up, 44 of 615 gives a range of 5.4-9.5%; the worst run alone, 18 of
 210, gives 5.5-13.1%.
 
+**Silent in at least one run.** Different runs go wrong on different records, so `variance` also
+counts the different records that were a silent error in at least one run, out of the different
+records that went out without review in at least one, with the share's likely range (an idea
+from Inspect AI's epoch reducers). It answers a different question from the worst run. The worst
+run answers "how bad is one run?"; this count answers "how many records can this workflow get
+wrong unseen, at least sometimes?". A record counted once stays counted whatever later runs do,
+so the count only grows as runs are added: it is always given with its number of runs, and a
+count from three runs is not comparable with one from ten. In the runs fixture
+(`test/fixtures/runs/`), R2 was a silent error in runs a and c, and no other record in any run:
+1 of the 3 records that went out in at least one of the 3 runs.
+
 `variance` also lists **possible key gaps**: values the workflow states in every run that
 the answer key does not list. Each is either the same mistake made every time, or a gap in
 the answer key; the tool cannot tell which, so a person decides
@@ -411,3 +422,53 @@ person is movable, and says so). At the current threshold it must reproduce the 
 routes, or it reports that its assumption is wrong. It shows the silent error count beside
 the rate, because a rate can fall only because correct records joined the denominator, with
 no error prevented.
+
+### A certified gate
+
+The gate sweep shows the silent error rate at every gate, and the natural move is to pick the
+loosest gate that looks under the target. But the sweep tried eleven gates, and one of eleven
+can look good by luck alone. Trying twenty keys and announcing the one that opened the lock
+proves less than one key that opens it the first time: the golden set flatters the gate picked
+from it (trap E9).
+
+`whatif --gate --target 5` certifies gates instead, the way Learn then Test does (Angelopoulos,
+Bates, Candès, Jordan and Lei, 2021, arXiv 2110.01052). For each gate it asks: if this gate's
+true silent error rate were 5% or more, how often would so few silent errors turn up among the
+records it let out? That chance is the gate's p-value, worked out exactly (binomial). The 5%
+allowed for being wrong (1 - confidence) is shared among the gates tried, and a gate is
+**certified** when its p-value is at most its share: 0.05 / 11 with eleven gates (Bonferroni).
+Then the chance that *any* certified gate is really at or above the target is at most 5%.
+`--confidence 0.99` holds that to 1% (0.9, 0.95 and 0.99 are the choices; 0.95 is the default).
+A gate that let nothing out is never certified.
+
+The report adds a **certified** column and names the loosest certified gate (the most
+straight-through; when several let out the same records, the strictest of them, because the
+golden set has no records between them to test the looser ones on). It also names a looser gate
+that only looks under the target read alone. When no gate is certified, it gives the fewest
+records out without review, none of them a silent error, that a gate would need.
+
+On the gate fixture (`test/fixtures/gate/`, 60 articles), against a 30% target:
+
+```
+node bin/wfeval.js whatif --config test/fixtures/gate/config.json \
+  --pred test/fixtures/gate/predictions.json --key test/fixtures/gate/key.json --gate --target 30
+```
+
+By the rate alone, every gate from 0.65 up looks under 30% (0.65 lets out 12 silent errors in 42,
+28.6%). By the likely range, 0.75 does (3 of 30, reaching 25.6%). Neither is certified: 0.75's
+p-value, 0.0093, would pass as the only gate tried, but not as one of eleven (0.0045). The
+loosest certified gate is 0.80: 1 silent error in 24, with 40% straight-through. The fixture's
+EXPECTED.md works every p-value out by hand.
+
+What the guarantee rests on, and the report says each:
+
+- **Records like these.** It holds for records drawn the way the golden set's were. A golden set
+  built from traps gives a stress-test guarantee, not one for real traffic.
+- **The what-if's assumption** about which records the gate can move (printed at the top).
+- **Every gate looked at.** The count is of the gates in this sweep. Sweeping again over a
+  narrower range after seeing the first sweep is still picking from many.
+
+Why each gate is tested on its own (Bonferroni) rather than in order from strictest to loosest
+(Learn then Test's fixed sequence, which pays nothing for the number of gates but stops at the
+first gate that fails): the strictest gates let out few records or none, so the sequence would
+stop at once and certify nothing.

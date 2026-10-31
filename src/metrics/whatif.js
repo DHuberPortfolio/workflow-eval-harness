@@ -10,10 +10,13 @@
 // reported as "needs replay" rather than guessed. Each floor's numbers come from judgeAll and
 // scoreQuality on the changed records, which resolve the key's any_of slots against what is
 // applied at that floor (slots.js): a slot an evicted value filled is unfilled there.
+// Gate certification: with a target, which gates are shown to keep silent errors under it,
+// counting every gate the sweep tried (certifyGates, below; trap E9).
 
 const { judgeAll, gatePasses } = require('./judge.js');
 const { scoreRouting } = require('./routing.js');
 const { scoreQuality } = require('./classification.js');
+const { chanceAtMost, wilson } = require('./stats.js');
 
 const round = (x, d) => Number(x.toFixed(d));
 
@@ -49,8 +52,10 @@ function summarize(records, config, extra) {
   };
 }
 
-// outputs: which gated outputs to sweep together (default: all of them).
-function gateSweep(records, config, { outputs = null, from = 0.5, to = 1, step = 0.05 } = {}) {
+// outputs: which gated outputs to sweep together (default: all of them). target: a percentage
+// (5 means 5%) to certify the gates against, at `confidence` (certifyGates).
+function gateSweep(records, config, { outputs = null, from = 0.5, to = 1, step = 0.05, target = null, confidence = 0.95 } = {}) {
+  if (target !== null) checkCertify(target, confidence);
   const gates = config.thresholds ? config.thresholds.auto_publish : {};
   if (Object.keys(gates).length === 0) throw new Error('the gate what-if needs thresholds.auto_publish in the config');
   const swept = outputs || Object.keys(gates);
@@ -96,8 +101,76 @@ function gateSweep(records, config, { outputs = null, from = 0.5, to = 1, step =
     assumption: config.whatif ? 'records marked movable by ' + config.whatif.movable_field
       : 'no whatif.movable_field: every record that went out without review or was sent to a person is assumed routed by the gate alone (an upper bound)',
     as_run: summarize(records, config, { threshold: null, current: false, moved_in: [], moved_out: [] }),
-    rows,
+    ...(target === null ? { rows, certification: null } : certifyGates(rows, target, confidence)),
     check,
+  };
+}
+
+// ---------- A certified gate (trap E9) ----------
+//
+// A sweep tries many gates, and a person picks the loosest one that looks under the target. One
+// of eleven gates can look good by luck alone, the way one of twenty keys may open a lock: the
+// golden set flatters the gate picked from it (the multiple-comparisons problem). Learn then Test
+// (Angelopoulos, Bates, Candès, Jordan, Lei 2021, arXiv 2110.01052) tests every gate tried and
+// bounds the chance that ANY gate it certifies is wrong.
+//
+// One gate, one test. Its records out without review (n) and the silent errors among them (k)
+// give the exact binomial p-value p = P(Bin(n, target) <= k): the chance that a true rate at the
+// target would look this good or better (a true rate above the target, less often still). With
+// n = 0, p = 1: nothing went out, so nothing can be certified.
+//
+// Bonferroni: a gate is certified when p <= (1 - confidence) / m, m the gates in the sweep. The
+// chance that any certified gate's true rate is at or above the target is then at most
+// 1 - confidence, however the gates' records overlap. Not LTT's fixed-sequence order (test the
+// strictest gate first, loosen until one fails), though it spends nothing on the number of gates:
+// the strictest gates let out few records or none (1.00 lets out nothing, so p = 1), so the
+// sequence would stop at its first gate and certify nothing. Bonferroni pays for every gate tried
+// and lets each one stand on its own records.
+//
+// The guarantee is for records like these, and only as good as the what-if's assumption about
+// which records the gate can move; the report says both.
+
+const CONFIDENCES = [0.9, 0.95, 0.99];
+
+function checkCertify(targetPct, confidence) {
+  if (!(typeof targetPct === 'number' && targetPct > 0 && targetPct < 100)) throw new Error('--target must be a percentage above 0 and below 100');
+  if (!CONFIDENCES.includes(confidence)) throw new Error('--confidence must be 0.9, 0.95 or 0.99');
+}
+
+// rows: gateSweep's rows. Returns the rows with p_value and certified added, and the summary:
+//   best               the loosest certified gate: the most straight-through; on a tie, the
+//                      strictest gate (tied gates let out the same records here, and the looser
+//                      one would also let out records between them that the set holds none of)
+//   looks_under_alone  the loosest gate whose likely range alone is under the target (the test
+//                      score --target uses for one run), certified or not
+//   least_records_out  the fewest records out without review that could certify any gate here:
+//                      all of them without a silent error, (1 - target)^n <= level
+function certifyGates(rows, targetPct, confidence = 0.95) {
+  checkCertify(targetPct, confidence);
+  const target = targetPct / 100;
+  // Whole hundredths, so 1 - 0.95 is exactly 0.05, not 0.050000000000000044.
+  const level = Math.round((1 - confidence) * 100) / 100 / rows.length;
+  const tested = rows.map(r => {
+    const { n: k, d: n } = r.silent_error_rate;
+    const p = n === 0 ? 1 : chanceAtMost(k, n, target);
+    return { ...r, p_value: p, certified: p <= level };
+  });
+  const loosest = list => list.reduce((a, r) => (a === null || r.straight_through.n > a.straight_through.n ||
+    (r.straight_through.n === a.straight_through.n && r.threshold > a.threshold) ? r : a), null);
+  const best = loosest(tested.filter(r => r.certified));
+  const alone = loosest(tested.filter(r => r.silent_error_rate.d > 0 && wilson(r.silent_error_rate.n, r.silent_error_rate.d).high < target));
+  const none = n => Math.exp(n * Math.log1p(-target));   // the chance of no silent error in n at the target
+  let least = Math.max(1, Math.ceil(Math.log(level) / Math.log1p(-target)));
+  while (least > 1 && none(least - 1) <= level) least--;
+  while (none(least) > level) least++;
+  return {
+    rows: tested,
+    certification: {
+      target_pct: targetPct, confidence, gates_tested: rows.length, level,
+      best: best && { threshold: best.threshold, p_value: best.p_value, silent_error_rate: best.silent_error_rate, straight_through: best.straight_through },
+      looks_under_alone: alone && { threshold: alone.threshold, high_pct: alone.silent_error_rate.high_pct, certified: alone.certified },
+      least_records_out: least,
+    },
   };
 }
 
@@ -152,4 +225,4 @@ function floorSweep(records, config, { from = 0.4, to = 0.9, step = 0.05 } = {})
   };
 }
 
-module.exports = { gateSweep, floorSweep, steps };
+module.exports = { gateSweep, floorSweep, steps, certifyGates };

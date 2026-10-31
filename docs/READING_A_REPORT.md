@@ -152,7 +152,10 @@ decided, the rate lands between the two, unless that line says otherwise
   between runs is how precise any single run can claim to be. It names the figure to quote,
   the worst run's silent error rate with its likely range, and never adds the runs together:
   they repeat the same records, so the added-up count would look like more evidence than it
-  is. It also lists the records that changed route between runs, and **possible key gaps**:
+  is. The line after it counts the different records that were a silent error in at least one
+  of the runs: how many records the workflow can get wrong unseen at least sometimes. That
+  count only grows as runs are added, so read it with the number of runs it names. It also
+  lists the records that changed route between runs, and **possible key gaps**:
   values stated in every run that the answer key does not list, for a person to rule on (with
   `--rulings`, each shows its ruling, and rejected ones are only counted).
 - **`wfeval compare`**: what changed between two runs, and whether each change is bigger than
@@ -163,7 +166,11 @@ decided, the rate lands between the two, unless that line says otherwise
   same run against an old and a new answer key: every change is the key's.
 - **`wfeval rate 2 15 --target 5`**: the likely range for any count, and what a target needs.
 - **`wfeval whatif`**: what the numbers would be at another threshold. Read the silent error
-  count beside the rate: a rate can fall only because correct records joined it.
+  count beside the rate: a rate can fall only because correct records joined it. With
+  `--gate --target 5`, the **certified** column marks the gates shown to keep silent errors under
+  5% after counting every gate tried, and **CERTIFIED UNDER 5%** names the loosest of them; a gate
+  that only looks under the target read alone was picked from many, and proves less
+  ([why](METRICS.md#a-certified-gate)).
 
 Why each number exists: [METRICS.md](METRICS.md). Every error code in full:
 [SILENT_ERRORS.md](SILENT_ERRORS.md).

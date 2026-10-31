@@ -3,7 +3,7 @@
 
 const {
   pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines,
-  groupSource, GROUP_RANGES, severalLabels, rulingsWords, pendingLine, rulingStatus, clusterLine, CLUSTER_GROUP_NOTE, CLUSTER_TARGET_NOTE,
+  groupSource, GROUP_RANGES, severalLabels, rulingsWords, pendingLine, rulingStatus, clusterLine, CLUSTER_GROUP_NOTE, CLUSTER_TARGET_NOTE, thousands,
 } = require('./format.js');
 
 // "RULINGS  1 value added to the answer key by rulings in ...", and the rest indented (trap I11).
@@ -284,6 +284,15 @@ function renderVariance(v) {
           ' different records, and a record\'s runs tend to go the same way, so the added-up count would look like more evidence than it is.'
         : ''));
   }
+  // Trap I18: records silent in at least one run. It grows with every run added, so the number
+  // of runs is part of the sentence.
+  const a = q.any_run;
+  if (a && a.d > 0) {
+    parts.push('In at least one of the ' + a.runs + ' runs, ' + a.n + ' of the ' + a.d + ' different records that went out without review ' +
+      (a.n === 1 ? 'was' : 'were') + ' a silent error: ' + pct(a) + ' (likely ' + range(a) + '). This answers "how many records can this workflow ' +
+      'get wrong unseen, at least sometimes?"; the worst run answers "how bad is one run?". The count only grows as runs are added, so it always ' +
+      'comes with its number of runs.');
+  }
   const rc = v.records.route_changed;
   parts.push('RECORDS THAT CHANGED ROUTE  ' + (rc.length ? '' : 'none') +
     rc.map(r => '\n  ' + r.id.padEnd(8) + r.routes.join(' / ') + (r.should ? '   (should: ' + r.should + ')' : '')).join(''));
@@ -368,15 +377,45 @@ function renderRate(x) {
 
 const frac = r => (r === null ? 'n/a' : r.d === 0 ? 'none went out' : pct(r) + ' (' + r.n + '/' + r.d + ')');
 
+// With --target (trap E9): which gate is certified, the gate that only looks under the target
+// read alone, how certification works, and what the guarantee rests on.
+function certificationSection(c) {
+  const under = c.target_pct + '%';
+  const gates = c.gates_tested + ' gate' + (c.gates_tested === 1 ? '' : 's');
+  const alpha = Math.round((1 - c.confidence) * 100) + '%';
+  const lines = ['CERTIFIED UNDER ' + under + '  at ' + Math.round(c.confidence * 100) + '% confidence, among ' + gates + ' tried'];
+  const b = c.best;
+  if (b) {
+    lines.push('The loosest certified gate is ' + b.threshold.toFixed(2) + ': silent error rate ' + pct(b.silent_error_rate) + ' (' + count(b.silent_error_rate) +
+      ' out without review, likely ' + range(b.silent_error_rate) + '), straight-through ' + pct(b.straight_through) + ' (' + count(b.straight_through) + ').');
+  } else {
+    lines.push('No gate tried is certified under ' + under + '. Among ' + gates + ', a gate needs at least ' + thousands(c.least_records_out) +
+      ' records out without review, with no silent error among them, to be certified (more if it has any).');
+  }
+  const a = c.looks_under_alone;
+  if (a && !a.certified) {
+    lines.push('Gate ' + a.threshold.toFixed(2) + ' looks under ' + under + ' read alone (its likely range reaches ' + a.high_pct.toFixed(1) + '%), but it was picked from ' + gates + ': not certified.');
+  }
+  lines.push('How: each gate is tested on its own records out without review. It is certified if, were its true silent error rate ' + under +
+    ' or more, so few silent errors would turn up at most ' + Number((c.level * 100).toPrecision(2)) + '% of the time (exact binomial): the ' +
+    alpha + ' allowed for being wrong, shared among the ' + gates + ' tried (Bonferroni). So the chance that any certified gate is really at or above ' +
+    under + ' is at most ' + alpha + '.');
+  lines.push('The guarantee holds for records like these: on a golden set built from traps it is a stress-test guarantee, not one for real traffic. ' +
+    'It rests on the assumption above about which records the gate can move, and counts only the gates tried in this sweep: sweeping again over a ' +
+    'narrower range after seeing this one is still picking from many.');
+  return lines.join('\n  ');
+}
+
 function renderWhatif(w) {
   const parts = [];
   if (w.kind === 'gate') {
+    const c = w.certification;
     parts.push('WHAT-IF: CONFIDENCE GATE  sweeping ' + w.outputs.join(', '));
     parts.push('Assumption: ' + w.assumption + '.');
-    const rows = [['gate', 'went out', 'straight-through', 'silent errors', 'silent error rate', 'moved in', 'moved out', 'unnecessary reviews', '']];
+    const rows = [['gate', 'went out', 'straight-through', 'silent errors', 'silent error rate', ...(c ? ['certified'] : []), 'moved in', 'moved out', 'unnecessary reviews', '']];
     for (const r of w.rows) {
       rows.push([r.threshold.toFixed(2), r.through.length, pct(r.straight_through), list(r.silent_errors, 6), frac(r.silent_error_rate),
-        list(r.moved_in, 6), list(r.moved_out, 6), r.wasted_reviews.length, r.current ? '<- current' : '']);
+        ...(c ? [r.certified ? 'yes' : ''] : []), list(r.moved_in, 6), list(r.moved_out, 6), r.wasted_reviews.length, r.current ? '<- current' : '']);
     }
     parts.push(table(rows, [1, 2]));
     if (w.check) {
@@ -386,6 +425,7 @@ function renderWhatif(w) {
           ' movable records differently from the actual run (' + list(w.check.differing) + '). Those records were not routed by the gate alone: ' +
           'set whatif.movable_field so the what-if only moves records the gate decided.');
     }
+    if (c) parts.push(certificationSection(c));
     parts.push('Read the silent error COUNT beside the rate: a rate can fall because correct records joined the denominator, with no error prevented.');
   } else {
     parts.push('WHAT-IF: CONFIDENCE FLOOR');

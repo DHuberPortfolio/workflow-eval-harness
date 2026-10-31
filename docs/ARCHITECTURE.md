@@ -70,6 +70,8 @@ The metric tests are checked against answers worked out by hand before the code 
 - `test/fixtures/compliance/`: nine documents from a compliance reviewer, as spreadsheets,
   with a verdict label that is also the route.
 - `test/fixtures/runs/`: three runs of the same workflow, for variance and compare.
+- `test/fixtures/gate/`: sixty articles at ten confidence levels, for the certified gate: each
+  gate's binomial p-value and the Bonferroni bar, worked out by hand.
 - `test/fixtures/freetext/`: three synthetic visit transcripts, the forms filled from them,
   and two reviewers' grades: invented and missing rates, and their agreement (kappa).
 - `test/fixtures/declines/`: ten links classified into page categories or declined, shaped

@@ -109,7 +109,12 @@ What the projects that used the harness had to build around it, ranked by how ma
       silent error rate's range from the design effect (Kish 1965; Miller 2024, Eq. 4), each
       cluster counted as one record when that cannot be measured (traps G14-G17,
       `test/fixtures/clusters/`)
-- [ ] A gate in `whatif` certified to keep silent errors under a target (Learn then Test)
+- [x] A gate in `whatif` certified to keep silent errors under a target (Learn then Test):
+      `whatif --gate --target`, each gate tested exactly (binomial) on its own records out,
+      Bonferroni over the gates tried, the loosest certified gate named (trap E9,
+      `test/fixtures/gate/`)
+- [x] Records silent in at least one of the runs in `variance`, beside the worst run, with the
+      share's likely range and always the number of runs (trap I18)
 
 ## Out of scope for now
 - Snapshot backdating fixture: a test utility with nothing to score.

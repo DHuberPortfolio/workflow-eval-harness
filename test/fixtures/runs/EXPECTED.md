@@ -49,6 +49,21 @@ Read it this way: three runs of *identical code* put the silent error rate anywh
 **3 different records**, and R2's two silent errors are one record making the same mistake
 twice. The added-up 2 of 6 (Wilson 9.7-70.0%) would claim more evidence than 3 records hold.
 
+**Silent in at least one of the 3 runs** (trap I18): R2 was a silent error in runs a and c, and
+no other record was one in any run: **1 record**. The records that went out without review in at
+least one run are R1 (a, b, c), R2 (a, c) and R4 (c): **3 records**. Share 1 of 3 = **33.3%**.
+Wilson: 1 + 3.8416/3 = 2.280533; center (0.333333 + 3.8416/6) / 2.280533 = (0.333333 + 0.640267)
+/ 2.280533 = 0.426917; half-width 1.96 x sqrt(0.333333 x 0.666667 / 3 + 3.8416/36) / 2.280533 =
+1.96 x sqrt(0.074074 + 0.106711) / 2.280533 = 1.96 x 0.425188 / 2.280533 = 0.365427; range
+**6.1-79.2%**.
+
+It answers a different question from the worst run: "how many records can this workflow get
+wrong unseen, at least sometimes?" against "how bad is one run?". It depends on how many runs
+there are. With runs a and b only (2 runs): R2 (silent in a) of R1 and R2, 1 of 2. Adding run c
+adds R4 to the records out (it went out for the first time) and no new silent error: 1 of 3. A
+record counted once stays counted whatever later runs do, so the count can only grow as runs
+are added, and it is always given with its number of runs.
+
 **Possible key gaps** (values stated that the key does not list, per record and output):
 
 | record | output | value | runs stating it | applied in | confidence |

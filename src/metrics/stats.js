@@ -94,7 +94,8 @@ function lnFact(n) {
 }
 
 // Exact chance of at most k mistakes in n records at a real rate p, summed in logarithms so a
-// large n cannot underflow to zero.
+// large n cannot underflow to zero. Also the p-value of the test "the real rate is p or more"
+// after k mistakes in n (whatif.js certifies gates with it).
 function chanceAtMost(k, n, p) {
   if (k < 0) return 0;
   if (k >= n || p === 0) return 1;
@@ -244,4 +245,4 @@ function clusteredRange(clusters, z = Z) {
   return { n, y, p, clusters: C, var_clustered: varC, var_simple: varSrs, design_effect: deff, effective: n / deff, low: b.low, high: b.high, method: 'design_effect', why: null };
 }
 
-module.exports = { Z, pct, wilson, rate, cohensKappa, recordsNeeded, planTest, pairedDifference, clusteredRange };
+module.exports = { Z, pct, wilson, rate, cohensKappa, recordsNeeded, chanceAtMost, planTest, pairedDifference, clusteredRange };
