@@ -97,7 +97,9 @@ What the projects that used the harness had to build around it, ranked by how ma
       predictions, each with its count and likely range (`groups`, `score --group-by`; traps
       H6-H8, `test/fixtures/queue/`)
 - [ ] Weighted to a real mix: groups weighted by their share of real traffic (stratified estimation)
-- [ ] "Any of these is right" and equivalent values in the answer key
+- [x] "Any of these is right" and equivalent values in the answer key: `{ "any_of": [...] }` slots
+      in a set output's key, resolved per record by every metric alike; `equivalents` in the
+      config, read as one value on both sides (traps D20-D23, F13, I10, `test/fixtures/alternatives/`)
 - [ ] A rulings file for possible key gaps (add, reject, pending), and comparing two keys
 - [ ] Ranges that count clusters within a run (retellings of one story, one filing's statements)
 - [ ] A gate in `whatif` certified to keep silent errors under a target (Learn then Test)

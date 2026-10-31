@@ -1,0 +1,8 @@
+[
+  { "id": "A1", "decision": "ANSWER", "cites": [{ "value": "ep-02", "confidence": 0.9 }] },
+  { "id": "A2", "decision": "ANSWER", "cites": [{ "value": "ep-05", "confidence": 0.95 }, { "value": "ep-01", "confidence": 0.85 }, { "value": "ep-02", "confidence": 0.82 }] },
+  { "id": "A3", "decision": "ANSWER", "cites": [{ "value": "ep-04", "confidence": 0.9 }] },
+  { "id": "A4", "decision": "ANSWER", "cites": [{ "value": "ep-20", "confidence": 0.9 }, { "value": "ep-11", "confidence": 0.55, "applied": false }] },
+  { "id": "A5", "decision": "ANSWER", "cites": [{ "value": "ep-12-rerun", "confidence": 0.9 }, { "value": "ep-12", "confidence": 0.58, "applied": false }] },
+  { "id": "A6", "decision": "REVIEW", "cites": [{ "value": "ep-12", "confidence": 0.75 }] }
+]

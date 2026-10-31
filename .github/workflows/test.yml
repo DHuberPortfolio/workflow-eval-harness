@@ -57,6 +57,8 @@ jobs:
           D=test/fixtures/declines
           node bin/wfeval.js score --config $D/config.json --pred $D/predictions.json --key $D/key.json
           node bin/wfeval.js check --config examples/competitor-registry/config.json
+          node bin/wfeval.js score --config test/fixtures/alternatives/config.json \
+            --pred test/fixtures/alternatives/predictions.json --key test/fixtures/alternatives/key.json
           F=test/fixtures/freetext
           node bin/wfeval.js grade --config $F/grading.json --pred $F/forms.json --out "$out/grading.html"
           node bin/wfeval.js score --grades $F/grades-a.json --second-reviewer $F/grades-b.json --json "$out/grades.json"

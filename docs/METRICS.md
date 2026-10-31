@@ -124,6 +124,35 @@ high or low, and a closeness score where a near miss loses a little and a miss a
 scale loses everything. A near miss that goes out is a low-severity silent error; a far miss
 is a high one.
 
+## Any of these is right
+
+When an answer key says any one of several values is right (`{ "any_of": [...] }`, a **slot**:
+[CONFIG.md](CONFIG.md#any-of-these-is-right-and-equivalent-values)), the counting follows the
+values the workflow actually applied, record by record:
+
+- Every applied value that is in a slot is **right** (a true positive). If the workflow
+  applied two values from one slot, **both count as right**: neither is a mistake.
+- An applied value in no slot is **wrong** (a false positive), as before.
+- A slot none of whose values was applied is **one miss** (a false negative), however many
+  values it lists. The report shows it as `one of a, b, c`, or as `b (one of a, b, c)` when the
+  model found b but set it aside.
+
+Think of a slot as a seat at a table with several people who may sit in it: the seat is
+taken if any one of them sits down, two of them squeezing in is still no mistake, and an
+empty seat is one miss, not three.
+
+That is the same as rewriting each record's answer key to the values it cited, which is what
+projects did by hand before every run: the key is resolved per record. One consequence: what
+recall is out of (right values plus misses) can change from run to run, because a slot filled
+twice adds two right values and a slot filled once adds one. Precision and recall still mean
+what they say; only their totals move. The floor what-if resolves the slots again at every
+floor, since a different floor changes what was applied (`test/fixtures/alternatives/`).
+
+Calibration counts a claim as right when its value is any of a slot's values, applied or set
+aside, and `variance` never lists an alternative as a possible key gap: the key already has it.
+Equivalent values (`equivalents`) are simpler still: they are read as one value before anything
+is counted.
+
 ## Declines
 
 A label output can be allowed to decline (`decline` in the config): to say "none of these"

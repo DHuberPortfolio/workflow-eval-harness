@@ -7,7 +7,9 @@
 //
 // Gate sweep: values never change, only routes, so precision and recall stay fixed.
 // Floor sweep: values are re-admitted or evicted; records that change but cannot move are
-// reported as "needs replay" rather than guessed.
+// reported as "needs replay" rather than guessed. Each floor's numbers come from judgeAll and
+// scoreQuality on the changed records, which resolve the key's any_of slots against what is
+// applied at that floor (slots.js): a slot an evicted value filled is unfilled there.
 
 const { judgeAll, gatePasses } = require('./judge.js');
 const { scoreRouting } = require('./routing.js');

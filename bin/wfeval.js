@@ -143,6 +143,7 @@ function check(args) {
     if (i.records_at) bits.push('records at "' + i.records_at + '"');
     if (i.unwrap) bits.push('each record inside "' + i.unwrap + '"');
     if (i.delimiter) bits.push('cells split on ' + JSON.stringify(i.delimiter));
+    if (i.any_of_separator) bits.push('alternatives (any_of) split on ' + JSON.stringify(i.any_of_separator));
     if (bits.length) console.log('  input       ' + which + ': ' + bits.join(', '));
   }
   console.log('  outputs     ' + outs);
@@ -150,6 +151,9 @@ function check(args) {
     const how = [o.decline.values.length ? 'value ' + o.decline.values.join(' or ') : null, o.decline.field ? 'field "' + o.decline.field + '" true' : null].filter(Boolean);
     console.log('  declines    ' + n + ' declined when ' + how.join(', or ') +
       (o.decline.values.length ? '; in the answer key, ' + o.decline.values.join(' or ') + ' means declining is correct' : '; the answer key cannot say to decline'));
+  }
+  for (const [n, groups] of Object.entries(c.equivalents)) {
+    console.log('  equivalents ' + n + ': ' + groups.map(g => g.slice(1).join(', ') + ' read as ' + g[0]).join('; '));
   }
   console.log('  routing     ' + routes);
   console.log('  wrong when  ' + c.wrong_when);

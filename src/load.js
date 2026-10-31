@@ -12,7 +12,9 @@
 // After this file, everything can rely on:
 //   - ids are trimmed text
 //   - a set output is a list of { value, confidence, applied, inherited } (predictions)
-//     or a list of plain values (key); a label output is one of those, not a list
+//     or a list of slots (key): a plain value, or { any_of: [values] } when any one of
+//     several is right (slots.js resolves them); a label output is one value, not a list
+//   - every value is read through the config's equivalents: an alias as its group's first
 //   - confidence is a number from 0 to 1, or null when not given
 //   - applied is a real true/false
 // Anything that cannot be cleaned up safely is recorded as a problem (see problems.js)
@@ -23,7 +25,7 @@ const nodePath = require('path');
 const { problems } = require('./problems.js');
 const { csvToRecords, decodeCsvRecords } = require('./csv.js');
 const { align } = require('./align.js');
-const { DECLINED } = require('./config.js');
+const { DECLINED, equivalentOf } = require('./config.js');
 
 const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const describe = v => (v === null ? 'null' : v === undefined ? 'nothing' : Array.isArray(v) ? 'a list'
@@ -206,8 +208,9 @@ function readValue(item, o, where, p, isKey) {
       inherited = item.inherited_from !== undefined && item.inherited_from !== null;   // D17
     }
   } else {
+    const nearAnyOf = isKey && isObj(item) && Object.keys(item).some(k => /^(any|one)[-_ ]?of$/i.test(k));
     p.stop('D4', where, 'each value must be text or { "' + vk + '": "..." }, got ' +
-      (isObj(item) ? 'an object with no "' + vk + '" text' : describe(item)));
+      (isObj(item) ? 'an object with no "' + vk + '" text' : describe(item)) + (nearAnyOf ? ' (did you mean "any_of"?)' : ''));
     return null;
   }
 
@@ -217,8 +220,51 @@ function readValue(item, o, where, p, isKey) {
   return isKey ? trimmed : { value: trimmed, confidence, applied, inherited };
 }
 
-// Reads a set output: a list of values (D1-D9).
-function readSet(raw, name, o, where, p, isKey, gated) {
+// D23: two values that the config's equivalents make one, in one record. The higher-confidence
+// copy is kept, applied if either was: one episode cited twice under two ids was still cited.
+function mergeEquivalent(a, b, isKey) {
+  if (isKey) return a;
+  const hi = (b.confidence ?? -1) > (a.confidence ?? -1) ? b : a;
+  return { ...hi, applied: a.applied || b.applied };
+}
+const mergedMessage = (name, first, second, value, kept) => name + ': merged 2 equivalent values, ' + JSON.stringify(first) + ' and ' +
+  JSON.stringify(second) + ', into ' + JSON.stringify(value) +
+  (kept ? ' (' + (kept.applied ? 'applied' : 'not applied') + (kept.confidence === null ? '' : ', confidence ' + kept.confidence) + ')' : '');
+
+// One slot of a set output's answer key: { "any_of": [...] }, any one of whose values is right
+// (D20). Each value is text, trimmed and read through equivalents like a plain value. Anything
+// else is a stop (D21), naming the record: an empty list could never be filled, an object inside
+// it has no one value, and a key beside any_of would be ignored. Returns { any_of } or null.
+function readSlot(item, name, at, p, eq) {
+  const extra = Object.keys(item).filter(k => k !== 'any_of');
+  if (extra.length) { p.stop('D21', at, 'an any_of slot holds only "any_of", got ' + extra.map(k => JSON.stringify(k)).join(', ') + ' beside it'); return null; }
+  const list = item.any_of;
+  if (!Array.isArray(list) || list.length === 0) {
+    p.stop('D21', at, 'any_of must be a list of one or more values, got ' + (Array.isArray(list) ? 'an empty list' : describe(list)));
+    return null;
+  }
+  const values = [];
+  const written = [];   // how each value was written, to tell a repeat (D6) from an equivalent (D23)
+  let ok = true;
+  list.forEach((x, i) => {
+    const xat = at + '.any_of[' + i + ']';
+    if (typeof x !== 'string') { ok = false; p.stop('D21', xat, 'each value in any_of must be text, got ' + (isObj(x) ? 'an object' : describe(x))); return; }
+    const t = x.trim();
+    if (t === '') { ok = false; p.stop('D9', xat, 'the value is empty'); return; }
+    if (t !== x) p.fix('D7', xat, 'trimmed spaces from ' + JSON.stringify(x));
+    const v = eq.read(name, t);
+    const j = values.indexOf(v);
+    if (j === -1) { values.push(v); written.push([t]); }
+    else if (written[j].includes(t)) p.strict('D6', at, name + ' any_of lists ' + JSON.stringify(v) + ' more than once');
+    else { p.fix('D23', at, mergedMessage(name, written[j][0], t, v, null)); written[j].push(t); }
+  });
+  return ok ? { any_of: values } : null;
+}
+
+// Reads a set output: a list of values (D1-D9). In the answer key an element may also be an
+// any_of slot (D20-D22); the key keeps its slots as written, and slots.js resolves them per record.
+// eq: the config's equivalents, applied to every value read (D23).
+function readSet(raw, name, o, where, p, isKey, gated, eq) {
   if (raw === undefined || raw === null) {
     // D1: a prediction without this output means the model returned nothing for it.
     // D2: a key without it means we do not know the right answer, and [] would be a guess.
@@ -227,26 +273,48 @@ function readSet(raw, name, o, where, p, isKey, gated) {
   }
   if (!Array.isArray(raw)) { p.stop('D5', where, name + ' must be a list, got ' + describe(raw)); return []; }
 
-  const kept = new Map();   // value -> the entry kept for it
+  const out = [];             // what is kept, in the order listed
+  const plain = new Map();    // value -> { i: its place in out, as: every way it was written }
+  const inSlots = new Set();  // every value in a slot so far: a plain value is a slot of one
+  // D22: a value in two slots of one record. Counting is still defined (each slot it is in is
+  // filled by it), but which slot the key meant it for is not, so it is a sign of a key mistake.
+  const slotted = v => {
+    if (inSlots.has(v)) p.strict('D22', where, name + ' lists ' + JSON.stringify(v) + ' in more than one slot (alone or in an any_of)');
+    inSlots.add(v);
+  };
   raw.forEach((item, i) => {
     const at = where + ' ' + name + '[' + i + ']';
+    if (isObj(item) && has(item, 'any_of')) {
+      if (!isKey) { p.stop('D21', at, 'any_of is for the answer key; a prediction lists the values the workflow gave'); return; }
+      const slot = readSlot(item, name, at, p, eq);
+      if (slot !== null) { slot.any_of.forEach(slotted); out.push(slot); }
+      return;
+    }
     const v = readValue(item, o, at, p, isKey);
     if (v === null) return;
-    const value = isKey ? v : v.value;
+    const as = isKey ? v : v.value;
+    const value = eq.read(name, as);
+    const entry = isKey ? value : { ...v, value };
 
     if (!isKey && gated && v.applied && v.confidence === null) {
       p.strict('E1', at, JSON.stringify(value) + ' has no confidence, but ' + name + ' has a confidence gate');
     }
-    if (kept.has(value)) {
+    const prev = plain.get(value);
+    if (!prev) {
+      if (isKey) slotted(value);
+      plain.set(value, { i: out.length, as: [as] });
+      out.push(entry);
+    } else if (prev.as.includes(as)) {
       // D6: listed twice. A sign something upstream is not de-duplicating.
       p.strict('D6', where, name + ' lists ' + JSON.stringify(value) + ' more than once');
-      const prev = kept.get(value);
-      if (!isKey && (v.confidence ?? -1) > (prev.confidence ?? -1)) kept.set(value, v);
-      return;
+      if (!isKey && (entry.confidence ?? -1) > (out[prev.i].confidence ?? -1)) out[prev.i] = entry;
+    } else {
+      out[prev.i] = mergeEquivalent(out[prev.i], entry, isKey);
+      p.fix('D23', where, mergedMessage(name, prev.as[0], as, value, isKey ? null : out[prev.i]));
+      prev.as.push(as);
     }
-    kept.set(value, v);
   });
-  return [...kept.values()];
+  return out;
 }
 
 // Reads a label output: exactly one value from the declared list (F1-F4).
@@ -257,8 +325,15 @@ function readSet(raw, name, o, where, p, isKey, gated) {
 // { value: DECLINED, declined: true, set_aside, confidence, applied: false } on predictions,
 // and as DECLINED in the key, where it means declining is the correct outcome (F5-F10).
 // applied is false because nothing was given to anyone: a gate has nothing to stand on.
-function readLabel(raw, name, o, where, p, isKey, gated, extConf, extDeclined) {
+// F13: { "any_of": [...] } is for set outputs. A label has one answer per record, and its
+// confusion matrix needs one key label per row; two names for one label are "equivalents".
+// eq: the config's equivalents, applied before the label is checked (D23).
+function readLabel(raw, name, o, where, p, isKey, gated, extConf, extDeclined, eq) {
   const d = o.decline;
+  if (isObj(raw) && has(raw, 'any_of')) {
+    p.stop('F13', where, name + ': any_of is for set outputs. A ' + o.type + ' output holds one label; for two names of one label, use "equivalents" in the config');
+    return null;
+  }
   let declinedByField = false;
   if (!isKey && d && d.field && extDeclined !== undefined && extDeclined !== null) {
     // F7: like "applied", the text "false" would count as true in JavaScript.
@@ -277,7 +352,8 @@ function readLabel(raw, name, o, where, p, isKey, gated, extConf, extDeclined) {
   if (Array.isArray(raw)) { p.stop('F2', where, name + ' must be one label, got a list'); return null; }
   const v = readValue(raw, o, where + ' ' + name, p, isKey);
   if (v === null) return null;
-  const label = isKey ? v : v.value;
+  const label = eq.read(name, isKey ? v : v.value);
+  if (!isKey) v.value = label;
   const declineValues = d ? d.values : [];
   const isDeclineValue = declineValues.includes(label);
   if (!o.labels.includes(label) && !isDeclineValue) {
@@ -287,7 +363,7 @@ function readLabel(raw, name, o, where, p, isKey, gated, extConf, extDeclined) {
       (declineValues.length ? ' (or a decline: ' + declineValues.join(', ') + ')' : '') + (near ? ' (did you mean "' + near + '"?)' : ''));
     return null;
   }
-  if (isKey) return isDeclineValue ? DECLINED : v;
+  if (isKey) return isDeclineValue ? DECLINED : label;
 
   if (extConf !== undefined && extConf !== null) {
     // E8: the same confidence given in two places; which one would be right?
@@ -326,7 +402,7 @@ function withRejected(value, raw, name, o, where, p) {
 }
 
 // scored: false for a record whose model call failed. It has no confidences to check (E1).
-function readOutputs(raw, config, where, p, isKey, scored = true) {
+function readOutputs(raw, config, where, p, isKey, eq, scored = true) {
   const gates = config.thresholds ? config.thresholds.auto_publish : {};
   const outputs = {};
   for (const [name, o] of Object.entries(config.outputs)) {
@@ -334,14 +410,44 @@ function readOutputs(raw, config, where, p, isKey, scored = true) {
     const gated = scored && name in gates;
     if (o.type === 'set') {
       if (!isKey && o.rejected_field) value = withRejected(value, raw, name, o, where, p);
-      outputs[name] = readSet(value, name, o, where, p, isKey, gated);
+      outputs[name] = readSet(value, name, o, where, p, isKey, gated, eq);
     } else {
       const extConf = !isKey && o.confidence_field ? getPath(raw, o.confidence_field) : undefined;
       const extDeclined = !isKey && o.decline && o.decline.field ? getPath(raw, o.decline.field) : undefined;
-      outputs[name] = readLabel(value, name, o, where, p, isKey, gated, extConf, extDeclined);
+      outputs[name] = readLabel(value, name, o, where, p, isKey, gated, extConf, extDeclined, eq);
     }
   }
   return outputs;
+}
+
+// equivalents (config): every value of a group is read as the group's first, on both sides, as
+// it is read, so every metric, the calibration, the key gaps and the what-ifs agree on them with
+// no code of their own (trap D23). Counts what it read, so the report can say so: one clean-up
+// per output and file, naming each value read as another and how often.
+function equivalentsReader(config) {
+  const eqs = config.equivalents || {};
+  const as = Object.fromEntries(Object.keys(eqs).map(n => [n, equivalentOf(eqs, n)]));
+  const read = new Map();   // output -> Map("from\0to" -> { from, to, n })
+  return {
+    read(name, v) {
+      const to = as[name] ? as[name](v) : v;
+      if (to === v) return v;
+      if (!read.has(name)) read.set(name, new Map());
+      const k = v + '\0' + to;
+      const m = read.get(name);
+      if (!m.has(k)) m.set(k, { from: v, to, n: 0 });
+      m.get(k).n++;
+      return to;
+    },
+    report(p, source, side) {
+      for (const [name, m] of read) {
+        const list = [...m.values()];
+        const n = list.reduce((s, x) => s + x.n, 0);
+        p.fix('D23', source, name + ': ' + n + ' ' + side + ' value' + (n === 1 ? '' : 's') + ' read as ' + (n === 1 ? 'its' : 'their') + ' equivalent: ' +
+          list.map(x => x.from + ' as ' + x.to + (x.n > 1 ? ' (' + x.n + ')' : '')).join(', '));
+      }
+    },
+  };
 }
 
 // whatif.movable_field: whether this record's route was decided by the confidence gate.
@@ -405,6 +511,7 @@ function normalizePredictions(raws, config, source, p, opts = {}) {
   const combined = opts.sameFile || Object.values(config.outputs).some(o => o.key_field !== o.field);
 
   const out = [];
+  const eq = equivalentsReader(config);
   raws.forEach((raw, i) => {
     if (!isObj(raw)) { p.stop('B1', source + ' record #' + (i + 1), 'is ' + describe(raw) + ', not a record'); return; }
     const id = readId(raw, config.id_field, source + ' record #' + (i + 1), p);
@@ -421,11 +528,12 @@ function normalizePredictions(raws, config, source, p, opts = {}) {
       if (typeof raw.scored === 'boolean') scored = raw.scored;
       else p.stop('C10', where, '"scored" must be true or false without quotes, got ' + describe(raw.scored));
     }
-    const rec = { id, route: getPath(raw, rf), scored, movable: readMovable(raw, config), outputs: readOutputs(raw, config, where, p, false, scored) };
+    const rec = { id, route: getPath(raw, rf), scored, movable: readMovable(raw, config), outputs: readOutputs(raw, config, where, p, false, eq, scored) };
     const groups = readGroups(raw, config, 'predictions', where, p);
     if (groups) rec.groups = groups;
     out.push(rec);
   });
+  eq.report(p, source, 'predicted');
   return out;
 }
 
@@ -437,6 +545,7 @@ function normalizeKey(raws, config, source, p) {
   if (!idsFound(raws, config.id_field, source, 'key', p)) return [];
 
   const out = [];
+  const eq = equivalentsReader(config);
   raws.forEach((raw, i) => {
     if (!isObj(raw)) { p.stop('B1', source + ' record #' + (i + 1), 'is ' + describe(raw) + ', not a record'); return; }
     const id = readId(raw, config.id_field, source + ' record #' + (i + 1), p);
@@ -457,11 +566,12 @@ function normalizeKey(raws, config, source, p) {
       if (typeof d === 'string' || typeof d === 'number') duplicateOf = String(d).trim() || null;
       else if (d !== undefined && d !== null) p.stop('C9', where, config.duplicate_of_field + ' must be the id of another record, got ' + describe(d));
     }
-    const rec = { id, gold_route: goldRoute, traps, duplicate_of: duplicateOf, outputs: readOutputs(raw, config, where, p, true) };
+    const rec = { id, gold_route: goldRoute, traps, duplicate_of: duplicateOf, outputs: readOutputs(raw, config, where, p, true, eq) };
     const groups = readGroups(raw, config, 'key', where, p);
     if (groups) rec.groups = groups;
     out.push(rec);
   });
+  eq.report(p, source, 'answer key');
   return out;
 }
 

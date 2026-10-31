@@ -3,7 +3,8 @@
 //
 // Every value the model proposed with a confidence is a claim, whether or not it was
 // applied (a value the floor rejected was still a claim). A claim is right if the value
-// is in the answer key. Claims are grouped by stated confidence; each group's accuracy
+// is in the answer key: for a set, in any of its slots, so every alternative of an any_of slot
+// is right (slots.js). Claims are grouped by stated confidence; each group's accuracy
 // is compared with what was stated.
 //
 // Left out: values without a confidence, values inherited from another value (they
@@ -16,6 +17,7 @@
 
 const { rate } = require('./stats.js');
 const { scorePopulation } = require('./classification.js');
+const { accepted } = require('./slots.js');
 
 const round = (x, d) => Number(x.toFixed(d));
 
@@ -27,7 +29,7 @@ function claims(records, config) {
   for (const r of scorePopulation(records)) {
     for (const [name, o] of Object.entries(config.outputs)) {
       if (o.type === 'set') {
-        const inKey = new Set(r.key[name]);
+        const inKey = accepted(r.key[name]);
         for (const v of r.pred[name]) {
           if (v.inherited) { inherited++; continue; }
           if (v.confidence === null) { noConfidence++; continue; }

@@ -3,6 +3,7 @@
 // and the what-if are counts over these judgments, so the rules live in one place.
 
 const { SEVERITIES, DECLINED } = require('../config.js');
+const { resolveSet, unfilledLabel } = require('./slots.js');
 
 const nonEmpty = obj => Object.keys(obj).length > 0;
 const unique = list => [...new Set(list)];
@@ -14,14 +15,15 @@ function contentOutputs(config) {
   return Object.entries(config.outputs).filter(([, o]) => !(o.type !== 'set' && o.field === config.routing.field));
 }
 
-// A label output as a list of one, so sets and labels are compared the same way.
+// A label output as a list of one, so the gate reads sets and labels the same way.
 const predValues = (r, name, o) => (o.type === 'set' ? r.pred[name] : r.pred[name] ? [r.pred[name]] : []);
-const keyValues = (r, name, o) => (o.type === 'set' ? r.key[name] : r.key[name] != null ? [r.key[name]] : []);
 
 // How a record's values differ from the key, per output:
 //   wrong            - applied, not in the key
 //   missing_rejected - in the key, proposed by the model, not applied (the floor dropped it)
 //   missing          - in the key, never proposed
+// For a set, "in the key" is per slot (slots.js): an any_of slot nothing applied fills is one
+// entry, shown as "one of a, b, c", or with the alternative set aside: "b (one of a, b, c)".
 //   invalid          - applied, not in the output's allowed_values
 //   near_miss        - ordinal outputs: off by no more than near_miss_steps ("4 for 5")
 //   declined         - labels with decline: declined, but the key has an answer (the key's answer)
@@ -51,15 +53,11 @@ function valueFindings(r, config) {
       else f.wrong[name] = [p.value + (o.type === 'ordinal' ? ' for ' + k : '')];
       continue;
     }
-    const pv = predValues(r, name, o);
-    const kv = keyValues(r, name, o);
-    const applied = pv.filter(v => v.applied).map(v => v.value);
-    const proposed = new Set(pv.map(v => v.value));
-    const inKey = new Set(kv);
+    const { applied, wrong, unfilled } = resolveSet(r.pred[name], r.key[name]);
     const add = (bucket, vals) => { if (vals.length) f[bucket][name] = vals; };
-    add('wrong', applied.filter(v => !inKey.has(v)));
-    add('missing_rejected', kv.filter(v => proposed.has(v) && !applied.includes(v)));
-    add('missing', kv.filter(v => !proposed.has(v)));
+    add('wrong', wrong);
+    add('missing_rejected', unfilled.filter(u => u.set_aside.length).map(unfilledLabel));
+    add('missing', unfilled.filter(u => !u.set_aside.length).map(unfilledLabel));
     const allowed = config.allowed_values[name];
     if (Array.isArray(allowed)) add('invalid', applied.filter(v => !allowed.includes(v)));
   }

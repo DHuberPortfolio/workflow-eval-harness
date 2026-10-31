@@ -38,6 +38,7 @@ else has a default, and a misspelled key is an error rather than a silent fallba
 | `input.<file>.delimiter` | `,` (tab for `.tsv`) | CSV only: `,` `;` `\t` or `\|`. |
 | `input.<file>.list_separator` | `\|` | CSV only: between several values in one cell: `A \| B`. |
 | `input.<file>.confidence_separator` | `@` | CSV only: before a value's confidence: `SUBJ-MNA@0.95`. |
+| `input.key.any_of_separator` | - | CSV answer key only: between the alternatives of one slot, so `EP-12 \| EP-7 / EP-8` with `"/"` is EP-12 and one of EP-7 or EP-8 ([below](#any-of-these-is-right-and-equivalent-values)). Off unless set, so a value containing the character is never split by surprise. |
 
 Every field name can be a dotted path (`"output.subject"` is `subject` inside `output`).
 A field literally named with a dot is used first, because spreadsheet exports flatten names that way.
@@ -61,6 +62,54 @@ A field literally named with a dot is used first, because spreadsheet exports fl
 A value is written as `"text"` or `{ "value": "text", "confidence": 0.9, "applied": true, "inherited_from": "..." }`.
 `applied` must be a real `true`/`false`; `inherited_from` marks a value copied from another
 (a broader term), which is left out of calibration.
+
+### "Any of these is right", and equivalent values
+
+Two things an answer key could not say before, without rewriting it before every run:
+
+**Any one of several values is right.** Three episodes cover the point, and citing any one of
+them answers the question. In a set output's answer key, write those as one **slot**:
+
+```json
+{ "id": "Q1", "cites": ["ep-05", { "any_of": ["ep-01", "ep-02", "ep-03"] }] }
+```
+
+This record needs ep-05 and one of ep-01, ep-02, ep-03. A plain value is a slot of one. The
+slot is filled when the workflow applied any of its values; each applied value in it is right
+(two from one slot are both right), and a slot left unfilled is one miss, shown as
+`one of ep-01, ep-02, ep-03`. How that counts: [METRICS.md](METRICS.md#any-of-these-is-right).
+
+- `any_of` holds a list of one or more values, each text, trimmed like any value. An empty
+  list, a value that is not text, or anything else in the object stops, naming the record.
+- It belongs in the answer key: a prediction lists what the workflow gave.
+- Sets only. On a label output it stops ("any_of is for set outputs"): a label has one right
+  answer per record, and its confusion matrix needs one key label per row. For two names of
+  one label, use `equivalents`.
+- A value in two slots of one record (`["a", { "any_of": ["a", "b"] }]`) stops in strict mode:
+  usually a key mistake.
+- In a CSV answer key, set `input.key.any_of_separator` (say `"/"`) and write the slot as
+  `ep-01 / ep-02 / ep-03` inside the cell.
+
+**One thing under two names.** An episode re-released under a new id, a code and its alias:
+
+```json
+"equivalents": {
+  "cites": [["ep-12", "ep-12-rerun"]],
+  "tags": [["SUBJ-MNA", "SUBJ-MERGERS", "SUBJ-ACQUISITIONS"]]
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `equivalents.<output>` | A list of groups. Every value in a group is read as the group's **first** value, in the predictions, in the answer key (any_of slots included) and in `allowed_values`, before anything is counted. So every metric, the calibration, the possible key gaps and the what-ifs agree, with no rule of their own. |
+
+- A group lists two or more values; a value may be in one group only; the output must exist.
+- For a label output, the first value must be one of its labels (or a decline value): the
+  others are read as it. Not on the output that is also the route.
+- If one prediction then holds the same value twice (it cited both `ep-12` and
+  `ep-12-rerun`), the two merge into one: applied if either was, at the higher confidence.
+  The report lists each merge ("merged 2 equivalent values") and, per file, which values were
+  read as another and how often. `wfeval check` prints the groups it will read.
 
 ### Declines
 

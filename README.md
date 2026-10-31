@@ -191,6 +191,11 @@ response, a spreadsheet.
    ```
 3. `wfeval check` until it reads everything the way you mean, then `wfeval score`.
 
+If any one of several values is right (one of three sources to cite), or one thing goes by two
+names (a re-released episode's old and new id), say so in the answer key with `{ "any_of": [...] }`
+or in the config with `equivalents`, rather than rewriting the key before every run:
+[docs/CONFIG.md](docs/CONFIG.md#any-of-these-is-right-and-equivalent-values).
+
 Every config option: [docs/CONFIG.md](docs/CONFIG.md). The two real workflows in
 [`examples/`](examples) show complete configs.
 

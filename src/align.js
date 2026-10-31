@@ -7,6 +7,8 @@
 // where pred and key are the two sides' outputs, as load.js produced them. With groups in the
 // config, each also carries groups: { name: [labels] }, each group's labels from its own side.
 
+const { resolveSet } = require('./metrics/slots.js');
+
 const has = (obj, k) => Object.prototype.hasOwnProperty.call(obj, k);
 
 // One problem naming up to 20 ids, rather than one line per id: 200 missing records
@@ -56,12 +58,13 @@ function routeClass(value, map, where, p, label, missingTrap, unknownTrap) {
   return null;
 }
 
-// True if a prediction's applied values are exactly the key's, for every output.
+// True if a prediction's applied values are exactly the key's, for every output: for a set,
+// nothing wrong and no slot unfilled (slots.js).
 function sameAsKey(pred, key, config) {
   return Object.entries(config.outputs).every(([name, o]) => {
     if (o.type !== 'set') return pred[name] !== null && pred[name].value === key[name];
-    const applied = pred[name].filter(v => v.applied).map(v => v.value).sort();
-    return applied.join('\u0000') === [...key[name]].sort().join('\u0000');
+    const { wrong, unfilled } = resolveSet(pred[name], key[name]);
+    return wrong.length === 0 && unfilled.length === 0;
   });
 }
 const hasNoConfidence = (pred, config) => Object.entries(config.outputs).every(([name, o]) =>

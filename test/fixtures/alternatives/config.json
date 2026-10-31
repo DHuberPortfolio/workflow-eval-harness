@@ -1,0 +1,18 @@
+{
+  "id_field": "id",
+  "outputs": {
+    "cites": { "type": "set" }
+  },
+  "routing": {
+    "field": "decision",
+    "gold_field": "expected_decision",
+    "map": { "ANSWER": "auto", "REVIEW": "review" }
+  },
+  "thresholds": {
+    "floor": 0.6,
+    "auto_publish": { "cites": 0.8 }
+  },
+  "equivalents": {
+    "cites": [["ep-12", "ep-12-rerun"]]
+  }
+}

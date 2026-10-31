@@ -6,6 +6,7 @@
 //   2. decodeCsvRecords: the cells the config cares about are turned from text into
 //      the same shapes a JSON file would have, using the cell conventions:
 //        "SUBJ-MNA@0.95 | SUBJ-ANTI@0.88"   two values with confidences
+//        "EP-12 | EP-7 / EP-8"               answer key, any_of_separator "/": EP-12, and one of EP-7, EP-8
 //        ""                                  no values
 //        "true" / "FALSE"                    true / false (the "scored" column)
 //      After that, load.js treats the records exactly like records from JSON, so every
@@ -117,20 +118,28 @@ function decodeItem(piece, o, s, where, p) {
   return { [o.value_key]: piece.slice(0, at).trim(), [o.confidence_key]: conf };
 }
 
+// One piece between list separators. In the answer key, with input.key.any_of_separator set,
+// "EP-7 / EP-8" is one slot either fills: { any_of: [...] }, checked by load.js as in JSON (D20,
+// D21). Off by default, so a value that happens to contain the character is never split.
+function decodePiece(piece, o, s, where, p) {
+  if (!s.any_of_separator || !piece.includes(s.any_of_separator)) return decodeItem(piece, o, s, where, p);
+  return { any_of: piece.split(s.any_of_separator).map(x => decodeItem(x.trim(), o, s, where, p)).filter(v => v !== null) };
+}
+
 // A cell holding a set: values separated by the list separator. An empty cell means
 // "no values" (A14). Spaces around separators are part of the convention, so they are
 // trimmed without being reported. An empty piece ("A | | B") is kept so D9 catches it.
 function decodeList(cell, o, s, where, p) {
   if (cell.trim() === '') return [];
-  return cell.split(s.list_separator).map(piece => decodeItem(piece.trim(), o, s, where, p)).filter(v => v !== null);
+  return cell.split(s.list_separator).map(piece => decodePiece(piece.trim(), o, s, where, p)).filter(v => v !== null);
 }
 
 // A cell holding a label. Empty means no label (F3/F4 catch it). Several values means
-// a list, which F2 catches.
+// a list, which F2 catches; alternatives, an any_of, which F13 stops.
 function decodeLabel(cell, o, s, where, p) {
   if (cell.trim() === '') return undefined;
   if (cell.includes(s.list_separator)) return decodeList(cell, o, s, where, p);
-  return decodeItem(cell.trim(), o, s, where, p) ?? undefined;
+  return decodePiece(cell.trim(), o, s, where, p) ?? undefined;
 }
 
 // Spreadsheets write true/false in any case (Excel: TRUE). Anything else is left as

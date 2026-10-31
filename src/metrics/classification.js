@@ -12,6 +12,7 @@
 
 const { rate } = require('./stats.js');
 const { DECLINED } = require('../config.js');
+const { resolveSet, slotLabel } = require('./slots.js');
 
 const f1 = (tp, fp, fn) => (2 * tp + fp + fn === 0 ? null : Number(((2 * tp) / (2 * tp + fp + fn)).toFixed(3)));
 const scores = (tp, fp, fn) => ({ tp, fp, fn, precision: rate(tp, tp + fp), recall: rate(tp, tp + fn), f1: f1(tp, fp, fn) });
@@ -20,6 +21,9 @@ function scorePopulation(records) {
   return records.filter(r => r.scored && r.route_class !== 'exclude');
 }
 
+// The key is resolved per record (slots.js): every applied value in a slot is a TP, two from one
+// any_of slot included; every applied value in none is a FP; every slot left unfilled is one FN,
+// counted per value under its name ("one of a, b"). Exact match: nothing wrong, nothing unfilled.
 function scoreSet(pop, name) {
   let tp = 0, fp = 0, fn = 0, exact = 0;
   const byValue = new Map();
@@ -28,12 +32,11 @@ function scoreSet(pop, name) {
     byValue.get(v)[field]++;
   };
   for (const r of pop) {
-    const applied = new Set(r.pred[name].filter(v => v.applied).map(v => v.value));
-    const key = new Set(r.key[name]);
-    let same = applied.size === key.size;
-    for (const v of applied) { if (key.has(v)) { tp++; count(v, 'tp'); } else { fp++; count(v, 'fp'); same = false; } }
-    for (const v of key) if (!applied.has(v)) { fn++; count(v, 'fn'); same = false; }
-    if (same) exact++;
+    const { right, wrong, unfilled } = resolveSet(r.pred[name], r.key[name]);
+    for (const v of right) { tp++; count(v, 'tp'); }
+    for (const v of wrong) { fp++; count(v, 'fp'); }
+    for (const u of unfilled) { fn++; count(slotLabel(u.slot), 'fn'); }
+    if (wrong.length === 0 && unfilled.length === 0) exact++;
   }
   const by_value = {};
   for (const v of [...byValue.keys()].sort()) { const c = byValue.get(v); by_value[v] = scores(c.tp, c.fp, c.fn); }

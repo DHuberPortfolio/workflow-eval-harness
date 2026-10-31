@@ -14,7 +14,7 @@ const GATE_USES = ['lead', 'weakest'];
 const FORMATS = ['json', 'jsonl', 'csv'];
 const DELIMITERS = [',', ';', '\t', '|'];
 const TOP_LEVEL_KEYS = ['id_field', 'input', 'outputs', 'routing', 'wrong_when', 'thresholds', 'trap_field',
-  'duplicate_of_field', 'allowed_values', 'severity', 'min_per_trap', 'calibration', 'whatif', 'groups'];
+  'duplicate_of_field', 'allowed_values', 'severity', 'min_per_trap', 'calibration', 'whatif', 'groups', 'equivalents'];
 const GROUP_FROM = ['key', 'predictions'];
 const SEVERITIES = ['critical', 'high', 'medium', 'low'];
 // What a declined label is read as on both sides (see outputs.<name>.decline below). In
@@ -28,7 +28,7 @@ const ERROR_TYPES = {
   'SG-GATE': 'critical', 'SG-FLOOR': 'critical', 'SP-NEAR-MISS': 'low',
 };
 const OUTPUT_KEYS = ['type', 'field', 'key_field', 'labels', 'value_key', 'confidence_key', 'rejected_field', 'confidence_field', 'near_miss_steps', 'decline'];
-const INPUT_KEYS = ['format', 'records_at', 'unwrap', 'delimiter', 'list_separator', 'confidence_separator'];
+const INPUT_KEYS = ['format', 'records_at', 'unwrap', 'delimiter', 'list_separator', 'confidence_separator', 'any_of_separator'];
 
 const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isName = v => typeof v === 'string' && v.length > 0;
@@ -90,6 +90,58 @@ function validateGroups(raw, errors) {
   return groups;
 }
 
+// equivalents: values that are one thing under several names (an episode re-released under a new
+// id). { "<output>": [["a", "a-alias"], ["x", "y", "z"]] }. load.js reads every value of a group,
+// on both sides, as the group's first, so every metric, the calibration, the key gaps and the
+// what-ifs agree on them with no code of their own (trap D23). A value may be in one group only,
+// or it would have two names to be read as. For a label, the first value must be a label (or a
+// decline value): every value of the group is read as it. Not on the output that is also the
+// route, whose values routing.map reads before any output does.
+function validateEquivalents(raw, outputs, rawRouting, errors) {
+  const out = {};
+  if (raw === undefined) return out;
+  if (!isObj(raw)) { errors.push('equivalents must be an object: { "<output>": [["value", "the same value under another name"], ...] }'); return out; }
+  const routeField = isObj(rawRouting) ? (rawRouting.field === undefined ? 'route' : rawRouting.field) : null;
+  for (const [name, groups] of Object.entries(raw)) {
+    const at = 'equivalents.' + name;
+    const o = outputs[name];
+    if (!o) { errors.push(at + ' is not a declared output'); continue; }
+    if (!Array.isArray(groups) || groups.length === 0 || !groups.every(Array.isArray)) {
+      errors.push(at + ' must be a list of groups, each a list of values that are the same thing: [["a", "a-alias"]]');
+      continue;
+    }
+    if (o.type !== 'set' && o.field === routeField) errors.push(at + ': outputs.' + name + ' is also the route (routing.field), and routing.map already says what each of its values does');
+    const groupOf = new Map();   // value -> the group it is in
+    groups.forEach((g, i) => {
+      const gat = at + '[' + i + ']';
+      if (g.length < 2 || !g.every(isName)) { errors.push(gat + ' must list two or more values (text); the first is the one they are all read as'); return; }
+      if (!g.every(v => v.trim() === v)) { errors.push(gat + ': values must be text without spaces at either end, as values are read'); return; }
+      for (const v of g) {
+        if (groupOf.has(v)) errors.push(at + ': "' + v + '" is in ' + (groupOf.get(v) === i ? 'one group twice' : 'two groups') + '; a value may be in one group only');
+        else groupOf.set(v, i);
+      }
+      if (o.labels && !o.labels.includes(g[0]) && !(o.decline && o.decline.values.includes(g[0]))) {
+        errors.push(gat + ': the first value, "' + g[0] + '", must be one of outputs.' + name + '.labels: every value in the group is read as it');
+      }
+    });
+    out[name] = groups;
+  }
+  return out;
+}
+
+// What a value of one output is read as: its equivalents group's first value, or itself.
+function equivalentOf(equivalents, name) {
+  const to = new Map((equivalents[name] || []).flatMap(g => g.map(v => [v, g[0]])));
+  return v => (to.has(v) ? to.get(v) : v);
+}
+
+// An allowed list read the way values are, so a value allowed under one of its names is allowed
+// under the others, and SP-INVALID never fires on a value only because it was renamed.
+function allowedAsRead(list, equivalents, name) {
+  const as = equivalentOf(equivalents, name);
+  return [...new Set(list.map(as))];
+}
+
 // wfeval score --group-by <path>: one more group, read from the answer key and named by its path.
 // Returns a new config; the one passed in is not changed.
 function addGroupBy(config, paths) {
@@ -126,9 +178,11 @@ function validateConfig(raw) {
   //   delimiter            - between cells: "," (default; tab for .tsv), ";", "\t" or "|"
   //   list_separator       - between several values in one cell (default "|")
   //   confidence_separator - before a value's confidence: "SUBJ-MNA@0.95" (default "@")
+  //   any_of_separator     - answer key only: between the alternatives of one slot, "EP-7 / EP-8"
+  //                          with "/" (D20). Off unless set, so no value is ever split by surprise
   const input = {};
   for (const which of ['predictions', 'key']) {
-    input[which] = { format: null, records_at: null, unwrap: null, delimiter: null, list_separator: '|', confidence_separator: '@' };
+    input[which] = { format: null, records_at: null, unwrap: null, delimiter: null, list_separator: '|', confidence_separator: '@', any_of_separator: null };
   }
   const isSeparator = v => isName(v) && !/["\r\n]/.test(v);
   if (raw.input !== undefined) {
@@ -144,13 +198,18 @@ function validateConfig(raw) {
           if (k === 'format' && !FORMATS.includes(v)) errors.push(at + ' must be one of: ' + FORMATS.join(', '));
           if ((k === 'records_at' || k === 'unwrap') && !isPath(v)) errors.push(at + ' ' + PATH_RULE);
           if (k === 'delimiter' && !DELIMITERS.includes(v)) errors.push(at + ' must be one of: "," ";" "\\t" (tab) "|"');
-          if ((k === 'list_separator' || k === 'confidence_separator') && !isSeparator(v)) errors.push(at + ' must be non-empty text without quotes or line breaks');
+          if ((k === 'list_separator' || k === 'confidence_separator' || k === 'any_of_separator') && !isSeparator(v)) errors.push(at + ' must be non-empty text without quotes or line breaks');
+          // A prediction lists what the workflow gave; "any of these" is only ever the key's to say.
+          if (k === 'any_of_separator' && which === 'predictions') errors.push(at + ': alternatives belong in the answer key only');
           input[which][k] = v;
         }
-        // The three CSV separators must differ, or a cell could be read two ways.
+        // The CSV separators must differ, or a cell could be read two ways.
         const s = input[which];
         if (s.list_separator === s.confidence_separator) errors.push('input.' + which + ': list_separator and confidence_separator are both "' + s.list_separator + '"');
-        if (s.delimiter && (s.delimiter === s.list_separator || s.delimiter === s.confidence_separator)) {
+        for (const other of ['list_separator', 'confidence_separator']) {
+          if (s.any_of_separator && s.any_of_separator === s[other]) errors.push('input.' + which + ': any_of_separator and ' + other + ' are both "' + s[other] + '"');
+        }
+        if (s.delimiter && (s.delimiter === s.list_separator || s.delimiter === s.confidence_separator || s.delimiter === s.any_of_separator)) {
           errors.push('input.' + which + ': delimiter "' + s.delimiter + '" is also used as a separator inside cells');
         }
       }
@@ -397,10 +456,12 @@ function validateConfig(raw) {
   }
 
   const groups = validateGroups(raw.groups, errors);
+  const equivalents = validateEquivalents(raw.equivalents, outputs, raw.routing, errors);
+  for (const [name, v] of Object.entries(allowed)) if (Array.isArray(v)) allowed[name] = allowedAsRead(v, equivalents, name);
 
   const config = errors.length ? null : {
     id_field: idField, input, outputs, routing, wrong_when: wrongWhen, thresholds, trap_field: trapField,
-    min_per_trap: minPerTrap, duplicate_of_field: duplicateOf, allowed_values: allowed, severity, calibration, whatif, groups,
+    min_per_trap: minPerTrap, duplicate_of_field: duplicateOf, allowed_values: allowed, severity, calibration, whatif, groups, equivalents,
   };
   return { config, errors };
 }
@@ -417,7 +478,7 @@ function resolveAllowedValues(config, configPath) {
     if (!Array.isArray(list)) throw new Error('allowed_values.' + name + ': ' + file + ' must hold a list');
     const values = list.map(x => (v.field ? (x !== null && typeof x === 'object' ? x[v.field] : undefined) : x));
     if (!values.every(isName)) throw new Error('allowed_values.' + name + ': every entry of ' + file + ' must be ' + (v.field ? 'an object with text in "' + v.field + '"' : 'text'));
-    config.allowed_values[name] = values;
+    config.allowed_values[name] = allowedAsRead(values, config.equivalents, name);
   }
   return config;
 }
@@ -433,4 +494,4 @@ function loadConfig(configPath) {
   return resolveAllowedValues(config, configPath);
 }
 
-module.exports = { validateConfig, loadConfig, addGroupBy, ROUTE_CLASSES, ERROR_TYPES, SEVERITIES, DECLINED };
+module.exports = { validateConfig, loadConfig, addGroupBy, equivalentOf, ROUTE_CLASSES, ERROR_TYPES, SEVERITIES, DECLINED };

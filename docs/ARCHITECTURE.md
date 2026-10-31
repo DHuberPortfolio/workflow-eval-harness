@@ -69,6 +69,9 @@ The metric tests are checked against answers worked out by hand before the code 
   and two reviewers' grades: invented and missing rates, and their agreement (kappa).
 - `test/fixtures/declines/`: ten links classified into page categories or declined, shaped
   like a competitor registry: coverage, accuracy when answered, and both kinds of decline mistake.
+- `test/fixtures/alternatives/`: six answers citing podcast episodes, where any one of several
+  episodes is right (`any_of` slots) and one episode has two ids (`equivalents`): how slots
+  count, and how the floor what-if fills them again at every floor.
 - `test/fixtures/shapes/`: the same six records in six file shapes, which must all load identically.
 - `examples/`: real runs of two real workflows (see each example's NOTES.md).
 

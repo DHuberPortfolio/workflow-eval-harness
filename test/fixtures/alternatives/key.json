@@ -1,0 +1,8 @@
+[
+  { "id": "A1", "expected_decision": "ANSWER", "cites": [{ "any_of": ["ep-01", "ep-02", "ep-03"] }] },
+  { "id": "A2", "expected_decision": "ANSWER", "cites": ["ep-05", { "any_of": ["ep-01", "ep-02"] }] },
+  { "id": "A3", "expected_decision": "ANSWER", "cites": [{ "any_of": ["ep-07", "ep-08", "ep-09"] }] },
+  { "id": "A4", "expected_decision": "ANSWER", "cites": ["ep-20", { "any_of": ["ep-10", "ep-11"] }] },
+  { "id": "A5", "expected_decision": "ANSWER", "cites": ["ep-12"] },
+  { "id": "A6", "expected_decision": "ANSWER", "cites": ["ep-12-rerun"] }
+]

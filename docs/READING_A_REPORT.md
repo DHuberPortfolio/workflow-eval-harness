@@ -74,6 +74,12 @@ model's blind spot, and no threshold fixes it. Here, in all six, the model had f
 violation and set it aside because it understated its confidence. That finding is what led
 to the prompt fix.
 
+When the answer key accepts any one of several values (an `any_of` slot), a miss names the
+whole slot: `never found: one of ep-07, ep-08, ep-09` means none of the three was given, and
+`found, but set aside: ep-11 (one of ep-10, ep-11)` means the model found ep-11 and set it
+aside. Values the config calls equivalent are read as one name first, and the clean-ups at the
+end of the report say which were read as which.
+
 Below the silent errors come the silent omissions and safeguard failures (none here), then
 the **unnecessary reviews**: records sent to a person that could have gone out. A few are
 the price of safety; many teach reviewers to stop looking.

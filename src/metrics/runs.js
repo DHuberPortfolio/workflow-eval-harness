@@ -5,6 +5,7 @@
 // records (trap I2) and are judged by the same rules (I4) by construction.
 
 const { pairedDifference } = require('./stats.js');
+const { accepted } = require('./slots.js');
 
 const round = (x, d = 1) => (x === null ? null : Number(x.toFixed(d)));
 
@@ -66,7 +67,8 @@ function spread(values) {
 // same mistake made every time, or something the key is missing; the tool cannot tell
 // which, so it lists them for a person to decide. Only values a key could list count: not
 // invented ones (outside allowed_values), not inherited ones (they follow from a stated
-// value), not suppressed duplicates, and only from runs where the model answered.
+// value), not suppressed duplicates, and only from runs where the model answered. An
+// alternative of an any_of slot is never one: the key already lists it (trap I10).
 function keyGapCandidates(runs, config) {
   const found = new Map();
   runs.forEach((run, i) => {
@@ -74,7 +76,7 @@ function keyGapCandidates(runs, config) {
       if (!r.scored || r.route_class === 'exclude') continue;
       for (const [name, o] of Object.entries(config.outputs)) {
         if (o.type !== 'set' || r.key[name] == null) continue;
-        const inKey = new Set(r.key[name]);
+        const inKey = accepted(r.key[name]);
         const allowed = config.allowed_values[name];
         for (const v of r.pred[name] || []) {
           if (inKey.has(v.value) || v.inherited || (Array.isArray(allowed) && !allowed.includes(v.value))) continue;
