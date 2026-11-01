@@ -22,6 +22,24 @@ prompt v2's runs could not tilt the key toward prompt v2. Every code v1 states i
 runs is already in a table below; its `TESTIMONIAL_ISSUE` on E23 and E25 is v1's old name for
 `TESTIMONIAL_NO_DISCLAIMER` (see NOTES.md).
 
+## The rulings file
+
+Every decision below is also in [rulings.json](rulings.json), the harness's rulings file
+(`--rulings`): 9 adds and 16 rejects, by DHuberPortfolio on 2026-09-23. They were made on the
+v1 key that every run file carries, so with that key the file rebuilds key v2, and `variance`
+has nothing left to rule on:
+
+```
+node bin/wfeval.js variance --config examples/compliance-reviewer/config.json \
+  --key examples/compliance-reviewer/runs/exec-56.harness.json --rulings examples/compliance-reviewer/rulings.json \
+  examples/compliance-reviewer/runs/exec-5{6,7,8,9}.harness.json
+```
+
+Each of runs 50-59 scores the same this way as against `key.json` (checked by a test in
+`test/examples.test.js`). With `key.json`, the 9 adds are already in the key, so the report
+sets each one aside with a warning (trap I14). The 11 codes stated in only some runs were not
+reviewed, so the file does not rule on them.
+
 ## Added to the key (key v2)
 
 | doc | the copy at issue | added | model confidence, 4 runs |
@@ -74,9 +92,8 @@ review starts from the same reasoning.
 | E23, E25 | RESULTS_NO_DISCLAIMER (0.75-0.90) | testimonials describing results ("way more than I expected", "saved my family a fortune") | TESTIMONIAL_NO_DISCLAIMER's own definition already covers "implying typical results" |
 | E39 | RESULTS_NO_DISCLAIMER (0.80-0.85) | a statistic about case outcomes | STATISTIC_NO_CONTEXT is already in the key, and "resolve" is not "win" |
 
-To add one later: put it in `key.json` and in the n8n node, and move its row to the first
-table. Until then, `variance` keeps listing these as possible key gaps; that is expected,
-and this table is the answer.
+To add one later: put it in `key.json` and in the n8n node, change its ruling in
+`rulings.json` to `add` with that day's date, and move its row to the first table.
 
 ## What key v2 changes
 

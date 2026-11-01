@@ -1,0 +1,31 @@
+{
+  "rulings": [
+    { "id": "E02", "output": "violations", "value": "IMPLIED_GUARANTEE", "ruling": "add", "by": "DHuberPortfolio", "on": "2026-09-23", "note": "\"call the team that wins\"" },
+    { "id": "E15", "output": "violations", "value": "RESULTS_NO_DISCLAIMER", "ruling": "add", "by": "DHuberPortfolio", "on": "2026-09-23", "note": "\"Our track record speaks for itself\"" },
+    { "id": "E16", "output": "violations", "value": "RESULTS_NO_DISCLAIMER", "ruling": "add", "by": "DHuberPortfolio", "on": "2026-09-23", "note": "\"Charges tend not to survive our cross-examination\"" },
+    { "id": "E17", "output": "violations", "value": "STATISTIC_NO_CONTEXT", "ruling": "add", "by": "DHuberPortfolio", "on": "2026-09-23", "note": "\"Every client ... is still here with their family today\"" },
+    { "id": "E19", "output": "violations", "value": "RESULTS_NO_DISCLAIMER", "ruling": "add", "by": "DHuberPortfolio", "on": "2026-09-23", "note": "\"walk out of court with the parenting time they asked for\"" },
+    { "id": "E20", "output": "violations", "value": "UNVERIFIABLE_COMPARISON", "ruling": "add", "by": "DHuberPortfolio", "on": "2026-09-23", "note": "\"No other firm in the city handles retaliation claims the way we do\"" },
+    { "id": "E21", "output": "violations", "value": "IMPLIED_GUARANTEE", "ruling": "add", "by": "DHuberPortfolio", "on": "2026-09-23", "note": "\"you are settling for less than your case is worth\"" },
+    { "id": "E22", "output": "violations", "value": "IMPLIED_SUPERIORITY", "ruling": "add", "by": "DHuberPortfolio", "on": "2026-09-23", "note": "\"Most estate planning attorneys use templates. We do not.\"" },
+    { "id": "E22", "output": "violations", "value": "IMPLIED_GUARANTEE", "ruling": "add", "by": "DHuberPortfolio", "on": "2026-09-23", "note": "\"That difference shows up when the will is contested\"; borderline, ruled an add" },
+
+    { "id": "E03", "output": "violations", "value": "IMPLIED_SUPERIORITY", "ruling": "reject", "by": "DHuberPortfolio", "on": "2026-09-23", "note": "the same rule counted twice: \"premier\" is the SUPERLATIVE already in the key" },
+    { "id": "E04", "output": "violations", "value": "IMPLIED_SUPERIORITY", "ruling": "reject", "by": "DHuberPortfolio", "on": "2026-09-23", "note": "the same rule counted twice: \"top-rated\" is the SUPERLATIVE already in the key" },
+    { "id": "E08", "output": "violations", "value": "SPECIALIST", "ruling": "reject", "by": "DHuberPortfolio", "on": "2026-09-23", "note": "the same rule counted twice: the key's more specific SPECIALIST_CERT_UNNAMED covers it" },
+    { "id": "E09", "output": "violations", "value": "IMPLIED_GUARANTEE", "ruling": "reject", "by": "DHuberPortfolio", "on": "2026-09-23", "note": "the same rule counted twice: the explicit GUARANTEE is already in the key" },
+    { "id": "E10", "output": "violations", "value": "IMPLIED_GUARANTEE", "ruling": "reject", "by": "DHuberPortfolio", "on": "2026-09-23", "note": "the same rule counted twice: the explicit GUARANTEE is already in the key" },
+    { "id": "E11", "output": "violations", "value": "IMPLIED_GUARANTEE", "ruling": "reject", "by": "DHuberPortfolio", "on": "2026-09-23", "note": "the same rule counted twice: the explicit GUARANTEE is already in the key" },
+    { "id": "E13", "output": "violations", "value": "FL_PREFILING_REVIEW", "ruling": "reject", "by": "DHuberPortfolio", "on": "2026-09-23", "note": "an advisory process flag (pre-publication review), not a violation" },
+
+    { "id": "E04", "output": "violations", "value": "AWARD_CLAIM_REVIEW", "ruling": "reject", "by": "DHuberPortfolio", "on": "2026-09-23", "note": "borderline: the same words as the SUPERLATIVE already in the key" },
+    { "id": "E06", "output": "violations", "value": "RESULTS_NO_DISCLAIMER", "ruling": "reject", "by": "DHuberPortfolio", "on": "2026-09-23", "note": "borderline: it states volume, not results" },
+    { "id": "E11", "output": "violations", "value": "STATISTIC_NO_CONTEXT", "ruling": "reject", "by": "DHuberPortfolio", "on": "2026-09-23", "note": "borderline: the same words as the GUARANTEE already in the key" },
+    { "id": "E16", "output": "violations", "value": "IMPLIED_SUPERIORITY", "ruling": "reject", "by": "DHuberPortfolio", "on": "2026-09-23", "note": "borderline: the model rates it only \"probably\", and never applied it" },
+    { "id": "E19", "output": "violations", "value": "STATISTIC_NO_CONTEXT", "ruling": "reject", "by": "DHuberPortfolio", "on": "2026-09-23", "note": "borderline: overlaps the RESULTS_NO_DISCLAIMER added to the key" },
+    { "id": "E20", "output": "violations", "value": "IMPLIED_GUARANTEE", "ruling": "reject", "by": "DHuberPortfolio", "on": "2026-09-23", "note": "borderline: the model itself rates it arguable" },
+    { "id": "E23", "output": "violations", "value": "RESULTS_NO_DISCLAIMER", "ruling": "reject", "by": "DHuberPortfolio", "on": "2026-09-23", "note": "borderline: TESTIMONIAL_NO_DISCLAIMER already covers implying typical results" },
+    { "id": "E25", "output": "violations", "value": "RESULTS_NO_DISCLAIMER", "ruling": "reject", "by": "DHuberPortfolio", "on": "2026-09-23", "note": "borderline: TESTIMONIAL_NO_DISCLAIMER already covers implying typical results" },
+    { "id": "E39", "output": "violations", "value": "RESULTS_NO_DISCLAIMER", "ruling": "reject", "by": "DHuberPortfolio", "on": "2026-09-23", "note": "borderline: STATISTIC_NO_CONTEXT is already in the key, and \"resolve\" is not \"win\"" }
+  ]
+}

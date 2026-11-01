@@ -187,7 +187,8 @@ IMPLIED_GUARANTEE). It changes no route: that copy is blocked anyway.
 
 9 violations the v1 key had not listed were added, after each was read against the copy.
 Against the v1 key, prompt v2 had looked 10-20 points less precise than it was.
-[KEY_GAPS.md](KEY_GAPS.md) has every candidate, and why each was added or not. In n8n, the
+[KEY_GAPS.md](KEY_GAPS.md) has every candidate, and why each was added or not;
+[rulings.json](rulings.json) holds the same decisions as a rulings file. In n8n, the
 node **Answer Key v2 Additions** adds the same 9 right after the golden set, which itself is
 unchanged.
 

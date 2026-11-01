@@ -168,3 +168,24 @@ test('paired: the compliance prompt fix and the metadata v3 guard, judged withou
   assert.deepEqual(row(meta, 'silent errors'), [27, 13, 18, 4, 'better']);
   assert.deepEqual(row(meta, 'unnecessary reviews'), [123, 154, 23, 54, 'worse']);
 });
+
+// The owner's rulings on the compliance key gaps (KEY_GAPS.md), as a rulings file. They were
+// made on the v1 key every run file carries, so with it they rebuild key v2: each of runs 50-59
+// scores the same as against key.json, and no code stated in every prompt v2 run is left to rule on.
+test('compliance rulings: the v1 key plus rulings.json scores as key v2, with nothing left to rule on', () => {
+  const { varianceRun } = require('../src/score.js');
+  const { loadRulings } = require('../src/rulings.js');
+  const C = path.join(__dirname, '..', 'examples', 'compliance-reviewer');
+  const cfg = loadConfig(path.join(C, 'config.json'));
+  const rulings = loadRulings(path.join(C, 'rulings.json'), cfg);
+  const run = n => path.join(C, 'runs', 'exec-' + n + '.harness.json');
+  const scored = r => ['routing', 'quality', 'traps', 'calibration', 'records', 'paired'].map(k => r[k]);
+  for (const n of [50, 51, 52, 56, 57, 58, 59]) {
+    const R = scoreRun({ config: cfg, predPath: run(n), keyPath: run(56), rulings });
+    assert.equal(R.rulings.added.length, 9);
+    assert.deepEqual(scored(R), scored(scoreRun({ config: cfg, predPath: run(n), keyPath: path.join(C, 'key.json') })), 'run ' + n);
+  }
+  const V = varianceRun({ config: cfg, keyPath: run(56), predPaths: [56, 57, 58, 59].map(run), rulings });
+  assert.deepEqual(V.records.key_gap_candidates.filter(g => g.runs === g.of), []);
+  assert.equal(V.records.key_gaps_rejected, 16);
+});

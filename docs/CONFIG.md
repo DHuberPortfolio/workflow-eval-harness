@@ -283,7 +283,9 @@ can say which. A rulings file records what that person decided, so each one is d
 ```
 
 Pass it with `--rulings <file>` to `score`, `variance` or `compare`. It sits beside the answer
-key and is read with it; the key file itself is never changed.
+key and is read with it; the key file itself is never changed. A real one:
+[the compliance reviewer's](../examples/compliance-reviewer/rulings.json), 25 rulings from its
+[key review](../examples/compliance-reviewer/KEY_GAPS.md).
 
 | Field | Meaning |
 |---|---|
