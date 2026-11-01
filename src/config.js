@@ -367,6 +367,8 @@ function validateConfig(raw) {
   //                provisional_below (a label on the value, not a gate)
   //   per record - auto_publish: { facet: threshold }. Only listed facets gate.
   //                A record can auto-publish only if every listed facet passes.
+  //                A threshold may be a prediction field's name instead: each record's
+  //                own threshold (a client's, say), read from that field.
   // gate_uses says which value in a facet is compared to its threshold:
   //   lead    - the strongest value ("is the best tag on this facet strong?")
   //   weakest - the weakest value ("is every tag strong?"). Stricter; a weak
@@ -395,7 +397,13 @@ function validateConfig(raw) {
         } else {
           for (const [facet, v] of Object.entries(t.auto_publish)) {
             if (!outputs[facet]) errors.push(at + '.auto_publish.' + facet + ' is not a declared output');
-            if (!isProb(v)) errors.push(at + '.auto_publish.' + facet + ' must be a number from 0 to 1');
+            // A field name instead of a number: each record's own threshold, read from that
+            // prediction field (a client's threshold, say). load.js reads it (trap E18).
+            // Text that reads as a number is a quoted number, not a field's name (as E2 refuses "0.85").
+            if (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v))) {
+              errors.push(at + '.auto_publish.' + facet + ' is the text ' + JSON.stringify(v) + ': write the number without quotes (' + Number(v) + '); text names the prediction field holding each record\'s own threshold');
+            } else if (typeof v === 'string') { if (!isPath(v)) errors.push(at + '.auto_publish.' + facet + ' ' + PATH_RULE); }
+            else if (!isProb(v)) errors.push(at + '.auto_publish.' + facet + ' must be a number from 0 to 1, or the prediction field holding each record\'s own threshold');
             else if (isProb(t.floor) && v < t.floor) errors.push(at + '.auto_publish.' + facet + ' (' + v + ') is below ' + at + '.floor (' + t.floor + ')');
             auto[facet] = v;
           }

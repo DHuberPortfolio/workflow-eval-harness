@@ -1,0 +1,10 @@
+{
+  "id_field": "id",
+  "outputs": {
+    "verdict": { "type": "label", "labels": ["pass", "fail"] },
+    "band": { "type": "ordinal", "labels": ["low", "medium", "high"] },
+    "codes": { "type": "set" }
+  },
+  "allowed_values": { "codes": ["c1", "c2", "c3"] },
+  "routing": { "field": "route", "map": { "publish": "auto", "review": "review" }, "gold_field": "gold_route" }
+}

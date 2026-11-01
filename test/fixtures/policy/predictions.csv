@@ -1,0 +1,9 @@
+id,decision,gate,match,client,codes
+P1,AUTO,0.9,0.9,north,A@0.95
+P2,AUTO,0.9,0.4,south,A@0.92
+P3,AUTO,0.8,0.3,north,C@0.85
+P4,AUTO,0.8,0.7,south,A@0.88
+P5,REVIEW,0.8,0.8,north,B@0.75
+P6,REVIEW,0.9,0.5,west,C@0.7
+P7,BLOCK,0.9,0.2,south,X@0.99
+P8,AUTO,0.9,0.6,west,B@0.91

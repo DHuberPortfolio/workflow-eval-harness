@@ -1,0 +1,6 @@
+[
+  { "id": "W41-1", "decision": "SENT", "output": { "TOPIC": "billing" },  "expected": { "TOPIC": "billing" } },
+  { "id": "W41-2", "decision": "SENT", "output": { "TOPIC": "shipping" }, "expected": { "TOPIC": "shipping" } },
+  { "id": "W41-3", "decision": "SENT", "output": { "TOPIC": "refund" },   "expected": { "TOPIC": "refund" } },
+  { "id": "W41-4", "decision": "HELD", "output": { "TOPIC": "billing" },  "expected": { "TOPIC": "billing" } }
+]

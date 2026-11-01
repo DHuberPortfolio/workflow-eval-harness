@@ -1,0 +1,21 @@
+{
+  "id_field": "id",
+  "outputs": {
+    "category": {
+      "type": "label",
+      "labels": [
+        "refund",
+        "billing",
+        "shipping",
+        "other"
+      ]
+    }
+  },
+  "routing": {
+    "field": "outcome",
+    "map": {
+      "SEND": "auto",
+      "HOLD": "review"
+    }
+  }
+}

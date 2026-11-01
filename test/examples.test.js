@@ -189,3 +189,57 @@ test('compliance rulings: the v1 key plus rulings.json scores as key v2, with no
   assert.deepEqual(V.records.key_gap_candidates.filter(g => g.runs === g.of), []);
   assert.equal(V.records.key_gaps_rejected, 16);
 });
+
+// The policy what-if (wfeval whatif --policies) reproduces the What-if table in
+// examples/compliance-reviewer/NOTES.md, which the compliance project computed with its own
+// replay script, from the same run 67 and policies.json beside it.
+test('compliance policies: policies.json reproduces the NOTES.md what-if table exactly', () => {
+  const { loadPolicies, policyFields, checkPolicyData } = require('../src/policy.js');
+  const { policySweep } = require('../src/metrics/policy.js');
+  const { problems } = require('../src/problems.js');
+  const C = path.join(__dirname, '..', 'examples', 'compliance-reviewer');
+  const base = loadConfig(path.join(C, 'config.json'));
+  const policies = loadPolicies(path.join(C, 'policies.json'), base);
+  const cfg = policyFields(base, policies);
+  const run = path.join(C, 'golden500', 'exec-67.harness.json');
+  const { paired } = scoreRun({ config: cfg, predPath: run, keyPath: run });
+  const p = problems('strict');
+  checkPolicyData(policies, paired, cfg, p);
+  assert.deepEqual(p.items, []);
+  const W = policySweep(paired, cfg, policies);
+  const table = W.rows.map(r => [r.name, r.silent_error_rate.pct, r.silent_error_rate.n, r.silent_error_rate.d, r.wasted_reviews.length]);
+  assert.deepEqual(table, [
+    ['as run', 9.8, 25, 256, 26],
+    ["Cap every client's threshold at 0.85", 7.2, 18, 249, 26],
+    ['Award claims always go to a person', 4.1, 10, 241, 26],
+    ['Both', 1.3, 3, 234, 26],
+    ['Every note goes to a person', 0, 0, 211, 46],
+  ]);
+  assert.ok(W.rows.every(r => r.exact));
+  // Every record held was a silent error, except the 20 notes nobody needed to see.
+  assert.deepEqual(W.rows.slice(1).map(r => [r.held.length, r.paired.silent_errors.fixed, r.paired.silent_errors.broke, r.paired.unnecessary_reviews.broke]),
+    [[7, 7, 0, 0], [15, 15, 0, 0], [22, 22, 0, 0], [45, 25, 0, 20]]);
+});
+
+// Why "cap at 0.85" is a hold-if rule for this data: a finding is applied when its confidence is
+// at least the client's threshold (0.80-0.90), and any applied finding sends the document to a
+// person. Checked here rather than assumed; the data has no client or threshold field.
+test('compliance policies: a finding stated at 0.85 or more and not applied means a threshold above 0.85', () => {
+  const C = path.join(__dirname, '..', 'examples', 'compliance-reviewer');
+  const run = path.join(C, 'golden500', 'exec-67.harness.json');
+  const { paired } = scoreRun({ config: loadConfig(path.join(C, 'config.json')), predPath: run, keyPath: run });
+  const model = paired.flatMap(r => r.pred.violations.filter(v => v.confidence !== null).map(v => ({ ...v, r })));
+  // No model finding at 0.90 or more was left unapplied, and none under 0.80 was applied.
+  assert.equal(model.filter(v => !v.applied && v.confidence >= 0.9).length, 0);
+  assert.equal(model.filter(v => v.applied && v.confidence < 0.8).length, 0);
+  // No document has both an unapplied finding at 0.85 or more and an applied one under 0.90:
+  // one threshold per document explains every finding.
+  const mixed = paired.filter(r => r.pred.violations.some(v => !v.applied && v.confidence >= 0.85) &&
+    r.pred.violations.some(v => v.applied && v.confidence !== null && v.confidence < 0.9));
+  assert.deepEqual(mixed.map(r => r.id), []);
+  // No document that went out without review has an applied finding.
+  assert.equal(paired.filter(r => r.route_class === 'auto' && r.pred.violations.some(v => v.applied)).length, 0);
+  // So with every threshold capped at 0.85, exactly the documents out without review that have an
+  // unapplied finding at 0.85 or more would have one applied: 7, the "cap" row's held records.
+  assert.equal(paired.filter(r => r.route_class === 'auto' && r.pred.violations.some(v => !v.applied && v.confidence >= 0.85)).length, 7);
+});

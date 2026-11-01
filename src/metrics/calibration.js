@@ -102,7 +102,12 @@ function scoreCalibration(records, config) {
     if (t.floor !== null) thresholds.push({ name: 'floor', output: null, threshold: t.floor, at_or_above: at(all, t.floor), below: rate(all.filter(c => c.confidence < t.floor && c.correct).length, all.filter(c => c.confidence < t.floor).length) });
     if (t.provisional_below !== null) thresholds.push({ name: 'provisional_below', output: null, threshold: t.provisional_below, at_or_above: at(all, t.provisional_below) });
     for (const [name, v] of Object.entries(t.auto_publish)) {
-      thresholds.push({ name: 'auto_publish', output: name, threshold: v, at_or_above: at(all.filter(c => c.output === name), v) });
+      const mine = all.filter(c => c.output === name);
+      if (typeof v === 'number') { thresholds.push({ name: 'auto_publish', output: name, threshold: v, at_or_above: at(mine, v) }); continue; }
+      // Each record's own threshold (a field's name): each claim against its own record's.
+      const own = new Map(records.map(r => [r.id, r.fields ? r.fields[v] : undefined]));
+      const above = mine.filter(c => typeof own.get(c.id) === 'number' && c.confidence >= own.get(c.id));
+      thresholds.push({ name: 'auto_publish', output: name, threshold: 'each record\'s own "' + v + '"', at_or_above: rate(above.filter(c => c.correct).length, above.length) });
     }
   }
 

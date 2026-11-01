@@ -491,6 +491,56 @@ function readMovable(raw, config) {
   return config.whatif.movable_values.some(m => String(m) === String(v).trim());
 }
 
+// Prediction fields kept beside the outputs, by path: each record's own gate threshold
+// (thresholds.auto_publish naming a field) and the fields a policy what-if's conditions read
+// (config.policy_fields, added by policy.js). null when there are none, so records stay
+// unchanged without them. A missing field is left out.
+// A record's own threshold must be a number from 0 to 1 (trap E18). Text that reads as one is read
+// as the number: a CSV's cells are all text, and in a JSON file it is cleaned up and counted (ctx).
+// Anything else is strict, because a gate with no threshold cannot be checked; in lenient mode it
+// is left out and the gate check for that record is unknown. Only for records the gate could
+// route (out without review or sent to a person, with a model answer): a blocked record or a
+// failed model call never meets the gate. ctx collects, for one line each after the file: numeric
+// text read as numbers, and thresholds below thresholds.floor.
+function readFields(raw, config, where, p, ctx) {
+  const own = config.thresholds ? Object.values(config.thresholds.auto_publish).filter(v => typeof v === 'string') : [];
+  const paths = [...new Set([...own, ...(config.policy_fields || [])])];
+  if (paths.length === 0) return null;
+  const route = getPath(raw, config.routing.field);
+  const cls = typeof route === 'string' ? config.routing.map[route.trim()] : undefined;
+  const gated = ctx.scored && (cls === 'auto' || cls === 'review');
+  const out = {};
+  for (const f of paths) {
+    let v = getPath(raw, f);
+    if (own.includes(f)) {
+      if (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v))) {
+        if (!ctx.csv) ctx.text.push(ctx.id);
+        v = Number(v);
+      }
+      if (!(typeof v === 'number' && v >= 0 && v <= 1)) {
+        // The value itself when it is a number (1.2, 85), and for a percentage, the fraction it means.
+        const shown = typeof v === 'number' ? String(v) + (Number.isInteger(v) && v > 1 && v <= 100 ? '; it must be a number from 0 to 1 (a percentage? write ' + v / 100 + ')' : '; it must be a number from 0 to 1')
+          : describe(v) + '; it must be a number from 0 to 1';
+        if (gated) p.strict('E18', where, 'its own gate threshold "' + f + '" is ' + shown + ' (thresholds.auto_publish names this field)');
+        continue;
+      }
+      if (config.thresholds.floor !== null && v < config.thresholds.floor && !ctx.below.includes(ctx.id)) ctx.below.push(ctx.id);
+    }
+    if (v !== undefined) out[f] = v;
+  }
+  return out;
+}
+
+// The lines readFields saves for after the file (trap E18): one for each kind, naming the records.
+function reportFields(ctx, config, source, p) {
+  const ids = list => list.slice(0, 20).join(', ') + (list.length > 20 ? ' ...' : '');
+  if (ctx.text.length) p.fix('E18', source, ctx.text.length + ' record(s) give their own gate threshold as text; read as the number: ' + ids(ctx.text));
+  if (ctx.below.length) {
+    p.warn('E18', source, ctx.below.length + ' record(s) have their own gate threshold below thresholds.floor (' + config.thresholds.floor +
+      '): ' + ids(ctx.below) + '. A value under the floor is never applied, so the gate below it never decides anything');
+  }
+}
+
 // Group labels (config.groups) for the groups read from this side: { name: [labels] }, or null
 // when this side has none, so records stay unchanged without groups. Read like trap labels:
 // text, a number or true/false is one label, as trimmed text (so a CSV's "7" and a JSON 7 are
@@ -571,6 +621,7 @@ function normalizePredictions(raws, config, source, p, opts = {}) {
 
   const out = [];
   const eq = equivalentsReader(config);
+  const fieldCtx = { csv: formatOf(source, config.input.predictions) === 'csv', text: [], below: [] };
   raws.forEach((raw, i) => {
     if (!isObj(raw)) { p.stop('B1', source + ' record #' + (i + 1), 'is ' + describe(raw) + ', not a record'); return; }
     const id = readId(raw, config.id_field, source + ' record #' + (i + 1), p);
@@ -592,8 +643,11 @@ function normalizePredictions(raws, config, source, p, opts = {}) {
     if (groups) rec.groups = groups;
     const cluster = readCluster(raw, config, 'predictions', where, p);
     if (cluster !== undefined) rec.cluster = cluster;
+    const fields = readFields(raw, config, where, p, { ...fieldCtx, id, scored });
+    if (fields) rec.fields = fields;
     out.push(rec);
   });
+  reportFields(fieldCtx, config, source, p);
   eq.report(p, source, 'predicted');
   return out;
 }

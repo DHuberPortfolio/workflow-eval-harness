@@ -1,0 +1,7 @@
+[
+  { "id": "W40-1", "decision": "SENT", "output": { "TOPIC": "billing" },  "expected": { "TOPIC": "billing" } },
+  { "id": "W40-2", "decision": "SENT", "output": { "TOPIC": "refund" },   "expected": { "TOPIC": "billing" } },
+  { "id": "W40-3", "decision": "SENT", "output": { "TOPIC": "shipping" }, "expected": { "TOPIC": "shipping" } },
+  { "id": "W40-4", "decision": "SENT", "output": { "TOPIC": "billing" },  "expected": { "TOPIC": "billing" } },
+  { "id": "W40-5", "decision": "HELD", "output": { "TOPIC": "refund" },   "expected": { "TOPIC": "shipping" } }
+]

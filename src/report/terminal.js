@@ -5,6 +5,7 @@ const {
   pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines,
   groupSource, GROUP_RANGES, severalLabels, rulingsWords, pendingLine, rulingStatus, clusterLine, CLUSTER_GROUP_NOTE, CLUSTER_TARGET_NOTE, mixLines, thousands,
 } = require('./format.js');
+const { withKeyLabels } = require('./format.js');
 
 // "RULINGS  1 value added to the answer key by rulings in ...", and the rest indented (trap I11).
 function rulingsSection(r, against = '') {
@@ -97,14 +98,14 @@ function typeLegend(types) {
   return ['  what the types mean', table(types.map(t => [t, TYPE_LABELS[t] || '']), [], '    ')];
 }
 
-function silentSection(title, what, block, showDiffs) {
+function silentSection(title, what, block, showDiffs, keyed = (id, d) => d) {
   if (!block || block.records.length === 0) return title + '  none';
   const sev = Object.entries(block.by_severity || {}).filter(([, n]) => n > 0).map(([s, n]) => s + ' ' + n).join(' · ');
   const lines = [title + '  ' + block.records.length + ' record(s)' + (sev ? '  (' + sev + ')' : '') + ': ' + what];
   for (const x of block.records) {
     lines.push('  ' + x.id.padEnd(8) + x.severity.padEnd(10) + x.types.join(', ') + (x.traps.length ? '   [' + x.traps.join(', ') + ']' : ''));
     lines.push('  ' + ''.padEnd(8) + 'went: ' + x.route + (x.gold_route === null ? '' : '   answer key: ' + x.gold_route));
-    if (showDiffs) for (const d of differenceLines(x.differences)) lines.push('  ' + ''.padEnd(8) + d);
+    if (showDiffs) for (const d of differenceLines(keyed(x.id, x.differences))) lines.push('  ' + ''.padEnd(8) + d);
     if (x.declined) for (const d of differenceLines({ declined: x.declined })) lines.push('  ' + ''.padEnd(8) + d);
   }
   lines.push(...typeLegend(typesIn(block.records)));
@@ -226,7 +227,7 @@ function renderTerminal(results) {
   if (results.rulings) parts.push(rulingsSection(results.rulings));
   parts.push(headline(results));
   if (results.target) parts.push(targetSection(results.target, TARGET_WORDS.run, results.clusters ? [CLUSTER_TARGET_NOTE] : []));
-  parts.push(silentSection('SILENT ERRORS', 'went out without review, but needed a person', r.silent_errors, true));
+  parts.push(silentSection('SILENT ERRORS', 'went out without review, but needed a person', r.silent_errors, true, withKeyLabels(results)));
   if (r.silent_omissions) parts.push(silentSection('SILENT OMISSIONS', omissionWhat(results), r.silent_omissions, false));
   parts.push(r.safeguard_failures.records === 0 ? 'SAFEGUARD FAILURES  none'
     : 'SAFEGUARD FAILURES  ' + r.safeguard_failures.detail.map(d => d.id + ' (' + d.types.join(', ') + ')').join('  ') +
@@ -381,34 +382,130 @@ const frac = r => (r === null ? 'n/a' : r.d === 0 ? 'none went out' : pct(r) + '
 
 // With --target (trap E9): which gate is certified, the gate that only looks under the target
 // read alone, how certification works, and what the guarantee rests on.
-function certificationSection(c) {
+// The gate what-if's certification, or the policy what-if's (one row per policy, by name).
+const GATE_WORDS = { one: 'gate', One: 'Gate', many: 'gates', tested: c => c.gates_tested, name: b => b.threshold.toFixed(2) };
+const POLICY_WORDS = { one: 'policy', One: 'Policy', many: 'policies', tested: c => c.policies_tested, name: b => '"' + b.name + '"', rows: true };
+function certificationSection(c, w = GATE_WORDS) {
   const under = c.target_pct + '%';
-  const gates = c.gates_tested + ' gate' + (c.gates_tested === 1 ? '' : 's');
+  const tested = w.tested(c);
+  // Policies count the run as it was too: "5 rows (the run as it was and 4 policies)".
+  const gates = w.rows ? tested + ' rows (the run as it was and ' + (tested - 1) + ' polic' + (tested - 1 === 1 ? 'y' : 'ies') + ')' : tested + ' ' + (tested === 1 ? w.one : w.many);
   const alpha = Math.round((1 - c.confidence) * 100) + '%';
-  const lines = ['CERTIFIED UNDER ' + under + '  at ' + Math.round(c.confidence * 100) + '% confidence, among ' + gates + ' tried'];
+  const lines = ['CERTIFIED UNDER ' + under + '  at ' + Math.round(c.confidence * 100) + '% confidence, among ' + gates + (w.rows ? ' tested' : ' tried')];
   const b = c.best;
   if (b) {
-    lines.push('The loosest certified gate is ' + b.threshold.toFixed(2) + ': silent error rate ' + pct(b.silent_error_rate) + ' (' + count(b.silent_error_rate) +
+    lines.push('The loosest certified ' + w.one + ' is ' + w.name(b) + ': silent error rate ' + pct(b.silent_error_rate) + ' (' + count(b.silent_error_rate) +
       ' out without review, likely ' + range(b.silent_error_rate) + '), straight-through ' + pct(b.straight_through) + ' (' + count(b.straight_through) + ').');
+    const note = w.bestNote ? w.bestNote(b) : null;
+    if (note) lines.push(note);
   } else {
-    lines.push('No gate tried is certified under ' + under + '. Among ' + gates + ', a gate needs at least ' + thousands(c.least_records_out) +
+    lines.push('No ' + w.one + ' tried is certified under ' + under + '. Among ' + gates + ', a ' + w.one + ' needs at least ' + thousands(c.least_records_out) +
       ' records out without review, with no silent error among them, to be certified (more if it has any).');
   }
   const a = c.looks_under_alone;
   if (a && !a.certified) {
-    lines.push('Gate ' + a.threshold.toFixed(2) + ' looks under ' + under + ' read alone (its likely range reaches ' + a.high_pct.toFixed(1) + '%), but it was picked from ' + gates + ': not certified.');
+    lines.push(w.One + ' ' + w.name(a) + ' looks under ' + under + ' read alone (its likely range reaches ' + a.high_pct.toFixed(1) + '%), but it was picked from ' + gates + ': not certified.');
   }
-  lines.push('How: each gate is tested on its own records out without review. It is certified if, were its true silent error rate ' + under +
+  lines.push('How: each ' + w.one + ' is tested on its own records out without review. It is certified if, were its true silent error rate ' + under +
     ' or more, so few silent errors would turn up at most ' + Number((c.level * 100).toPrecision(2)) + '% of the time (exact binomial): the ' +
-    alpha + ' allowed for being wrong, shared among the ' + gates + ' tried (Bonferroni). So the chance that any certified gate is really at or above ' +
+    alpha + ' allowed for being wrong, shared among the ' + gates + ' tried (Bonferroni). So the chance that any certified ' + w.one + ' is really at or above ' +
     under + ' is at most ' + alpha + '.');
   lines.push('The guarantee holds for records like these: on a golden set built from traps it is a stress-test guarantee, not one for real traffic. ' +
-    'It rests on the assumption above about which records the gate can move, and counts only the gates tried in this sweep: sweeping again over a ' +
-    'narrower range after seeing this one is still picking from many.');
+    (w === GATE_WORDS
+      ? 'It rests on the assumption above about which records the gate can move, and counts only the gates tried in this sweep: sweeping again over a ' +
+        'narrower range after seeing this one is still picking from many.'
+      : 'Hold-if rules need no assumption; a threshold change rests on the assumption above about which records the gate can move. It counts only the ' +
+        'policies tried in this file: policies chosen on the same records flatter themselves, so writing new ones after seeing this table is still ' +
+        'picking from many. Confirm the one you choose on records it was not chosen on.'));
   return lines.join('\n  ');
 }
 
+// Where the gate check ran: the one current gate, or each record's own threshold (a field).
+const checkAt = k => (k.configured ? 'the config\'s gates' : k.own ? 'each record\'s own threshold ("' + k.own + '")' : 'the current gate (' + k.threshold + ')');
+
+// The gate self-check's lines (whatif.js gateCheck), for the gate and policy what-ifs.
+function checkLines(k) {
+  const out = [k.differing.length === 0
+    ? 'Check: at ' + checkAt(k) + ' the simulation reproduces the actual route of all ' + (k.movable - (k.not_checked || []).length) + ' movable records' +
+      (k.not_checked ? ' it could check' : '') + '.'
+    : 'CHECK FAILED: at ' + checkAt(k) + ' the simulation routes ' + k.differing.length + ' of ' + k.movable +
+      ' movable records differently from the actual run (' + list(k.differing) + '). Those records were not routed by the gate alone: ' +
+      'set whatif.movable_field so the what-if only moves records the gate decided.'];
+  if (k.not_checked) {
+    const n = k.not_checked.length;
+    out.push(n + ' movable record' + (n === 1 ? '' : 's') + ' could not be checked (a confidence or threshold is missing): ' + list(k.not_checked) + '.');
+  }
+  return out.join('\n');
+}
+
+// Load warnings and clean-ups, below a what-if.
+function whatifNotes(w) {
+  const notes = (w.problems || []).filter(i => i.level !== 'stop');
+  return notes.length ? ['WARNINGS AND CLEAN-UPS\n' + notes.map(i => '  ' + i.level + ' [' + i.trap + '] ' + i.where + ': ' + i.message).join('\n')] : [];
+}
+
+// One row per policy, beside the run as it was (metrics/policy.js).
+// One row per policy, beside the run as it was (metrics/policy.js), in 100 columns: a summary
+// table to compare them by eye, then one block per row with every figure.
+const NAME_WIDTH = 30;
+const short = name => (name.length > NAME_WIDTH ? name.slice(0, NAME_WIDTH - 1) + '…' : name);
+// "5 rows: the run as it was and 4 policies", the count certification pays for.
+const rowsTested = n => n + ' rows: the run as it was and ' + (n - 1) + ' polic' + (n - 1 === 1 ? 'y' : 'ies');
+// One paired outcome: the change in records, what moved each way, and Tango's range in points.
+function pairedText(x, what, fixWord, brokeWord) {
+  const change = x.after - x.before;
+  return what + ' ' + (change > 0 ? '+' : '') + change + ' (' + fixWord + ' ' + x.fixed + ', ' + brokeWord + ' ' + x.broke + '; ' +
+    (x.verdict === 'no change' || x.low_pct === null ? x.verdict : x.low_pct.toFixed(1) + ' to ' + x.high_pct.toFixed(1) + ' points, ' + x.verdict) + ')';
+}
+// Paired with the run as it was, a certified policy that lets out more silent errors.
+function worseNote(w) {
+  return b => {
+    const r = w.rows.find(x => x.name === b.name);
+    const x = r && r.paired ? r.paired.silent_errors : null;
+    if (!x || x.after <= x.before) return null;
+    const n = x.after - x.before;
+    return 'But paired with the run as it was, it lets out ' + n + ' more silent error' + (n === 1 ? '' : 's') + ' (fixed ' + x.fixed + ', new ' + x.broke + '; ' + x.verdict + ').';
+  };
+}
+
+function renderPolicies(w) {
+  const c = w.certification;
+  const parts = ['WHAT-IF: POLICIES  ' + rowsTested(w.rows.length)];
+  parts.push('Assumption: ' + w.assumption + '.');
+  const rows = [['policy', 'silent error rate', 'went out', 'unnecessary reviews', ...(c ? ['certified'] : [])]];
+  for (const r of w.rows) {
+    rows.push([short(r.name), frac(r.silent_error_rate), r.through.length + ' (' + pct(r.straight_through) + ')', r.wasted_reviews.length, ...(c ? [r.certified ? 'yes' : ''] : [])]);
+  }
+  parts.push(table(rows, [1, 2, 3]));
+  if (w.check) parts.push(checkLines(w.check));
+  const blocks = [];
+  for (const r of w.rows) {
+    const p = r.paired;
+    const lines = ['  ' + r.name + (p === null ? '' : r.exact ? '  (exact)' : '  (assumes the gate decided)')];
+    lines.push('    silent error rate ' + pct(r.silent_error_rate) + ' (' + count(r.silent_error_rate) + ')' + (range(r.silent_error_rate) ? ', likely ' + range(r.silent_error_rate) : ''));
+    lines.push('    straight-through ' + pct(r.straight_through) + ' (' + count(r.straight_through) + ')' + (p === null ? '' : ' · held ' + r.held.length + ' · moved by the gate ' + r.moved_by_gate.length) +
+      (c ? ' · certified under ' + c.target_pct + '%: ' + (r.certified ? 'yes' : 'no') : ''));
+    lines.push('    ' + (r.silent_omissions ? 'silent omissions ' + pct(r.silent_omissions) + ' (' + count(r.silent_omissions) + ') · ' : '') +
+      'unnecessary reviews ' + r.wasted_reviews.length + ' · review precision ' + pct(r.review_queue_precision) + ' (' + count(r.review_queue_precision) + ')');
+    if (p) {
+      const vs = [pairedText(p.silent_errors, 'silent errors', 'fixed', 'new'), ...(p.silent_omissions ? [pairedText(p.silent_omissions, 'silent omissions', 'fixed', 'new')] : []),
+        pairedText(p.unnecessary_reviews, 'unnecessary reviews', 'removed', 'added')];
+      lines.push('    vs as run: ' + vs[0], ...vs.slice(1).map(v => '               ' + v));
+    }
+    blocks.push(lines.join('\n'));
+  }
+  parts.push('EACH ROW  every figure; "vs as run" pairs the policy with the run as it was, record by record:\n' +
+    'the change in records, and its likely range in points of all ' + (w.rows[1] ? w.rows[1].paired.records : 0) + ' records\n\n' + blocks.join('\n\n'));
+  for (const name of w.changes_nothing || []) parts.push('"' + name + '" holds and moves no record: it is the run as it was. Check its conditions.');
+  if (c) parts.push(certificationSection(c, { ...POLICY_WORDS, bestNote: worseNote(w) }));
+  parts.push('Read the silent error COUNT beside the rate: a rate can fall because correct records joined the denominator, with no error prevented. ' +
+    'A policy that holds more always looks safer: read the unnecessary reviews it adds beside the silent errors it fixes.');
+  parts.push(...whatifNotes(w));
+  return parts.join('\n\n') + '\n';
+}
+
 function renderWhatif(w) {
+  if (w.kind === 'policies') return renderPolicies(w);
   const parts = [];
   if (w.kind === 'gate') {
     const c = w.certification;
@@ -420,13 +517,7 @@ function renderWhatif(w) {
         ...(c ? [r.certified ? 'yes' : ''] : []), list(r.moved_in, 6), list(r.moved_out, 6), r.wasted_reviews.length, r.current ? '<- current' : '']);
     }
     parts.push(table(rows, [1, 2]));
-    if (w.check) {
-      parts.push(w.check.differing.length === 0
-        ? 'Check: at the current gate (' + w.check.threshold + ') the simulation reproduces the actual route of all ' + w.check.movable + ' movable records.'
-        : 'CHECK FAILED: at the current gate (' + w.check.threshold + ') the simulation routes ' + w.check.differing.length + ' of ' + w.check.movable +
-          ' movable records differently from the actual run (' + list(w.check.differing) + '). Those records were not routed by the gate alone: ' +
-          'set whatif.movable_field so the what-if only moves records the gate decided.');
-    }
+    if (w.check) parts.push(checkLines(w.check));
     if (c) parts.push(certificationSection(c));
     parts.push('Read the silent error COUNT beside the rate: a rate can fall because correct records joined the denominator, with no error prevented.');
   } else {
@@ -440,6 +531,7 @@ function renderWhatif(w) {
     }
     parts.push(table(rows, [1, 2, 3, 5, 6]));
   }
+  parts.push(...whatifNotes(w));
   return parts.join('\n\n') + '\n';
 }
 

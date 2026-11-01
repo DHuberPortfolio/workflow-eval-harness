@@ -2,8 +2,9 @@
 #   tests:   the whole suite, on Linux and Windows, on the oldest supported Node (18) and
 #            two current ones; then the commands the README and example notes show,
 #            including --fail-on, which must stop a build that has a high-severity silent error
-#            (or, for graded free text, an invented field), and compare --fail-if-worse, which
-#            must stop a change that makes an outcome worse and pass one that makes it better.
+#            (or, for graded free text, an invented field), compare --fail-if-worse, which
+#            must stop a change that makes an outcome worse and pass one that makes it better,
+#            and monitor --fail-on-alarm, which must stop on a rise and pass after a restart.
 #   samples: rebuilds the sample reports the README links to and fails if they differ from
 #            the committed copies, so the samples always show what the tool produces today.
 name: tests
@@ -47,7 +48,12 @@ jobs:
           node bin/wfeval.js whatif --config $M/config.json --pred $M/run49.json --key $M/run49.json --gate
           W=test/fixtures/gate
           node bin/wfeval.js whatif --config $W/config.json --pred $W/predictions.json --key $W/key.json --gate --target 30
+          P=test/fixtures/policy
+          node bin/wfeval.js whatif --config $P/config.json --pred $P/predictions.json --key $P/key.json --policies $P/policies.json --target 30
+          node bin/wfeval.js whatif --config $P/config.json --pred $P/predictions.csv --key $P/key.json --hold-if 'codes=B' --hold-if 'field:match<0.5'
           node bin/wfeval.js score --config $C/config.json --pred $C/golden500/exec-67.harness.json --key $C/golden500/exec-67.harness.json
+          node bin/wfeval.js whatif --config $C/config.json --pred $C/golden500/exec-67.harness.json --key $C/golden500/exec-67.harness.json \
+            --policies $C/policies.json --target 5
           G=$M/golden500
           node bin/wfeval.js variance --config $G/config.json --key $G/exec-70.json $G/exec-7{0,1,2}.json
           node bin/wfeval.js compare --config $G/config.json --key $G/exec-70.json --before $G/exec-69.json --after $G/exec-71.json \
@@ -72,6 +78,17 @@ jobs:
           F=test/fixtures/freetext
           node bin/wfeval.js grade --config $F/grading.json --pred $F/forms.json --out "$out/grading.html"
           node bin/wfeval.js score --grades $F/grades-a.json --second-reviewer $F/grades-b.json --json "$out/grades.json"
+          L=test/fixtures/monitor
+          node bin/wfeval.js monitor --config $L/config.json $L/runs/2026-W40.json $L/runs/2026-W41.json $L/runs/2026-W42.json --target 5
+          node bin/wfeval.js monitor --counts $L/counts.csv --target 5 --json "$out/monitor.json"
+          A=test/fixtures/agree
+          node bin/wfeval.js agree --config $A/config.json --keys $A/ann.json $A/ben.json $A/cai.json --json "$out/agree.json" \
+            --write-key "$out/majority.json"
+          node bin/wfeval.js agree --grades $F/grades-a.json $F/grades-b.json $A/grades-c.json
+          E=test/fixtures/estimate
+          node bin/wfeval.js estimate --config $E/config.json --pred $E/predictions.json --judge-key $E/judge-key.json --pick 10 --seed 1
+          node bin/wfeval.js estimate --config $E/config.json --pred $E/predictions.json --judge-key $E/judge-key.json \
+            --key $E/person-key.json --target 50 --json "$out/estimate.json"
       - name: --fail-on stops a build with a high-severity silent error or invented field; --fail-if-worse one that makes things worse
         shell: bash
         run: |
@@ -96,6 +113,16 @@ jobs:
             --before $Q/predictions.json --after $Q/predictions-after.json --fail-if-worse unnecessary-reviews > /dev/null
           code=$?
           echo "compare in order: exit code $code (expected 0: unnecessary reviews better)"
+          test "$code" -eq 0 || exit 1
+          # The monitor fixture's silent error rate rises: an alarm in 2026-W42, none after a restart in W41.
+          L=test/fixtures/monitor
+          node bin/wfeval.js monitor --counts $L/counts.csv --target 5 --fail-on-alarm > /dev/null
+          code=$?
+          echo "monitor: exit code $code (expected 3: an alarm)"
+          test "$code" -eq 3 || exit 1
+          node bin/wfeval.js monitor --counts $L/counts.csv --target 5 --since 2026-W41 --fail-on-alarm > /dev/null
+          code=$?
+          echo "monitor --since 2026-W41: exit code $code (expected 0: no alarm since the restart)"
           test "$code" -eq 0
 
   samples:

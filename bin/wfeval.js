@@ -74,16 +74,80 @@ commands:
             the likely range for any count (2 of 15), and with --target, how many
             records would show the rate is under it
 
-  whatif    --config <file> --pred <file> --key <file> (--gate | --floor)
-            [--output <name>] [--from <n>] [--to <n>] [--step <n>] [--lenient] [--json <file>]
-            [--target <percent> [--confidence 0.9|0.95|0.99]]
+  whatif    --config <file> --pred <file> --key <file>
+            (--gate | --floor | --policies <file> | --hold-if <rule> ...)
+            [--output <name>] [--from <n>] [--to <n>] [--step <n>]
+            [--lenient] [--json <file>] [--target <percent> [--confidence 0.9|0.95|0.99]]
             what the numbers would be at other thresholds. --gate sweeps the auto-publish
             gate (all gated outputs, or one with --output); --floor sweeps the value floor.
             --gate --target 5 marks the gates certified under 5%: each tested on its own
             records, with the chance that any certified gate is really at or above 5% held
-            to 1 - confidence (default 0.95) across all the gates tried
+            to 1 - confidence (default 0.95) across all the gates tried.
+            --policies <file> compares named routing policies side by side with the run as
+            it was: rules that send a record to a person (hold_if) and threshold changes
+            (docs/CONFIG.md). --hold-if adds one more policy without a file, and works
+            alone; repeat it for "or": codes=B (states B) · codes=* (any value) ·
+            codes=*@0.85 (any value at 0.85 or more) · codes.unapplied=B · field:match<0.5 ·
+            field:match>=0.5 · field:client=north,west · clauses joined by " and ".
+            --target certifies the policies as --gate certifies gates
 
-exit codes: 0 done · 1 input problems (listed) · 2 bad command · 3 --fail-on or --fail-if-worse triggered`;
+  estimate  --config <file> --pred <file> --judge-key <file> --key <file> [--lenient]
+            [--json <file>] [--target <percent> [--fail-if-not-shown]] [--picks <picks.json>]
+            the silent error rate when an AI judge wrote the answer key for every record that
+            went out without review (it need not grade the others) and a person checked some
+            of them (--key: the person's answer key for those). Each
+            judge verdict group's rate comes from the person's checks, its weight from the
+            judge: a wrong judge widens the range, it does not bias the estimate. Valid when
+            the checks were picked at random (from all the records out, or within each verdict
+            group) and made without seeing the judge's verdict. Also gives the judge alone,
+            the person alone, how often they agree, and the records where they disagree.
+            --target 5 says whether the estimate is shown under 5%, and if not, roughly how
+            many more checks, in which verdict group, would show it. --fail-if-not-shown exits
+            with code 3 when the whole range is not under the target (for scheduled jobs).
+            --picks picks.json (saved by --pick --json) checks that the person checked exactly
+            the picked records
+
+  estimate  --config <file> --pred <file> --judge-key <file> --pick <n> [--seed <n>]
+            [--lenient] [--json <file>]
+            before checking: which n records out without review the person should check,
+            split between the judge's verdicts the way that gives the narrowest range and
+            chosen at random within each (the same --seed picks the same records). Listed in
+            the run's order, so the list does not show the judge's verdicts: check them without
+            looking at those, then run estimate with --key
+
+  monitor   (--config <file> <period file> [<period file> ...] [--keys <dir>] | --counts <file>)
+            [--target <percent>] [--acceptable <percent>] [--alarming <percent>]
+            [--false-alarm-every <records>] [--period-size <records>] [--since <period>] [--fail-on-alarm]
+            [--lenient] [--json <file>]
+            live samples over time: one period per file, in time order, each holding that
+            period's checked records with the person's answers (named after the file:
+            2026-W41.json is "2026-W41"; --keys keys/ reads each period's answers from the
+            file of the same name in keys/), or a counts file scored elsewhere (period,
+            out_without_review, silent_errors; JSON or .csv). Says whether the silent error
+            rate has gone up (an alarm, and when the rise likely started) and whether it is
+            shown under --target, valid however often you look. --acceptable is the rate it
+            normally runs at (default: half the target), --alarming the rise to flag (default:
+            double the acceptable rate). --false-alarm-every 2000 (the default) allows on
+            average at most one false alarm per 2,000 records checked, for periods of the
+            median size so far, or of --period-size. --since restarts the alarm at a period
+            after a fix (the bound keeps counting every period). --fail-on-alarm exits with
+            code 3 on an alarm (for scheduled jobs)
+
+  agree     --config <file> --keys <key> <key> [<key> ...] [--names <a,b,...>] [--output <name> ...]
+            [--lenient] [--json <file>] [--resamples <n>] [--seed <n>] [--write-key <file>]
+  agree     --grades <file> <file> [<file> ...] [--names <a,b,...>] [--lenient] [--json <file>]
+            [--resamples <n>] [--seed <n>]
+            how far the people who made the answer keys (or graded free text) agree:
+            Krippendorff's alpha per output, for any number of graders, with its likely range,
+            each pair of graders, and the records they labelled differently. Records labelled
+            by one grader only are left out and counted. --output compares only those outputs
+            ("route" is the routing gold field). --write-key majority.json also writes a
+            majority answer key: per record and output, the value most graders gave; records
+            with a tie, or labelled by one grader, are left out and listed to settle
+
+exit codes: 0 done · 1 a problem in the files or an option's value (listed) · 2 bad command
+            (an unknown command or option, or an option given without its value) · 3 --fail-on,
+            --fail-if-worse, --fail-on-alarm or --fail-if-not-shown triggered`;
 
 const MODE = values => (values.lenient ? 'lenient' : 'strict');
 function need(values, names, cmd) {
@@ -112,7 +176,7 @@ function certifyOptions(values) {
     if (values.confidence !== undefined) throw new Error('--confidence goes with --target <percent>');
     return {};
   }
-  if (!values.gate) throw new Error('--target goes with --gate: the floor what-if certifies nothing');
+  if (values.floor) throw new Error('--target goes with --gate or --policies: the floor what-if certifies nothing');
   const target = targetPercent(values);
   const confidence = values.confidence === undefined ? 0.95 : Number(values.confidence);
   if (![0.9, 0.95, 0.99].includes(confidence)) throw new Error('--confidence must be 0.9, 0.95 or 0.99');
@@ -220,7 +284,7 @@ function check(args) {
   if (!t) {
     console.log('  thresholds  not set');
   } else {
-    const gates = Object.entries(t.auto_publish).map(([f, v]) => f + ' >= ' + v).join(', ') || 'none';
+    const gates = Object.entries(t.auto_publish).map(([f, v]) => f + ' >= ' + (typeof v === 'string' ? 'each record\'s own "' + v + '"' : v)).join(', ') || 'none';
     console.log('  floor       ' + (t.floor === null ? 'not set' : t.floor) + '   provisional below ' + (t.provisional_below === null ? 'not set' : t.provisional_below));
     console.log('  auto gate   ' + gates + '  (compares the ' + t.gate_uses + ' value)');
   }
@@ -288,12 +352,47 @@ function whatif(args) {
     gate: { type: 'boolean' }, floor: { type: 'boolean' }, output: { type: 'string' },
     from: { type: 'string' }, to: { type: 'string' }, step: { type: 'string' }, json: { type: 'string' },
     target: { type: 'string' }, confidence: { type: 'string' },
+    policies: { type: 'string' }, 'hold-if': { type: 'string', multiple: true },
   } });
   need(values, ['config', 'pred', 'key'], 'whatif');
-  if (Boolean(values.gate) === Boolean(values.floor)) throw new Error('whatif needs exactly one of --gate or --floor');
+  const holdIf = values['hold-if'] || [];
+  if (holdIf.length && (values.gate || values.floor)) throw new Error('--hold-if goes with --policies or alone, not with --gate or --floor');
+  const policyMode = Boolean(values.policies) || holdIf.length > 0;
+  if ([values.gate, values.floor, policyMode].filter(Boolean).length !== 1) throw new Error('whatif needs exactly one of --gate, --floor or --policies (or --hold-if)');
+  const sweepOnly = ['output', 'from', 'to', 'step'].filter(k => values[k] !== undefined);
+  if (policyMode && sweepOnly.length) throw new Error(sweepOnly.map(k => '--' + k).join(' ') + ' go(es) with --gate or --floor: a policy names its own thresholds');
   const certify = certifyOptions(values);
-  const config = loadConfig(values.config);
-  const { paired } = scoreRun({ config, predPath: values.pred, keyPath: values.key, mode: MODE(values) });
+  let config = loadConfig(values.config);
+  // Policies are read and checked before the run (E10-E13, E17), and name the prediction fields
+  // the run must keep (policyFields); what only the records can show is checked after (E14-E16, E19).
+  let policies = null;
+  const p = require('../src/problems.js').problems(MODE(values));
+  if (policyMode) {
+    const { loadPolicies, parseHoldIf, policyFields } = require('../src/policy.js');
+    policies = values.policies ? loadPolicies(values.policies, config, p) : [];
+    if (holdIf.length) {
+      const name = 'hold if ' + holdIf.join(' or ');
+      if (policies.some(x => x.name === name)) throw new Error('the policies file already has a policy named "' + name + '"');
+      policies.push({ name, hold_if: holdIf.map(t => parseHoldIf(t, config, p)), auto_publish: null, auto_publish_cap: null });
+    }
+    config = policyFields(config, policies);
+  }
+  // The run's own warnings and clean-ups (a record's own threshold read as text, say) are shown
+  // below the what-if, as score shows them.
+  const { paired, problems: loaded } = scoreRun({ config, predPath: values.pred, keyPath: values.key, mode: MODE(values) });
+  if (policyMode) {
+    const { checkPolicyData } = require('../src/policy.js');
+    const { policySweep } = require('../src/metrics/policy.js');
+    // One file passed as both, by name or by content: its key-side fields are the key's (E17).
+    const sameFile = require('node:path').resolve(values.pred) === require('node:path').resolve(values.key) ||
+      fs.readFileSync(values.pred).equals(fs.readFileSync(values.key));
+    checkPolicyData(policies, paired, config, p, { sameFile });
+    p.throwIfStopped();
+    const w = { ...policySweep(paired, config, policies, certify), problems: [...loaded, ...p.items] };
+    process.stdout.write(renderWhatif(w));
+    if (values.json) writeFile(values.json, JSON.stringify(resultsJson({ inputs: { predictions: values.pred, key: values.key, ...(values.policies ? { policies: values.policies } : {}) }, ...w }), null, 2) + '\n');
+    return;
+  }
   const opts = {};
   for (const k of ['from', 'to', 'step']) {
     if (values[k] === undefined) continue;
@@ -302,7 +401,7 @@ function whatif(args) {
   }
   const { gateSweep, floorSweep } = require('../src/metrics/whatif.js');
   const w = values.gate ? gateSweep(paired, config, { ...opts, ...certify, outputs: values.output ? [values.output] : null }) : floorSweep(paired, config, opts);
-  process.stdout.write(renderWhatif(w));
+  process.stdout.write(renderWhatif({ ...w, problems: loaded }));
   if (values.json) writeFile(values.json, JSON.stringify(resultsJson({ inputs: { predictions: values.pred, key: values.key }, ...w }), null, 2) + '\n');
 }
 
@@ -340,7 +439,136 @@ function rateCmd(args) {
   if (values.json) writeFile(values.json, JSON.stringify(resultsJson(x), null, 2) + '\n');
 }
 
-const COMMANDS = { check, score, variance, compare, whatif, grade, rate: rateCmd };
+// estimate: a judge's answer key for every record, checked by a person on a sample (traps K1-K13).
+function estimate(args) {
+  const { values } = parseArgs({ args, options: {
+    config: { type: 'string' }, pred: { type: 'string' }, 'judge-key': { type: 'string' }, key: { type: 'string' },
+    lenient: { type: 'boolean' }, json: { type: 'string' }, target: { type: 'string' }, 'fail-if-not-shown': { type: 'boolean' }, picks: { type: 'string' },
+    pick: { type: 'string' }, seed: { type: 'string' },
+  } });
+  const { estimateRun, pickRun } = require('../src/estimate.js');
+  const { renderEstimate, renderPick } = require('../src/report/estimate.js');
+  // --pick <n>: before checking, which records to check (traps K10-K13). Checked before any file is read.
+  if (values.pick !== undefined) {
+    const extra = ['key', 'target', 'picks', 'fail-if-not-shown'].filter(k => values[k] !== undefined);
+    if (extra.length) throw new Error('[K12] --pick chooses the records to check, before there is a person\'s key: it does not take ' + extra.map(k => '--' + k).join(' '));
+    if (!/^\d+$/.test(values.pick) || Number(values.pick) < 1) throw new Error('[K10] --pick must be a whole number of 1 or more (the checks to make), got ' + JSON.stringify(values.pick));
+    if (values.seed !== undefined && (!/^\d+$/.test(values.seed) || Number(values.seed) > 4294967295)) throw new Error('[K12] --seed must be a whole number from 0 to 4294967295, got ' + JSON.stringify(values.seed));
+    need(values, ['config', 'pred', 'judge-key'], 'estimate --pick');
+    const k = pickRun({ config: loadConfig(values.config), predPath: values.pred, judgeKeyPath: values['judge-key'], n: Number(values.pick),
+      seed: values.seed === undefined ? 1 : Number(values.seed), mode: MODE(values), configPath: values.config });
+    process.stdout.write(renderPick(k, values.json || null));
+    if (values.json) writeFile(values.json, JSON.stringify(resultsJson(k), null, 2) + '\n');
+    return 0;
+  }
+  if (values.seed !== undefined) throw new Error('[K12] --seed goes with --pick <n>: it chooses which records to check');
+  need(values, ['config', 'pred', 'judge-key'], 'estimate');
+  if (!values.key) {
+    throw new Error('estimate needs --key <file>: the person\'s answer key for the records they checked. ' +
+      'To choose which records to check first, run estimate with --pick <n> instead of --key');
+  }
+  if (values['fail-if-not-shown'] && values.target === undefined) throw new Error('--fail-if-not-shown goes with --target <percent>: it fails when the range is not wholly under the target');
+  const target = values.target === undefined ? null : targetPercent(values);
+  const e = estimateRun({ config: loadConfig(values.config), predPath: values.pred, judgeKeyPath: values['judge-key'], personKeyPath: values.key, mode: MODE(values), target, picksPath: values.picks || null });
+  process.stdout.write(renderEstimate(e));
+  if (values.json) writeFile(values.json, JSON.stringify(resultsJson(e), null, 2) + '\n');
+  if (values['fail-if-not-shown'] && !e.target.shown) {
+    console.error('fail-if-not-shown: the likely range reaches ' + e.target.high_pct + '%, not wholly under ' + e.target.target_pct + '%');
+    return 3;
+  }
+  return 0;
+}
+
+// monitor: live samples over time (src/monitor.js). Options checked before any file is read.
+function monitor(args) {
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
+    config: { type: 'string' }, counts: { type: 'string' }, target: { type: 'string' }, acceptable: { type: 'string' },
+    alarming: { type: 'string' }, 'false-alarm-every': { type: 'string' }, since: { type: 'string' },
+    'fail-on-alarm': { type: 'boolean' }, lenient: { type: 'boolean' }, json: { type: 'string' }, 'period-size': { type: 'string' }, keys: { type: 'string' },
+  } });
+  const percent = flag => {
+    if (values[flag] === undefined) return null;
+    const v = Number(values[flag]);
+    if (!(v > 0 && v < 100)) throw new Error('--' + flag + ' must be a percentage above 0 and below 100, got ' + JSON.stringify(values[flag]));
+    return v;
+  };
+  const every = values['false-alarm-every'] === undefined ? 2000 : Number(values['false-alarm-every']);
+  if (!(Number.isInteger(every) && every > 1)) throw new Error('--false-alarm-every must be a whole number of records, got ' + JSON.stringify(values['false-alarm-every']));
+  // Checked as text, so the message shows what was typed ("abc"), not what Number() made of it.
+  const size = values['period-size'];
+  if (size !== undefined && !/^\d+$/.test(size)) throw new Error('--period-size must be a whole number of records, 1 or more, got ' + JSON.stringify(size));
+  const opts = { target: percent('target'), acceptable: percent('acceptable'), alarming: percent('alarming'), falseAlarmEvery: every, since: values.since === undefined ? null : values.since, lenient: Boolean(values.lenient),
+    periodSize: size === undefined ? null : Number(size) };
+  if (values.counts && values.config) throw new Error('--counts holds counts scored elsewhere: it takes no --config');
+  const { monitorRun } = require('../src/monitor.js');
+  const { renderMonitor } = require('../src/report/monitor.js');
+  const m = monitorRun({ config: values.config ? loadConfig(values.config) : null, runPaths: positionals, countsPath: values.counts || null, keysDir: values.keys || null, ...opts });
+  if (values.config) m.inputs.config = values.config;
+  process.stdout.write(renderMonitor(m));
+  if (values.json) writeFile(values.json, JSON.stringify(resultsJson(m), null, 2) + '\n');
+  if (values['fail-on-alarm'] && m.detector.status === 'alarm') {
+    console.error('fail-on-alarm: ALARM since ' + m.detector.alarm_since + ' (the rise likely started in ' + m.detector.rise_started + ')');
+    return 3;
+  }
+  return 0;
+}
+
+// agree: Krippendorff's alpha among two or more graders' answer keys or grades files.
+function agree(args) {
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
+    config: { type: 'string' }, keys: { type: 'boolean' }, grades: { type: 'boolean' }, names: { type: 'string' },
+    output: { type: 'string', multiple: true }, lenient: { type: 'boolean' }, json: { type: 'string' },
+    resamples: { type: 'string' }, seed: { type: 'string' }, 'write-key': { type: 'string' },
+  } });
+  if (Boolean(values.keys) === Boolean(values.grades)) throw new Error('agree needs exactly one of --keys <file> <file> ... or --grades <file> <file> ...');
+  const whole = (k, min, max) => {
+    if (values[k] === undefined) return undefined;
+    const n = Number(values[k]);
+    // Number('') is 0: an empty --seed= must not pass as seed 0.
+    if (!/^[0-9]+$/.test(values[k]) || n < min || n > max) throw new Error('--' + k + ' must be a whole number from ' + min + ' to ' + max);
+    return n;
+  };
+  const opts = { names: values.names ? values.names.split(',') : null, mode: MODE(values) };
+  const resamples = whole('resamples', 100, 100000);
+  const seed = whole('seed', 0, 4294967295);
+  if (resamples !== undefined) opts.resamples = resamples;
+  if (seed !== undefined) opts.seed = seed;
+  const { agreeKeys, agreeGrades } = require('../src/agree.js');
+  const { renderAgree } = require('../src/report/agree.js');
+  let a;
+  if (values.keys) {
+    need(values, ['config'], 'agree --keys');
+    // A key with only some outputs is one the full config refuses (D2, F4) and score stops on.
+    if (values['write-key'] && values.output) throw new Error('--write-key writes a whole key, every output the config reads; it does not go with --output');
+    const config = loadConfig(values.config);
+    a = agreeKeys({ config, keyPaths: positionals, outputs: values.output || null, majority: Boolean(values['write-key']), ...opts });
+    if (values['write-key']) {
+      const { majorityKeyText } = require('../src/agree.js');
+      const text = majorityKeyText(config, a.majority, values['write-key']);
+      writeFile(values['write-key'], text);
+      console.error(a.majority.written.length + ' record(s) in the majority key; ' + a.majority.left_out.length + ' record(s) left out, for a person to settle:' +
+        a.majority.left_out.map(x => '\n  ' + x.id + ': ' + x.why).join(''));
+      if (a.majority.fields_left_out.length) {
+        console.error('! ' + a.majority.fields_left_out.length + ' field(s) written without a value, the graders split on them (per-trap and per-group tables will put these records in "(none)"):' +
+          a.majority.fields_left_out.map(x => '\n  ' + x.id + ' ' + x.field + ': ' + x.values.map(v => JSON.stringify(v === undefined ? null : v)).join(' / ')).join(''));
+      }
+      if (a.majority.left_out.length) {
+        console.error(a.majority.left_out.length + ' records were left out: settle them and add them to the key, or score only the other records; score stops on a record with no answer (trap B4)');
+      }
+      const { majority, ...rest } = a;
+      a = rest;
+    }
+  } else {
+    const extra = ['config', 'output', 'write-key'].filter(k => values[k]);
+    if (extra.length) throw new Error('agree --grades reads everything from the grades files; it does not take ' + extra.map(k => '--' + k).join(' '));
+    a = agreeGrades({ gradePaths: positionals, ...opts });
+  }
+  process.stdout.write(renderAgree(a));
+  if (values.json) writeFile(values.json, JSON.stringify(resultsJson(a), null, 2) + '\n');
+  return 0;
+}
+
+const COMMANDS = { check, score, variance, compare, whatif, grade, rate: rateCmd, estimate, monitor, agree };
 
 function main(argv) {
   const [cmd, ...rest] = argv;
@@ -349,6 +577,12 @@ function main(argv) {
   try {
     return COMMANDS[cmd](rest) || 0;
   } catch (e) {
+    // An option the command does not have, or one given without its value, is a bad command
+    // (exit 2), not a problem in the files. Node's own advice about '--' only confuses here.
+    if (typeof e.code === 'string' && e.code.startsWith('ERR_PARSE_ARGS')) {
+      console.error('bad command: ' + e.message.split('. To specify')[0] + ' (wfeval --help lists every command\'s options)');
+      return 2;
+    }
     console.error('error: ' + e.message);
     return 1;
   }

@@ -202,8 +202,25 @@ function table(rows, right = [], indent = '  ') {
   }).join('   ')).join('\n');
 }
 
+// A wrong single label shown with what the answer key says ("shipping for technical"), as an
+// ordinal's already is ("medium for high"). Only where it is shown: the results keep the value
+// alone. The key comes from the paired records (results.paired), when the report has them.
+function withKeyLabels(results) {
+  const keys = new Map((results.paired || []).map(r => [r.id, r.key]));
+  return (id, d) => {
+    const key = keys.get(id);
+    if (!key || !d || !d.wrong) return d;
+    const wrong = {};
+    for (const [name, values] of Object.entries(d.wrong)) {
+      const k = key[name];
+      wrong[name] = typeof k === 'string' ? values.map(v => (v.endsWith(' for ' + k) ? v : v + ' for ' + k)) : values;
+    }
+    return { ...d, wrong };
+  };
+}
+
 module.exports = {
-  pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines,
+  withKeyLabels, pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines,
   groupSource, GROUP_RANGES, severalLabels, some, ruledValue, rulingsWords, pendingLine, rulingStatus, clusterLine, CLUSTER_GROUP_NOTE, CLUSTER_TARGET_NOTE,
   mixLines, thousands,
 };

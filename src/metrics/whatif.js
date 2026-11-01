@@ -12,6 +12,9 @@
 // applied at that floor (slots.js): a slot an evicted value filled is unfilled there.
 // Gate certification: with a target, which gates are shown to keep silent errors under it,
 // counting every gate the sweep tried (certifyGates, below; trap E9).
+// Gates that read each record's own threshold (a field's name in thresholds.auto_publish): the
+// sweep gives every record the same threshold in their place, and the check runs at each own.
+// Routing policies (hold-if rules, threshold changes) side by side: policy.js beside this file.
 
 const { judgeAll, gatePasses } = require('./judge.js');
 const { scoreRouting } = require('./routing.js');
@@ -62,7 +65,10 @@ function gateSweep(records, config, { outputs = null, from = 0.5, to = 1, step =
   for (const o of swept) if (!(o in gates)) throw new Error('"' + o + '" has no auto_publish threshold to sweep');
 
   const canMove = movableFn(config);
-  const current = new Set(swept.map(o => gates[o])).size === 1 ? gates[swept[0]] : null;
+  const current = new Set(swept.map(o => gates[o])).size === 1 && typeof gates[swept[0]] === 'number' ? gates[swept[0]] : null;
+  // Gates that read each record's own threshold (a field's name): the sweep sets one threshold for
+  // every record in its place, so no row is the current one; the check runs at each record's own.
+  const own = swept.every(o => typeof gates[o] === 'string') ? [...new Set(swept.map(o => gates[o]))].join(', ') : null;
   const grid = steps(from, to, step);
   if (current !== null && !grid.includes(current)) { grid.push(current); grid.sort((a, b) => a - b); }
 
@@ -88,12 +94,7 @@ function gateSweep(records, config, { outputs = null, from = 0.5, to = 1, step =
   // Self-check: at the current threshold the simulation should reproduce the real routes.
   // If it does not, the movable assumption is wrong for this workflow.
   let check = null;
-  if (current !== null) {
-    const cfg = withThresholds(config, {});
-    const movable = records.filter(canMove);
-    const differing = movable.filter(r => { const p = gatePasses(r, cfg); return p !== null && (p ? 'auto' : 'review') !== r.route_class; }).map(r => r.id);
-    check = { threshold: current, movable: movable.length, reproduced: movable.length - differing.length, differing };
-  }
+  if (current !== null || own !== null) check = { threshold: current, ...(own !== null ? { own } : {}), ...gateCheck(records, config) };
 
   return {
     kind: 'gate',
@@ -104,6 +105,22 @@ function gateSweep(records, config, { outputs = null, from = 0.5, to = 1, step =
     ...(target === null ? { rows, certification: null } : certifyGates(rows, target, confidence)),
     check,
   };
+}
+
+// The self-check: at the config's own gates, does the simulation route every movable record where
+// the run did? A record whose gate is unknown (a confidence or its own threshold is missing) is
+// not checked, and is listed apart rather than counted as reproduced. The policy what-if runs it
+// too when a policy changes a threshold (policy.js).
+function gateCheck(records, config) {
+  const movable = records.filter(movableFn(config));
+  const differing = [];
+  const unknown = [];
+  for (const r of movable) {
+    const p = gatePasses(r, config);
+    if (p === null) unknown.push(r.id);
+    else if ((p ? 'auto' : 'review') !== r.route_class) differing.push(r.id);
+  }
+  return { movable: movable.length, reproduced: movable.length - differing.length - unknown.length, differing, ...(unknown.length ? { not_checked: unknown } : {}) };
 }
 
 // ---------- A certified gate (trap E9) ----------
@@ -145,7 +162,9 @@ function checkCertify(targetPct, confidence) {
 //                      score --target uses for one run), certified or not
 //   least_records_out  the fewest records out without review that could certify any gate here:
 //                      all of them without a silent error, (1 - target)^n <= level
-function certifyGates(rows, targetPct, confidence = 0.95) {
+// label and tie let the policy what-if (policy.js) reuse this: what names a row, and which of two
+// rows with the same straight-through wins (for gates, the strictest).
+function certifyGates(rows, targetPct, confidence = 0.95, { label = r => ({ threshold: r.threshold }), tie = (r, a) => r.threshold > a.threshold } = {}) {
   checkCertify(targetPct, confidence);
   const target = targetPct / 100;
   // Whole hundredths, so 1 - 0.95 is exactly 0.05, not 0.050000000000000044.
@@ -156,7 +175,7 @@ function certifyGates(rows, targetPct, confidence = 0.95) {
     return { ...r, p_value: p, certified: p <= level };
   });
   const loosest = list => list.reduce((a, r) => (a === null || r.straight_through.n > a.straight_through.n ||
-    (r.straight_through.n === a.straight_through.n && r.threshold > a.threshold) ? r : a), null);
+    (r.straight_through.n === a.straight_through.n && tie(r, a)) ? r : a), null);
   const best = loosest(tested.filter(r => r.certified));
   const alone = loosest(tested.filter(r => r.silent_error_rate.d > 0 && wilson(r.silent_error_rate.n, r.silent_error_rate.d).high < target));
   const none = n => Math.exp(n * Math.log1p(-target));   // the chance of no silent error in n at the target
@@ -167,8 +186,8 @@ function certifyGates(rows, targetPct, confidence = 0.95) {
     rows: tested,
     certification: {
       target_pct: targetPct, confidence, gates_tested: rows.length, level,
-      best: best && { threshold: best.threshold, p_value: best.p_value, silent_error_rate: best.silent_error_rate, straight_through: best.straight_through },
-      looks_under_alone: alone && { threshold: alone.threshold, high_pct: alone.silent_error_rate.high_pct, certified: alone.certified },
+      best: best && { ...label(best), p_value: best.p_value, silent_error_rate: best.silent_error_rate, straight_through: best.straight_through },
+      looks_under_alone: alone && { ...label(alone), high_pct: alone.silent_error_rate.high_pct, certified: alone.certified },
       least_records_out: least,
     },
   };
@@ -230,4 +249,4 @@ function floorSweep(records, config, { from = 0.4, to = 0.9, step = 0.05 } = {})
   };
 }
 
-module.exports = { gateSweep, floorSweep, steps, certifyGates };
+module.exports = { gateSweep, floorSweep, steps, certifyGates, checkCertify, summarize, withThresholds, movableFn, gateCheck };

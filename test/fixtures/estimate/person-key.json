@@ -1,0 +1,12 @@
+[
+  {"id": "E01", "category": "shipping"},
+  {"id": "E02", "category": "other"},
+  {"id": "E04", "category": "refund"},
+  {"id": "E05", "category": "shipping"},
+  {"id": "E07", "category": "refund"},
+  {"id": "E09", "category": "billing"},
+  {"id": "E11", "category": "other"},
+  {"id": "E14", "category": "shipping"},
+  {"id": "E17", "category": "billing"},
+  {"id": "E20", "category": "refund"}
+]

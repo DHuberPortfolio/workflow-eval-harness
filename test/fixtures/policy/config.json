@@ -1,0 +1,13 @@
+{
+  "id_field": "id",
+  "outputs": {
+    "codes": { "type": "set", "field": "codes", "key_field": "codes" }
+  },
+  "routing": {
+    "field": "decision",
+    "gold_field": "verdict",
+    "map": { "AUTO": "auto", "REVIEW": "review", "BLOCK": "block" }
+  },
+  "wrong_when": "either",
+  "thresholds": { "auto_publish": { "codes": "gate" } }
+}

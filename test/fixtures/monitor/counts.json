@@ -1,0 +1,9 @@
+[
+  { "period": "2026-W36", "out_without_review": 30, "silent_errors": 0 },
+  { "period": "2026-W37", "out_without_review": 30, "silent_errors": 0 },
+  { "period": "2026-W38", "out_without_review": 30, "silent_errors": 0 },
+  { "period": "2026-W39", "out_without_review": 30, "silent_errors": 1 },
+  { "period": "2026-W40", "out_without_review": 30, "silent_errors": 3 },
+  { "period": "2026-W41", "out_without_review": 30, "silent_errors": 2 },
+  { "period": "2026-W42", "out_without_review": 30, "silent_errors": 3 }
+]

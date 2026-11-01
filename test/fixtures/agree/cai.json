@@ -1,0 +1,5 @@
+[
+  { "id": "r1", "verdict": "pass", "band": "medium", "codes": ["c1", "c2"], "gold_route": "publish" },
+  { "id": "r2", "verdict": "fail", "band": "low", "codes": [], "gold_route": "publish" },
+  { "id": "r3", "verdict": "fail", "band": "high", "codes": ["c2", "c3"], "gold_route": "review" }
+]

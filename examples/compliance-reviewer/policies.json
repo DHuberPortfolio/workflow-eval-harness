@@ -1,0 +1,11 @@
+{
+  "policies": [
+    { "name": "Cap every client's threshold at 0.85", "hold_if": [{ "output": "violations", "applied": false, "confidence_at_least": 0.85 }] },
+    { "name": "Award claims always go to a person", "hold_if": [{ "output": "violations", "value": "AWARD_CLAIM_REVIEW" }] },
+    { "name": "Both", "hold_if": [
+      { "output": "violations", "applied": false, "confidence_at_least": 0.85 },
+      { "output": "violations", "value": "AWARD_CLAIM_REVIEW" }
+    ] },
+    { "name": "Every note goes to a person", "hold_if": [{ "output": "violations", "confidence_at_least": 0 }] }
+  ]
+}

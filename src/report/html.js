@@ -7,6 +7,7 @@ const {
   WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines, groupSource, GROUP_RANGES, severalLabels, rulingsWords, pendingLine,
   clusterLine, CLUSTER_GROUP_NOTE, CLUSTER_TARGET_NOTE, mixLines,
 } = require('./format.js');
+const { withKeyLabels } = require('./format.js');
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const pct = r => (!r || r.pct === null ? 'n/a' : r.pct.toFixed(1) + '%');
@@ -238,7 +239,7 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
     s.push('<p>Records that went out without review, but needed a person.</p>');
     s.push(table(['Record', 'Severity', 'Types', 'Went', 'Answer key', 'What differed', 'Trap'], se.records.map(x => [
       '<code>' + esc(x.id) + '</code>', severity(x.severity), x.types.map(typeTag).join('<br>'), esc(x.route), esc(x.gold_route ?? ''),
-      differences(x.differences) || '<span class="muted">values match</span>', x.traps.map(esc).join(', '),
+      differences(withKeyLabels(results)(x.id, x.differences)) || '<span class="muted">values match</span>', x.traps.map(esc).join(', '),
     ])));
     s.push(typeLegend(se.records));
   }
@@ -347,7 +348,7 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
       b.from === b.to ? num(b.from, 2) : num(b.from, 2) + '–' + num(b.to, 2), String(b.n), String(b.correct), pct(b.accuracy), (b.gap > 0 ? '+' : '') + b.gap.toFixed(2), rng(b.accuracy),
     ]), [0, 1, 2, 3, 4, 5]));
     if (c.thresholds.length) {
-      s.push('<ul class="notes">' + c.thresholds.map(t => '<li>' + (t.name === 'auto_publish' ? 'Gate on ' + esc(t.output) : esc(t.name)) + ' at ' + t.threshold +
+      s.push('<ul class="notes">' + c.thresholds.map(t => '<li>' + (t.name === 'auto_publish' ? 'Gate on ' + esc(t.output) : esc(t.name)) + ' at ' + esc(t.threshold) +
         ': claims at or above it were right ' + pct(t.at_or_above) + ' of the time (' + cnt(t.at_or_above) + ')' +
         (t.below && t.below.d ? '; below it, ' + pct(t.below) + ' (' + cnt(t.below) + ')' : '') + '.</li>').join('') + '</ul>');
     }

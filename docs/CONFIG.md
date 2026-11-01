@@ -160,10 +160,101 @@ and not the output that is also the route. What is reported:
 |---|---|---|
 | `thresholds.floor` | - | Values below it should never be applied. |
 | `thresholds.provisional_below` | - | A label on values, not a gate; reported in calibration. |
-| `thresholds.auto_publish` | - | `{ output: threshold }`. Only listed outputs gate. A record may go out without review only if each gated output's lead value is at or above its threshold. |
+| `thresholds.auto_publish` | - | `{ output: threshold }`. Only listed outputs gate. A record may go out without review only if each gated output's lead value is at or above its threshold. A threshold may instead name a prediction field holding each record's own ([below](#each-records-own-threshold)). |
 | `thresholds.gate_uses` | `"lead"` | `lead`: the strongest applied value. `weakest`: every applied value (stricter; a weak but correct broader term holds back the record). |
 | `whatif.movable_field` / `movable_values` | - | The prediction field that says a record's route was decided by the gate (or that it went out without review), and its values for those records. Without it, what-if assumes every auto or review record is movable: an upper bound. |
 | `calibration.buckets` | `"auto"` | `distinct` (one group per stated value), a width such as `0.1`, or `auto` (distinct up to 12 values). |
+
+## Routing policies (`whatif --policies`, `--hold-if`)
+
+A policies file asks "what if we routed differently?" for several policies at once, each shown
+as one row beside the run as it was (reading the table: [READING_A_REPORT.md](READING_A_REPORT.md#policies-side-by-side);
+what is exact and what is assumed: [METRICS.md](METRICS.md#routing-policies)). It is a file of
+its own, not part of the config: the config says how to read a workflow and is shared by every
+command, while policies are questions asked of one run, tried and thrown away. Kept apart, what
+certification pays for is plain: every row tested, which is the run as it was, each policy in the
+file and one more for any `--hold-if` (the report says "5 rows: the run as it was and 4 policies";
+trap E9).
+
+```json
+{
+  "policies": [
+    { "name": "Award claims always go to a person",
+      "hold_if": [{ "output": "violations", "value": "AWARD_CLAIM_REVIEW" }] },
+    { "name": "Strong unapplied findings to a person",
+      "hold_if": [{ "output": "violations", "applied": false, "confidence_at_least": 0.85 }] },
+    { "name": "Weak matches to a person",
+      "hold_if": [{ "field": "match_strength", "in": ["weak", "none"] }] },
+    { "name": "Gate 0.90 for every record", "auto_publish": { "violations": 0.9 } },
+    { "name": "Cap each client's gate at 0.85", "auto_publish_cap": { "violations": 0.85 } }
+  ]
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `name` | The row's name, as text. Each must differ, and none may be "as run" in any case (trap E11). |
+| `hold_if` | A list of conditions. A record that went out without review is sent to a person when **any** condition holds. |
+| `auto_publish` | `{ output: threshold }`: that gated output's threshold for every record. |
+| `auto_publish_cap` | `{ output: cap }`: each record's own threshold, but never above the cap (the lower of the two). |
+
+A policy needs at least one of the three (trap E11). Threshold changes come first, then hold-if:
+a record the new gate lets out is still held if a condition holds, so "always goes to a person"
+means always.
+
+A condition holds when **all** its clauses hold:
+
+| Clause | Meaning |
+|---|---|
+| `output` | The output (a set or a label) states a value that meets every clause below. With none of them, any value. A declined label counts as a stated value, "(declined)": a decline that went out unseen is one a person may want to see. |
+| `value` / `values` | That value, or one of these. Trimmed, and read through `equivalents` as the predictions are (an old name is read as its group's first value, and the report says so). `"value": "*"` means any value, as on the command line. |
+| `applied` | `true`: applied. `false`: stated but not applied (the floor, or a client's threshold, kept it out). Left out: either. |
+| `confidence_at_least` | Stated at this confidence or more. A value with no confidence never meets it (trap E19). |
+| `field` | A prediction field, by name or dotted path, with one of the four below. Never the answer key (trap E17), and never the route's own field (`routing.field`, trap E13): it holds the route as run, not the route under the policy. A field a key-side group or cluster also reads (`groups.channel` reading `channel` from the key) is read from the prediction when the predictions are a file of their own and have it; it stops when only the key has it, and whenever one file is passed as both `--pred` and `--key` (same name or same content), since every record there carries the key's fields, and if the workflow saw it, put it in the predictions and set `groups.<name>.from` to `"predictions"`. |
+| `equals` / `in` | That value, or one of these. Numbers compare as numbers, also when written as text (`"0.90"` equals `0.9`); true and false in any case (`"TRUE"` equals `true`); other text exactly, after trimming (`North` is not `north`, as route decisions are not). A value no record has is probably misspelt (trap E14). |
+| `below` / `at_least` | Under this number, or at or above it. A number written as text counts; other text never holds (trap E16). |
+| `all` | A list of conditions that must all hold: for two field clauses, or two values both stated. Alone in its condition. |
+
+So `[{ "field": "client", "equals": "north", "output": "codes", "value": "B" }]` holds a north
+record that states B; `[{ "all": [{ "output": "codes", "value": "A" }, { "output": "codes", "value": "B" }] }]`
+holds a record that states both A and B; and a list of two conditions holds a record that meets
+either. A list of `all` groups can say any rule built from these clauses with "and" and "or".
+
+`--hold-if` writes one condition on the command line. Repeat it for "or"; all the flags together
+are one more policy, named after them, beside any policies file:
+
+| `--hold-if` | Holds a record that went out without review when |
+|---|---|
+| `codes=B` | codes states B (applied or not) |
+| `codes=A,B` | codes states A or B |
+| `codes=*` | codes states any value |
+| `codes=*@0.85` | codes states any value at a confidence of 0.85 or more |
+| `codes.unapplied=B` | codes states B without applying it (`codes.applied=B`: applied) |
+| `field:client=north,west` | the prediction field `client` is north or west |
+| `field:match<0.5` | the prediction field `match` is under 0.5 (`field:match>=0.5`: at least 0.5) |
+| `field:client=north and codes=*@0.9` | both: clauses joined by " and " (in any case) must all hold |
+
+There is no `<=`, `>` or `==`: write `field:match<0.5` or `field:match>=0.5`, and the quick form refuses the others rather than read them as part of a value.
+
+Hold-if needs no gate in the config: a workflow without `thresholds` can still ask whether
+sending weak matches to a person pays off. Threshold changes need one (trap E13).
+
+### Each record's own threshold
+
+`thresholds.auto_publish` may name a prediction field instead of giving a number:
+`{ "auto_publish": { "violations": "client_threshold" } }` gates each record at its own
+`client_threshold`. The gate check, the SG-GATE safeguard and every what-if read it. Each
+record the gate could route must have a number from 0 to 1 there (trap E18); text that reads as a
+number, such as a CSV's `0.9`, is read as the number. A threshold below `thresholds.floor` is
+warned about: a value under the floor is never applied, so that gate never decides anything. A
+number written in quotes in the config (`"0.8"`) is refused rather than read as a field named
+"0.8". A number in `auto_publish` works exactly
+as before.
+
+`whatif --gate` then sets one threshold for every record in place of each one's own, so no row
+is marked current; its check runs at each record's own threshold and says whether that
+reproduces the real routes (a record whose gate is unknown is listed as not checked). To lower each record's own instead, use a policy with
+`auto_publish_cap`.
 
 ## The answer key and traps
 
@@ -322,6 +413,136 @@ equivalent of either) changes nothing: it is set aside with a warning.
 run against two answer keys, to see what a new key changes; `--rulings` then applies to both
 keys ([METRICS.md](METRICS.md#possible-key-gaps-and-rulings)).
 
+## A judge's answer key checked by a person (`wfeval estimate`)
+
+In production there is no answer key. `wfeval estimate` reads two, both in the config's own
+answer-key format, so nothing new goes in the config:
+
+```
+node bin/wfeval.js estimate --config test/fixtures/estimate/config.json \
+  --pred test/fixtures/estimate/predictions.json \
+  --judge-key test/fixtures/estimate/judge-key.json --key test/fixtures/estimate/person-key.json
+```
+
+- `--judge-key`: an AI judge's answer key for **every record that went out without review**. The
+  judge only needs to grade those: records sent to a person or blocked never enter the rate, so
+  grading them costs judge calls for nothing (a key that has them is fine too). The judge (an LLM
+  grader) runs outside the harness, which never calls a model: export its answers the way you
+  would write an answer key.
+- `--key`: a person's answer key for the records they checked, and only those.
+
+Each key is scored against the run by the usual rules (`wrong_when`, any_of slots,
+`equivalents`), so "silent error" means the same thing for the judge, the person and `score`.
+
+The easiest way to pick them: let the harness do it, before anyone checks.
+
+```
+node bin/wfeval.js estimate --config test/fixtures/estimate/config.json \
+  --pred test/fixtures/estimate/predictions.json \
+  --judge-key test/fixtures/estimate/judge-key.json --pick 10 --seed 1
+```
+
+It lists the records to check, in the run's order (so the list does not show the judge's
+verdicts), split between the judge's verdicts the way that gives the narrowest range, and chosen
+at random within each. The same `--seed` (a whole number up to 4294967295) picks the same
+records; `--json picks.json` saves the list. When the judge flags a small share of the records
+out (the usual case when errors are rare), most checks go to the records it passes; checking
+every flag first is the worst way to spend them ([METRICS.md](METRICS.md#which-records-to-check)).
+It needs at least one check per verdict group, so `--pick 1` is refused.
+
+However they are picked, for the estimate to hold:
+
+- **At random**: either from all the records that went out without review, or within each of the
+  judge's verdicts (as `--pick` does). Not the first 30 of the run, not the ones that looked
+  interesting. A sample bunched at one end of the run is warned about (trap K7).
+- **Blind**: the person checks without seeing the judge's verdict.
+- **Some in every verdict group**: with none checked among the records the judge passes, their
+  rate could be anything, and there is no estimate, only bounds (K3).
+
+Save the pick with `--json picks.json` and give it back with `--picks picks.json` when you
+estimate: the report then confirms that the person checked exactly the picked records, or names
+the differences (trap K14), and says plainly when the picks file was made from another run. With
+`--json` the pick's last line already suggests `--picks` with that file.
+
+`--target 5` says whether the estimate is shown under 5%, and if not, roughly how many more
+checks, and in which verdict group, would show it. With `--fail-if-not-shown` it exits with code 3 when the
+whole range is not under the target, for a scheduled job (as `compare --fail-if-worse` does). `--lenient` and `--json <file>` work as for
+`score`. What is reported, and why this method: [METRICS.md](METRICS.md#a-judges-answer-key-checked-by-a-person).
+
+## Live samples over time (`wfeval monitor`)
+
+`monitor` reads a series of periods (weeks, months) in time order. Each period is the records
+out without review that a person checked that period, with their answers. Two ways in, never
+mixed (trap L6):
+
+**Run files, scored here.** One file per period, each holding that period's checked records with
+the person's answers in the same file, the way the golden-set files in `examples/*/golden500` do:
+each output's `field` reads the workflow's value and its `key_field` the person's (the key path
+is the predictions path). Every period is scored with the one `--config`, so every definition
+matches `score`'s. The period is named after its file: `2026-W41.json` is period `2026-W41`.
+
+    node bin/wfeval.js monitor --config test/fixtures/monitor/config.json test/fixtures/monitor/runs/2026-W40.json test/fixtures/monitor/runs/2026-W41.json test/fixtures/monitor/runs/2026-W42.json --target 5
+
+**Answers kept apart.** When the person's answers are in their own files, put each period's key
+in a folder, under the same file name as its period file, and add `--keys <folder>`:
+`weeks/2026-W41.json` is then answered by `keys/2026-W41.json` (the config's `key_field`s are read
+from the key files). Names are matched without regard to case, on every system; two key files
+whose names differ only by case stop. A period file without a key file of the same name stops,
+and key files that match no period file are listed in a note (trap A1).
+
+Records in a period file that did not go out without review (sent to a person, blocked or
+suppressed) are not part of the silent error rate; the report counts them in a note (trap L17).
+
+**A counts file, scored elsewhere** (a spreadsheet, a Python project). One row per period, in
+time order, as a JSON list or a `.csv` file with a header row. The CSV may be split by commas,
+";" (Excel in many countries) or tabs: the header row says which, and the report notes it. Column
+names are read loosely: `Out Without Review` and `silent-errors` are `out_without_review` and
+`silent_errors` (trap L15).
+
+```csv
+period,out_without_review,silent_errors,scored_with
+2026-W40,30,1,scorecard v2
+2026-W41,30,0,scorecard v2
+```
+
+| Column | Required | Meaning |
+|---|---|---|
+| `period` | yes | The period's name |
+| `out_without_review` | yes | Records out without review that were checked this period (a whole number) |
+| `silent_errors` | yes | Silent errors among them (a whole number, no more than `out_without_review`) |
+| `scored_with` | no | What scored them, e.g. `scorecard v2`. When given, every period must say the same, so a change in the scoring is never read as a change in the workflow. After a change in the scoring, start a new list of periods |
+
+    wfeval monitor --counts weekly.csv --target 5
+
+**Names that give the order.** Name each period by its date (`2026-10-05`), month (`2026-10`),
+ISO week (`2026-W41`) or a number after the same text (`week-2`, `week-10`: compared as numbers),
+all the same way. Period files given out of order (a shell's `weeks/*.json` puts `week-10`
+before `week-2`) are put in the order their names give, with a note, but only when they came in
+plain text order, the order a glob produces; files listed in any other order out of time stop,
+since someone chose that order; a counts file's rows are
+written in an order on purpose, so a row out of place there stops (trap L1). Names that give no
+order stop in strict mode, and `--lenient` takes the order given.
+
+**Options.**
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--target <percent>` | none | The rate the silent error rate should be shown to be under |
+| `--acceptable <percent>` | half the target | The rate the workflow normally runs at |
+| `--alarming <percent>` | double the acceptable rate | The rise worth an alarm |
+| `--false-alarm-every <records>` | 2000 | On average at most one false alarm per this many records checked, at the acceptable rate, for periods of the median size so far (or `--period-size`) |
+| `--period-size <records>` | the median so far | The period size the alarm level is set for, the same for every row. Without it, each row uses the median of the periods up to it, so a printed status never changes later |
+| `--since <period>` | the first period | Restart the alarm at this period, after an alarm was looked into and fixed. The bound keeps counting every period ([why](METRICS.md#is-it-shown-under-the-target-valid-however-often-you-look)) |
+| `--fail-on-alarm` | off | Exit with code 3 when the alarm is raised, for a scheduled job |
+
+Percentages are percentages: `--target 0.05` means 0.05%, not 5%; the report warns when a
+value of 0.5 or less may have been meant as a fraction (trap L16). **Set `--acceptable` to the rate measured before launch** (score on
+a golden set, or the first weeks checked): the alarm watches for a rise from it and dates the rise
+by it. Left at half the target, a workflow that normally runs above that is flagged at once and
+its rise dated too early; the report then suggests a value (trap L18). At least one of `--target` and `--acceptable` is needed. The acceptable rate is half the target unless given; the alarming rate is double the acceptable rate unless given, and must be under 100%. The target must be above the acceptable
+rate, and the alarming rate above the acceptable rate too (trap L4). Why these defaults:
+[METRICS.md](METRICS.md#live-samples-over-time-wfeval-monitor).
+
 ## Grading free text (`wfeval grade`)
 
 Free-text outputs have no answer key; a person grades them. `wfeval grade` takes a separate,
@@ -359,3 +580,31 @@ wfeval score --grades grades-A.json [--second-reviewer grades-B.json]
 The page saves a grades file (format `wfeval-grades/1`) that carries everything `score --grades`
 needs, including a fingerprint of exactly what was graded, so no config is passed to `score`.
 Why the grades are three and not five: [METRICS.md](METRICS.md#free-text-graded-by-a-person).
+
+## Agreement among graders (`wfeval agree`)
+
+`wfeval agree` needs no settings of its own. Each grader's answer key is a key file in the
+config's usual key format (JSON, JSON Lines or CSV, `input.key`, `key_field`, `equivalents`,
+`any_of` slots: all read exactly as `score` reads a key), so it takes the same config:
+
+```
+wfeval agree --config config.json --keys ann.json ben.json cai.json
+wfeval agree --config config.json --keys key-1.json key-2.json --names Ann,Ben --output verdict --output route
+wfeval agree --grades grades-A.json grades-B.json grades-C.json
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--keys <file> <file> ...` | - | Two or more answer keys for the same records, one per grader. |
+| `--grades <file> <file> ...` | - | Or two or more grades files from the grading page; no `--config`. |
+| `--names a,b,c` | file names (grades: the reviewer's name in the file) | One name per file, in order. |
+| `--output <name>` | every output, and `route` when `routing.gold_field` is set | Compare only these (repeatable). For keys in which not every grader labelled every output. |
+| `--resamples <n>` | 2000 | Resamples for the likely range (100 to 100,000). |
+| `--seed <n>` | 1 | The resampling seed: the same seed and files always give the same range. |
+| `--write-key <file>` | - | Keys only, every output (not with `--output`: a partial key is one the config refuses): also write a majority answer key the config reads back, JSON or JSON Lines by the same rule the loader uses (`input.key.format`, else the extension; CSV is refused), each output under its `key_field`, the route under `routing.gold_field`, inside `input.key.unwrap` / `records_at` if set. Per record and output, the value most graders gave, compared as agree compares them (the route by class, written as the name most of them used). A set is decided value by value: a value is in it when more than half of the graders who labelled the record list it. A majority set that is no grader's own set (empty though each said something, or a mix of theirs) is left for a person. A duplicate whose primary record was left out is left out too. The other fields scoring reads from the key (`trap_field`, the `groups` and `clusters` read from the key, `duplicate_of_field`) are carried over by the same majority; a field the graders split on is left off that record and listed, loudly, since per-trap and per-group tables would put the record in "(none)". A record with a tie on any output (a set value listed by exactly half the graders included), or labelled by one grader, is left out and listed: `score` stops on a prediction whose record has no answer (trap B4), so settle those records and add them, or score the others only. |
+| `--lenient`, `--json <file>` | - | As for `score`. |
+
+A label output is compared as names, an ordinal on its `labels` order, a set as sets, and the
+route as the class `routing.map` gives the gold route. `allowed_values` is checked on set values
+(trap M8). Graders need not label the same records: a record only one grader labelled is left out
+and listed. What each number means: [METRICS.md](METRICS.md#agreement-among-graders).

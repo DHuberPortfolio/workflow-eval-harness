@@ -146,6 +146,14 @@ tuned on, so a fresh run should confirm them:
 | Both | **1.3%** (3 of 234) | 26 |
 | Every note goes to a person | 0% (0 of 211) | 46 |
 
+The harness reproduces this table exactly from run 67 with [policies.json](policies.json)
+(`wfeval whatif --policies`; the command is in [METRICS.md](../../docs/METRICS.md#routing-policies)).
+Every row is a hold-if rule, so every row is exact. "Cap at 0.85" holds a document with a finding
+stated at 0.85 or more and not applied: a client's threshold decides whether a finding is
+applied, and any applied finding sends the document to a person. "Every note" means the model's
+findings, the ones with a confidence; the regex layer's notes carry none. With `--target 5`,
+"Both" and "Every note" are certified under 5% among the five rows tried.
+
 ### The answer key was missing violations
 
 The key lists one or two codes per document; the model often found a further real one

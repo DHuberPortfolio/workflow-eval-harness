@@ -1,0 +1,10 @@
+{
+  "policies": [
+    { "name": "Weak matches to a person", "hold_if": [{ "field": "match", "below": 0.5 }] },
+    { "name": "Strong B to a person", "hold_if": [{ "output": "codes", "value": "B", "confidence_at_least": 0.85 }] },
+    { "name": "Both", "hold_if": [{ "field": "match", "below": 0.5 }, { "output": "codes", "value": "B", "confidence_at_least": 0.85 }] },
+    { "name": "South to a person", "hold_if": [{ "field": "client", "in": ["south"] }] },
+    { "name": "Gate 0.90 for every record", "auto_publish": { "codes": 0.9 } },
+    { "name": "Cap each gate at 0.75", "auto_publish_cap": { "codes": 0.75 } }
+  ]
+}

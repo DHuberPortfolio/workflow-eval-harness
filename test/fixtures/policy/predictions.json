@@ -1,0 +1,10 @@
+[
+  { "id": "P1", "decision": "AUTO",   "gate": 0.9, "match": 0.9, "client": "north", "codes": [{ "value": "A", "confidence": 0.95, "applied": true }] },
+  { "id": "P2", "decision": "AUTO",   "gate": 0.9, "match": 0.4, "client": "south", "codes": [{ "value": "A", "confidence": 0.92, "applied": true }, { "value": "B", "confidence": 0.86, "applied": false }] },
+  { "id": "P3", "decision": "AUTO",   "gate": 0.8, "match": 0.3, "client": "north", "codes": [{ "value": "C", "confidence": 0.85, "applied": true }] },
+  { "id": "P4", "decision": "AUTO",   "gate": 0.8, "match": 0.7, "client": "south", "codes": [{ "value": "A", "confidence": 0.88, "applied": true }] },
+  { "id": "P5", "decision": "REVIEW", "gate": 0.8, "match": 0.8, "client": "north", "codes": [{ "value": "B", "confidence": 0.75, "applied": true }] },
+  { "id": "P6", "decision": "REVIEW", "gate": 0.9, "match": 0.5, "client": "west",  "codes": [{ "value": "C", "confidence": 0.7, "applied": true }, { "value": "A", "confidence": 0.6, "applied": false }] },
+  { "id": "P7", "decision": "BLOCK",  "gate": 0.9, "match": 0.2, "client": "south", "codes": [{ "value": "X", "confidence": 0.99, "applied": true }] },
+  { "id": "P8", "decision": "AUTO",   "gate": 0.9, "match": 0.6, "client": "west",  "codes": [{ "value": "B", "confidence": 0.91, "applied": true }] }
+]

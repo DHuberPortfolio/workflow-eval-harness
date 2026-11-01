@@ -123,6 +123,25 @@ What the projects that used the harness had to build around it, ranked by how ma
       outcome is judged worse; never on "unclear"; an outcome the run does not measure stops
       (trap I19)
 
+## After launch, and the people behind the key (Oct 31, 2026)
+The four items the six-project review left for later. Each method was chosen by a seeded
+simulation in `scripts/` against the published alternatives, and each feature had an
+independent review before it was merged.
+- [x] Routing policies in `whatif`: hold-if rules (always send these records to a person; exact,
+      with no assumption), each record's own threshold read from a field, named policies side by
+      side with paired counts, certified with `--target` (traps E10-E19, `test/fixtures/policy/`;
+      reproduces the compliance reviewer's what-if table)
+- [x] A judge's answer key checked by a person: `wfeval estimate`, the silent error rate from an
+      AI judge's key for every record and a person's checks of a sample, post-stratified by the
+      judge's verdict with a MOVER range; `--pick` chooses which records to check (traps K1-K13,
+      `test/fixtures/estimate/`)
+- [x] Live samples over time: `wfeval monitor`, a CUSUM alarm for a rise (alarm level from an
+      exact Markov chain) and a bound under the target that stays valid however often you look
+      (a mixture confidence sequence); `--fail-on-alarm` (traps L1-L14, `test/fixtures/monitor/`)
+- [x] Agreement among any number of graders: `wfeval agree`, Krippendorff's alpha for labels,
+      levels, sets and routes, or free-text grades, with a bootstrap range (traps M1-M17,
+      `test/fixtures/agree/`)
+
 ## Out of scope for now
 - Snapshot backdating fixture: a test utility with nothing to score.
 

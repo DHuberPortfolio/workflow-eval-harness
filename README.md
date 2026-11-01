@@ -147,10 +147,23 @@ by number.
 | `wfeval variance` | How much do the numbers move between runs of identical code? Mean, spread and range per metric; the worst run's silent error rate, the one to quote (runs are never added together); how many different records were a silent error in at least one run, given with the number of runs (the count only grows as runs are added); the records that behave differently run to run; and possible key gaps: values stated in every run that the answer key does not list, for a person to rule on. With `--rulings`, each shows its ruling, and the ones ruled not a gap are counted, not listed again. |
 | `wfeval compare` | Did a change help? On the same records, how many silent errors, unnecessary reviews and misroutes it fixed and how many it broke, judged better, worse or unclear with no repeated runs needed; every metric's change against the spread of repeated runs, when you have them; and every record that was fixed or broken. `--after-key` scores the same run against an old and a new answer key, to show what the new key changes. `--fail-if-worse silent-errors,misroutes` stops a build (exit code 3) when a change makes any of those outcomes worse; "unclear" never stops it, since most small changes are unclear. |
 | `wfeval rate` | What is the likely range for any count (2 of 15), and how many records would show a rate is under a target? |
-| `wfeval whatif` | What would the numbers be at another threshold? Sweeps the confidence gate or the confidence floor. `--gate --target 5` marks the gates certified to keep silent errors under 5%, counting every gate tried (a gate picked from many because it looks good proves less than it seems), and names the loosest. |
+| `wfeval estimate` | In production, with no answer key: what is the silent error rate, when an AI judge wrote an answer key for every record and a person checked some of them? Each judge verdict group's rate comes from the person's checks, so a wrong judge widens the range but does not bias the estimate. Also the judge alone and the person alone for contrast, how often they agree, the records where they disagree (to fix the judge), and with `--target`, roughly how many more checks would show the rate is under it. `--pick 60` says beforehand which records to check: split between the judge's verdicts the way that gives the narrowest range (when the judge flags a small share, the usual case when errors are rare, most checks go to the records it passes), chosen at random with a seed. The harness never calls the judge: it reads its answer key. |
+| `wfeval whatif` | What would the numbers be at another threshold? Sweeps the confidence gate or the confidence floor. `--gate --target 5` marks the gates certified to keep silent errors under 5%, counting every gate tried (a gate picked from many because it looks good proves less than it seems), and names the loosest. `--policies <file>` compares routing policies side by side with the run as it was: rules that send a record to a person (`--hold-if 'violations=AWARD_CLAIM_REVIEW'`, exact) and threshold changes, each client's own included, with the silent errors each fixes and the unnecessary reviews it adds. |
+| `wfeval monitor` | After launch, from a weekly or monthly sample of live records checked by a person: has the silent error rate gone up (an alarm, and the period the rise likely started), and is it shown under a target, in a way that stays valid however often you look? Reads one run file per period, scored with the config, or `--counts` scored elsewhere. `--since` restarts the alarm after a fix (the bound keeps counting); `--fail-on-alarm` exits with code 3, for a scheduled job. |
 | `wfeval check` | Is this config, and this pair of files, readable? Prints what it understood. |
 | `wfeval grade` | For free text: writes one HTML page in which a person grades each field against its source. |
 | `wfeval score --grades` | How often does the free text say something the source never said? Invented and missing rates from a person's grades, and two reviewers' agreement. |
+| `wfeval agree` | Is the answer key itself solid? Two or more people's answer keys (or free-text grades) for the same records, compared with Krippendorff's alpha per output, any number of graders, records not everyone labelled allowed: each with its likely range, the chance it is below 0.800 and 0.667, each pair of graders, and the records they labelled differently, for a person to settle. |
+
+**Which command, when.** It depends on what you have:
+
+| You have | Use |
+|---|---|
+| A golden set: a run and a full answer key | `score` for one run, `variance` for repeated runs, `compare` for a change, `whatif` for another threshold or routing policy |
+| A run after launch, an AI judge's answer key, and a person's checks of some records | `estimate` (and before checking, `estimate --pick` to choose which records) |
+| A person's checks of live records, week after week | `monitor` |
+| Two or more people's answer keys or grades for the same records | `agree`, to see whether the key itself is solid |
+| Only a count, such as 2 wrong of 15 | `rate` |
 
 **Free text is graded by a person, not a model.** A form filled from a transcript has no answer
 key; its failure is a field that reads plausibly and says something nobody said. `wfeval grade`
@@ -202,12 +215,12 @@ Every config option: [docs/CONFIG.md](docs/CONFIG.md). The two real workflows in
 ## Built not to miscount
 
 An evaluation tool that quietly miscounts is worse than none. Every way the harness itself
-could compute a wrong number is listed in [`test/TRAPS.md`](test/TRAPS.md) (80+ of them),
+could compute a wrong number is listed in [`test/TRAPS.md`](test/TRAPS.md) (200 of them),
 with what it does about each: stop and name the offending record, fix and report it, or
 follow a stated rule. On a golden set it stops on anything suspicious; `--lenient` turns
 those stops into warnings for samples of production output.
 
-200+ tests check the numbers against answers worked out by hand before the code existed.
+590 tests check the numbers against answers worked out by hand before the code existed.
 GitHub Actions runs them on Linux and Windows with Node 18, 22 and 24 on every push, along
 with the commands this README shows, and checks that the sample reports match what the tool
 produces today. Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -230,6 +243,18 @@ produces today. Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
   (retellings of one story, one filing's statements) get a second range that counts the clumps
   when the config names them (`clusters`, or `score --cluster-by`); without that, each record
   counts as independent. Per-group rows and `--target` always count records that way.
+- `estimate` is only as good as the person's checks: picked at random within each of the judge's
+  verdicts (`--pick` does this) and made without seeing the judge's verdict. The harness cannot
+  see how the records were picked, only warn when the picks look ordered. It estimates the
+  silent error rate, not the other rates.
+- `monitor` assumes each period's checks are a random sample of that period's records out
+  without review. Its "shown under the target" is proven for a rate that holds steady; for a
+  drifting rate it held in simulation, which is evidence, not proof.
+- A routing policy that only sends more records to a person (`--hold-if`) is replayed exactly; a
+  threshold change rests on the same assumption as the gate what-if about which records the gate
+  can move.
+- `agree`'s likely range is unreliable when few values differ from the most common one; the
+  report says so when it happens.
 
 ## Docs
 

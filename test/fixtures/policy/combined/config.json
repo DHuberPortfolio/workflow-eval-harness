@@ -1,0 +1,1 @@
+{"id_field":"id","outputs":{"TOPIC":{"type":"label","field":"output.TOPIC","key_field":"expected.TOPIC","labels":["billing","refund","shipping"]}},"routing":{"field":"decision","map":{"SENT":"auto","HELD":"review"}},"groups":{"hard":{"field":"expected.hard","from":"key"}}}

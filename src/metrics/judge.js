@@ -68,8 +68,18 @@ function valueFindings(r, config) {
   return f;
 }
 
+// A gate's threshold for one record: a number; each record's own, when the config names a
+// prediction field (load.js keeps it in r.fields); or a policy's cap on either, { of, cap }: the
+// lower of the two (policy.js). undefined when the record's own is missing (trap E18, lenient).
+function thresholdOf(r, configured) {
+  if (typeof configured === 'number') return configured;
+  if (typeof configured === 'string') return r.fields ? r.fields[configured] : undefined;
+  const own = thresholdOf(r, configured.of);
+  return own === undefined ? undefined : Math.min(own, configured.cap);
+}
+
 // Would the confidence gate let this record through? true or false, or null when a
-// confidence it needs is missing. `overrides` replaces thresholds (for the what-if).
+// confidence or threshold it needs is missing. `overrides` replaces thresholds (for the what-if).
 // At or above the threshold passes (trap E5). A gated output with nothing applied fails:
 // there is nothing strong enough to stand on.
 function gatePasses(r, config, overrides = {}) {
@@ -77,11 +87,11 @@ function gatePasses(r, config, overrides = {}) {
   if (!t || !nonEmpty(t.auto_publish)) return true;
   let unknown = false;
   for (const [name, configured] of Object.entries(t.auto_publish)) {
-    const threshold = name in overrides ? overrides[name] : configured;
+    const threshold = thresholdOf(r, name in overrides ? overrides[name] : configured);
     const applied = predValues(r, name, config.outputs[name]).filter(v => v.applied);
     const confs = applied.map(t.gate_uses === 'weakest' ? weakest : v => v.confidence);
     if (confs.length === 0) return false;
-    if (confs.some(c => c === null)) { unknown = true; continue; }
+    if (threshold === undefined || confs.some(c => c === null)) { unknown = true; continue; }
     const lead = t.gate_uses === 'weakest' ? Math.min(...confs) : Math.max(...confs);
     if (lead < threshold) return false;
   }

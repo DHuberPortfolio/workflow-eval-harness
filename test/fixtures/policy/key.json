@@ -1,0 +1,10 @@
+[
+  { "id": "P1", "verdict": "AUTO",   "codes": ["A"] },
+  { "id": "P2", "verdict": "REVIEW", "codes": ["A", "B"] },
+  { "id": "P3", "verdict": "AUTO",   "codes": ["C"] },
+  { "id": "P4", "verdict": "REVIEW", "codes": ["B"] },
+  { "id": "P5", "verdict": "AUTO",   "codes": ["B"] },
+  { "id": "P6", "verdict": "REVIEW", "codes": ["C", "A"] },
+  { "id": "P7", "verdict": "BLOCK",  "codes": ["X"] },
+  { "id": "P8", "verdict": "AUTO",   "codes": ["B"] }
+]

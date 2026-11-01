@@ -143,6 +143,8 @@ function align(predictions, key, config, p, opts = {}) {
     // prediction only: in a combined format both sides are the same records, read twice.
     if (groups.length) rec.groups = Object.fromEntries(groups.map(([name, g]) => [name, ((g.from === 'key' ? k : pr).groups || {})[name] || []]));
     if (config.clusters) rec.cluster = (config.clusters.from === 'key' ? k : pr).cluster ?? null;
+    // Prediction fields kept for a record's own gate threshold or a policy what-if (load.js readFields).
+    if (pr.fields) rec.fields = pr.fields;
     records.push(rec);
   }
 
@@ -155,4 +157,4 @@ function align(predictions, key, config, p, opts = {}) {
   return records;
 }
 
-module.exports = { align };
+module.exports = { align, routeClass };
