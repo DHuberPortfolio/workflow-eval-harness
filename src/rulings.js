@@ -15,18 +15,35 @@
 //
 // Values are read as the key's are: trimmed, and through the config's equivalents, so a ruling
 // written with an alias rules on the value the key and the predictions are read as.
+//
+// Answer-key suspects (wfeval suspects, traps N11-N14) also question what the key holds:
+//   remove  - a set value the key lists is wrong: for scoring it leaves that record's key.
+//   keep    - the key is right: a set value it lists, or its label, stays, and is not asked again.
+//   replace - a label is wrong: for scoring the key's label (value) becomes "with".
+//   pending - for a value the key lists, with "proposed": "remove"; for a label, with "with":
+//             scored as the key stands; score gives the rate as if made, too (trap I15).
+// A plain pending, or "proposed": "add", is the possible key gap it always was.
 
 const fs = require('fs');
-const { problems } = require('./problems.js');
-const { equivalentOf } = require('./config.js');
+const { problems, markId } = require('./problems.js');
+const { equivalentOf, DECLINED } = require('./config.js');
 const { accepted } = require('./metrics/slots.js');
 
-const RULINGS = ['add', 'reject', 'pending'];
-const KEYS = ['id', 'output', 'value', 'ruling', 'by', 'on', 'note'];
+const RULINGS = ['add', 'reject', 'pending', 'remove', 'keep', 'replace'];
+const KEYS = ['id', 'output', 'value', 'ruling', 'by', 'on', 'note', 'with', 'proposed'];
+// The verbs that fit each kind of output (N11): a set value the key lacks, add or reject; one it
+// lists, remove or keep; a label, replace or keep. pending for any.
+const LABEL_RULINGS = ['replace', 'keep', 'pending'];
+const PROPOSED = ['add', 'remove'];
+// A file that uses none of what suspects added reads, and reports, exactly as before.
+const isNew = x => ['remove', 'keep', 'replace'].includes(x.ruling) || x.with !== undefined || x.proposed !== undefined;
 const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const describe = v => (v === null ? 'null' : v === undefined ? 'nothing' : Array.isArray(v) ? 'a list'
   : typeof v === 'string' ? 'the text ' + JSON.stringify(v) : typeof v);
-const named = x => x.id + ' ' + x.output + ' ' + x.value;
+const named = x => markId(x.id) + ' ' + x.output + ' ' + x.value;   // the id marked: see problems.js
+
+// "a label output", "an ordinal output".
+const article = type => (/^[aeiou]/.test(type) ? 'an ' : 'a ') + type;
 
 // One entry of the file, or null after reporting why it cannot be read (I12, I13).
 function readRuling(r, at, config, p) {
@@ -40,8 +57,10 @@ function readRuling(r, at, config, p) {
   const o = typeof r.output === 'string' ? config.outputs[r.output] : undefined;
   if (typeof r.output !== 'string' || r.output === '') bad('needs "output": the set output the value belongs to');
   else if (!o) bad('"' + r.output + '" is not an output in the config (outputs: ' + Object.keys(config.outputs).join(', ') + ')');
-  // A label has one answer per record, so a key cannot be missing one: its mistakes are wrong labels.
-  else if (o.type !== 'set') bad(r.output + ' is a ' + o.type + ' output; rulings are for the values of a set output, which a key can leave out');
+  // A label that is also the route is judged as the route; no ruling changes where a record should go (N16).
+  else if (o.type !== 'set' && o.field === config.routing.field) {
+    bad(r.output + ' is the route (routing.field): a wrong route is judged by the routing types, and no ruling changes the answer key\'s route');
+  }
   const value = typeof r.value === 'string' ? r.value.trim() : '';
   if (value === '') bad('needs "value": the value ruled on, as text');
   if (!RULINGS.includes(r.ruling)) {
@@ -49,18 +68,71 @@ function readRuling(r, at, config, p) {
     const near = typeof r.ruling === 'string' ? RULINGS.find(x => x === r.ruling.trim().toLowerCase()) : undefined;
     bad('ruling is ' + describe(r.ruling) + '; it must be one of: ' + RULINGS.join(', ') + (near ? ' (did you mean "' + near + '"?)' : ''));
   }
-  for (const k of ['by', 'on', 'note']) if (r[k] !== undefined && r[k] !== null && typeof r[k] !== 'string') bad('"' + k + '" must be text, got ' + describe(r[k]));
+  for (const k of ['by', 'on', 'note', 'with', 'proposed']) if (r[k] !== undefined && r[k] !== null && typeof r[k] !== 'string') bad('"' + k + '" must be text, got ' + describe(r[k]));
+  const label = o && o.type !== 'set' && o.field !== config.routing.field;
+  const read = equivalentOf(config.equivalents, typeof r.output === 'string' ? r.output : '');
+  // N11: what --write-rulings writes, with "pending" changed to the ruling and nothing else, leaves
+  // a pending's "proposed" (set values) or "with" (labels, under keep) behind. The ruling itself
+  // says what was decided, so the leftover is dropped and the report says so; a verb is never guessed.
+  const leftover = (k, why) => { if (ok) p.fix('N11', at, 'dropped "' + k + '": ' + JSON.stringify(r[k]) + ': ' + why); };
+  let dropWith = false;
+  let dropProposed = false;
+  if (label && r.ruling === 'keep' && typeof r.with === 'string') {
+    dropWith = true;
+    leftover('with', 'a keep ruling leaves the label as the answer key has it');
+  }
+  if (o && o.type === 'set' && RULINGS.includes(r.ruling) && r.ruling !== 'pending' && typeof r.proposed === 'string') {
+    dropProposed = true;
+    leftover('proposed', 'it goes with pending only; the ruling, ' + r.ruling + ', says what was decided');
+  }
+  const withValue = typeof r.with === 'string' && !dropWith ? read(r.with.trim()) : undefined;
+  if (ok && RULINGS.includes(r.ruling)) {
+    // N11: a verb that does not fit the output, or "with" and "proposed" where they mean nothing.
+    // Each would be a guess at what the ruling changes in the key.
+    if (label) {
+      const isLabel = l => o.labels.map(String).includes(l);
+      if (!LABEL_RULINGS.includes(r.ruling)) {
+        bad(r.output + ' is ' + article(o.type) + ' output: its rulings are replace (with "with", the label the answer key should say), keep or pending; ' +
+          r.ruling + ' is for the values of a set output');
+      } else if (r.ruling !== 'keep' && withValue === undefined) {
+        bad(r.output + ' is ' + article(o.type) + ' output: a ' + r.ruling + ' ruling on it needs "with": the label the answer key should say instead of ' +
+          JSON.stringify(value) + ' (add, reject and remove are for the values of a set output)');
+      } else if (r.ruling === 'keep' && r.with !== undefined && !dropWith) {
+        bad('a keep ruling leaves the label as the answer key has it: it takes no "with"');
+      }
+      for (const [k, v] of [['value', read(value)], ['with', withValue]]) {
+        if (v === undefined || v === '' || isLabel(v)) continue;
+        const near = o.labels.map(String).find(l => l.toLowerCase() === v.toLowerCase());
+        bad('"' + k + '" is ' + JSON.stringify(v) + ', which is not one of ' + r.output + '\'s labels: ' + o.labels.join(', ') + (near ? ' (did you mean "' + near + '"?)' : ''));
+      }
+      if (withValue !== undefined && withValue === read(value)) bad('replaces ' + JSON.stringify(withValue) + ' with itself');
+      if (r.proposed !== undefined) bad('"proposed" goes with a pending ruling on a set value; a label\'s pending names its label in "with"');
+    } else if (o && o.type === 'set') {
+      if (r.ruling === 'replace') bad('replace is for a label output; for a value of the set output ' + r.output + ' the answer key lists, use remove or keep');
+      if (r.with !== undefined) bad('"with" is for a label output\'s replace or pending ruling; ' + r.output + ' is a set output');
+      if (r.proposed !== undefined && !dropProposed) {
+        if (r.ruling !== 'pending') bad('"proposed" goes with pending only: a ' + r.ruling + ' ruling says what was decided itself');
+        else if (!PROPOSED.includes(r.proposed)) {
+          const near = typeof r.proposed === 'string' ? PROPOSED.find(x => x === r.proposed.trim().toLowerCase()) : undefined;
+          bad('"proposed" is ' + describe(r.proposed) + '; it must be add (a value the key may be missing) or remove (a value it may hold wrongly)' +
+            (near ? ' (did you mean "' + near + '"?)' : ''));
+        }
+      }
+    }
+  }
   if (!ok) return null;
 
   if (value !== r.value) p.fix('D7', at, 'trimmed spaces from ' + JSON.stringify(r.value));
-  const as = equivalentOf(config.equivalents, r.output)(value);
+  const as = read(value);
   if (as !== value) p.fix('D23', at, r.output + ': the ruling\'s value ' + JSON.stringify(value) + ' read as its equivalent ' + JSON.stringify(as));
   const text = k => (typeof r[k] === 'string' && r[k].trim() !== '' ? r[k].trim() : null);
-  // I13: a ruling nobody can trace is what this file exists to replace.
+  // I13: a ruling nobody can trace is what this file exists to replace. A pending ruling decides
+  // nothing yet (it is a question, as --write-rulings writes it): it needs no by or on.
   for (const [k, what] of [['by', 'who made it'], ['on', 'when (a date)']]) {
-    if (text(k) === null) p.strict('I13', at, named({ id, output: r.output, value: as }) + ' has no "' + k + '": say ' + what + ', so the ruling can be traced');
+    if (r.ruling !== 'pending' && text(k) === null) p.strict('I13', at, named({ id, output: r.output, value: as }) + ' has no "' + k + '": say ' + what + ', so the ruling can be traced');
   }
-  return { id, output: r.output, value: as, ruling: r.ruling, by: text('by'), on: text('on'), note: text('note'), at };
+  return { id, output: r.output, value: as, ruling: r.ruling, by: text('by'), on: text('on'), note: text('note'), at, label,
+    ...(withValue !== undefined ? { with: withValue } : {}), ...(r.proposed !== undefined && !dropProposed ? { proposed: r.proposed } : {}) };
 }
 
 // Reads and checks a rulings file against the config. Throws one error listing every stop
@@ -88,17 +160,27 @@ function loadRulings(file, config, mode = 'strict') {
     const x = readRuling(r, at, config, p);
     if (x === null) return;
     // Two rulings on one value may disagree, and which one counts would be a guess. Compared as
-    // read, so an alias and its value are one value here too.
-    const k = JSON.stringify([x.id, x.output, x.value]);
-    if (first.has(k)) { p.stop('I12', at, 'rules on ' + named(x) + ' again (first at rulings[' + first.get(k) + ']); one ruling per value'); return; }
+    // read, so an alias and its value are one value here too. A record has one label, so two
+    // rulings on it are two rulings on one entry, whatever their values (N11).
+    const k = JSON.stringify(x.label ? [x.id, x.output] : [x.id, x.output, x.value]);
+    if (first.has(k)) {
+      p.stop('I12', at, 'rules on ' + (x.label ? markId(x.id) + ' ' + x.output + '\'s label' : named(x)) + ' again (first at rulings[' + first.get(k) + ']); ' +
+        (x.label ? 'one ruling per label' : 'one ruling per value'));
+      return;
+    }
     first.set(k, i);
-    list.push(x);
+    list.push({ ...x, index: i });   // index: its place in the file, for --write-rulings (N10)
   });
   p.throwIfStopped();
-  return { file, list, problems: p.items };
+  // entries: the file's rulings as written, for suspects --write-rulings to carry over word for word.
+  return { file, list, problems: p.items, entries: raw.rulings };
 }
 
-const entry = x => ({ id: x.id, output: x.output, value: x.value, by: x.by, on: x.on, note: x.note });
+const entry = x => ({ id: x.id, output: x.output, value: x.value, by: x.by, on: x.on, note: x.note,
+  ...(x.with !== undefined ? { with: x.with } : {}), ...(x.proposed !== undefined ? { proposed: x.proposed } : {}) });
+// A pending ruling's question: a value the key may be missing (add), one it may hold wrongly
+// (remove), or a label it may have wrong (replace).
+const pendingKind = x => (x.with !== undefined ? 'replace' : x.proposed === 'remove' ? 'remove' : 'add');
 
 // Which rulings apply to this answer key (keyRecords: load.js's normalized key). Each goes to
 // added, rejected or pending, or is set aside, with the reason reported in p:
@@ -113,28 +195,56 @@ function applyRulings(rulings, keyRecords, config, p) {
   const keyById = new Map(keyRecords.map(k => [k.id, k]));
   const byLower = new Map(keyRecords.map(k => [k.id.toLowerCase(), k.id]));
   const out = { file: rulings.file, added: [], rejected: [], pending: [], set_aside: [] };
-  const into = { add: out.added, reject: out.rejected, pending: out.pending };
+  // The lists for what suspects added, only when the file uses it: an older file's results stay as they were.
+  if (rulings.list.some(isNew)) Object.assign(out, { removed: [], kept: [], replaced: [] });
+  const into = { add: out.added, reject: out.rejected, pending: out.pending, remove: out.removed, keep: out.kept, replace: out.replaced };
   for (const x of rulings.list) {
     const aside = why => out.set_aside.push({ ...entry(x), ruling: x.ruling, why });
     const k = keyById.get(x.id);
     if (!k) {
       const near = byLower.get(x.id.toLowerCase());
-      p.strict('I13', x.at, 'record "' + x.id + '" is not in the answer key' +
-        (near ? ' (did you mean "' + near + '"? Ids must match exactly)' : '') + '; a ruling is for the records of the key it was made on');
+      p.strict('I13', x.at, 'record "' + (near ? markId(near, x.id) : markId(x.id)) + '" is not in the answer key' +
+        (near ? ' (did you mean "' + markId(near) + '"? Ids must match exactly)' : '') + '; a ruling is for the records of the key it was made on');
       aside('the record is not in the answer key');
       continue;
     }
+    if (x.label) {
+      // N12: a label ruling made on another version of the key: the key no longer says its value.
+      const said = k.outputs[x.output];
+      if (said === DECLINED || String(said) !== x.value) {
+        const now = said === DECLINED ? 'says to decline' : 'says ' + JSON.stringify(String(said));
+        const done = x.ruling === 'replace' && String(said) === x.with;
+        if (done) p.warn('I14', x.at, markId(x.id) + ' ' + x.output + ': the answer key already says ' + JSON.stringify(x.with) + ': there is nothing to replace. The ruling is set aside');
+        else p.warn('N12', x.at, markId(x.id) + ' ' + x.output + ': the answer key ' + now + ', not ' + JSON.stringify(x.value) + ': the ruling was made on another version of the key. It is set aside');
+        aside(done ? 'already in the answer key' : 'the answer key no longer says this label');
+        continue;
+      }
+      into[x.ruling].push(entry(x));
+      continue;
+    }
     const slots = k.outputs[x.output];
+    // N12: remove, keep and a pending remove question a value the key lists; on one it lacks
+    // (another version of the key), there is nothing to question.
+    if (x.ruling === 'remove' || x.ruling === 'keep' || (x.ruling === 'pending' && x.proposed === 'remove')) {
+      if (!accepted(slots).has(x.value)) {
+        p.warn('N12', x.at, named(x) + ' is not in the answer key: there is nothing to ' + (x.ruling === 'keep' ? 'keep' : 'remove') +
+          ' (the ruling was made on another version of the key, or the value needs add or reject). The ruling is set aside');
+        aside('not in the answer key');
+        continue;
+      }
+      into[x.ruling].push(entry(x));
+      continue;
+    }
     if (accepted(slots).has(x.value)) {
       const alt = !slots.includes(x.value) ? ' (an alternative in an any_of slot)' : '';
-      const why = { add: 'there is nothing to add', reject: 'a reject cannot make a value the key lists wrong', pending: 'there is nothing left to decide' };
+      const why = { add: 'there is nothing to add', reject: 'a reject cannot make a value the key lists wrong', pending: 'as a possible gap there is nothing left to decide; to ask whether the key holds it wrongly, give the pending ruling "proposed": "remove"' };
       p.warn('I14', x.at, named(x) + ' is already in the answer key' + alt + ': ' + why[x.ruling] + '. The ruling is set aside');
       aside('already in the answer key');
       continue;
     }
     const allowed = config.allowed_values[x.output];
     if (x.ruling === 'add' && Array.isArray(allowed) && !allowed.includes(x.value)) {
-      p.strict('I13', x.at, 'adds ' + JSON.stringify(x.value) + ' to ' + x.id + ' ' + x.output + ', which is not in allowed_values.' + x.output +
+      p.strict('I13', x.at, 'adds ' + JSON.stringify(x.value) + ' to ' + markId(x.id) + ' ' + x.output + ', which is not in allowed_values.' + x.output +
         ': a typo would add a value nothing can fill');
       aside('not an allowed value');
       continue;
@@ -159,12 +269,37 @@ function addToKey(records, list) {
   });
 }
 
+// Paired records with every change the rulings make to their key, for scoring only (N14): values
+// added (addToKey), values removed (from whichever slot holds them; a slot left with no value
+// goes), and labels replaced. New objects, so the records read from the files stay as they were.
+// ruled: applyRulings' result, or any { added, removed, replaced } lists.
+function applyToKey(records, ruled) {
+  const removed = ruled.removed || [];
+  const replaced = ruled.replaced || [];
+  const added = addToKey(records, ruled.added || []);
+  if (removed.length === 0 && replaced.length === 0) return added;
+  const byId = new Map();
+  for (const x of [...removed.map(x => ({ ...x, how: 'remove' })), ...replaced.map(x => ({ ...x, how: 'replace' }))]) byId.set(x.id, [...(byId.get(x.id) || []), x]);
+  return added.map(r => {
+    const mine = byId.get(r.id);
+    if (!mine) return r;
+    const key = { ...r.key };
+    for (const x of mine) {
+      if (x.how === 'replace') { key[x.output] = x.with; continue; }
+      key[x.output] = key[x.output].map(s => (typeof s === 'string' ? (s === x.value ? null : s)
+        : { any_of: s.any_of.filter(v => v !== x.value) })).filter(s => s !== null && (typeof s === 'string' || s.any_of.length > 0));
+    }
+    return { ...r, key };
+  });
+}
+
 // Possible key gaps with their rulings. A rejected one is dropped and counted: it was ruled not
-// a gap, so listing it again would ask the same question on every run. A pending one carries who
-// and when; the rest are unruled. An added value is in the key now, so it is never a candidate.
+// a gap, so listing it again would ask the same question on every run (so is a value ruled out of
+// the key with remove). A pending one carries who and when; the rest are unruled. An added value
+// is in the key now, so it is never a candidate.
 function annotateGaps(candidates, ruled) {
   const k = x => JSON.stringify([x.id, x.output, x.value]);
-  const rejected = new Set(ruled.rejected.map(k));
+  const rejected = new Set([...ruled.rejected, ...(ruled.removed || [])].map(k));
   const pending = new Map(ruled.pending.map(x => [k(x), x]));
   const kept = candidates.filter(c => !rejected.has(k(c)));
   return {
@@ -176,4 +311,4 @@ function annotateGaps(candidates, ruled) {
   };
 }
 
-module.exports = { loadRulings, applyRulings, addToKey, annotateGaps, RULINGS };
+module.exports = { loadRulings, applyRulings, addToKey, applyToKey, annotateGaps, pendingKind, RULINGS };

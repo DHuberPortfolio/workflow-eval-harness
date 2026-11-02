@@ -1,0 +1,15 @@
+[
+  { "id": "T1",  "tags": ["refund"],          "category": "billing" },
+  { "id": "T2",  "tags": ["refund"],          "category": "billing" },
+  { "id": "T3",  "tags": ["refund"],          "category": "billing" },
+  { "id": "T4",  "tags": ["late"],            "category": "shipping" },
+  { "id": "T5",  "tags": ["late"],            "category": "shipping" },
+  { "id": "T6",  "tags": ["late", "damaged"], "category": "shipping" },
+  { "id": "T7",  "tags": ["damaged"],         "category": "shipping" },
+  { "id": "T8",  "tags": ["refund", "late"],  "category": "billing" },
+  { "id": "T9",  "tags": [],                  "category": "unsure" },
+  { "id": "T10", "tags": ["fraud"],           "category": "account" },
+  { "id": "T11", "tags": [{ "any_of": ["damaged", "wrong-item"] }], "category": "shipping" },
+  { "id": "T12", "tags": ["late"],            "category": "shipping" },
+  { "id": "T13", "tags": ["refund"],          "category": "billing" }
+]

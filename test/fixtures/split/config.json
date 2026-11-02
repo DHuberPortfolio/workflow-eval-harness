@@ -1,0 +1,11 @@
+{
+  "outputs": { "codes": { "type": "set" } },
+  "routing": {
+    "field": "route",
+    "gold_field": "expected_route",
+    "map": { "AUTO": "auto", "REVIEW": "review", "DUPLICATE": "exclude" }
+  },
+  "trap_field": "trap",
+  "duplicate_of_field": "duplicate_of",
+  "split": { "held_out": 0.5 }
+}

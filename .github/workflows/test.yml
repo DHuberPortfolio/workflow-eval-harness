@@ -4,7 +4,8 @@
 #            including --fail-on, which must stop a build that has a high-severity silent error
 #            (or, for graded free text, an invented field), compare --fail-if-worse, which
 #            must stop a change that makes an outcome worse and pass one that makes it better,
-#            and monitor --fail-on-alarm, which must stop on a rise and pass after a restart.
+#            and monitor --fail-on-alarm, which must stop on a rise and pass after a restart;
+#            and suspects --write-rulings, which must refuse to write over a file that exists.
 #   samples: rebuilds the sample reports the README links to and fails if they differ from
 #            the committed copies, so the samples always show what the tool produces today.
 name: tests
@@ -81,6 +82,10 @@ jobs:
           L=test/fixtures/monitor
           node bin/wfeval.js monitor --config $L/config.json $L/runs/2026-W40.json $L/runs/2026-W41.json $L/runs/2026-W42.json --target 5
           node bin/wfeval.js monitor --counts $L/counts.csv --target 5 --json "$out/monitor.json"
+          S=test/fixtures/monitor-segments
+          node bin/wfeval.js monitor --counts $S/counts.csv --segment-by segment --segments chat,email,phone --target 5 --acceptable 2.5 --json "$out/segments.json"
+          node bin/wfeval.js monitor --config $S/config.json $S/runs/2026-W40.json $S/runs/2026-W41.json $S/runs/2026-W42.json \
+            --watch silent-omissions --target 20 --acceptable 10 --segment-by channel
           A=test/fixtures/agree
           node bin/wfeval.js agree --config $A/config.json --keys $A/ann.json $A/ben.json $A/cai.json --json "$out/agree.json" \
             --write-key "$out/majority.json"
@@ -89,6 +94,43 @@ jobs:
           node bin/wfeval.js estimate --config $E/config.json --pred $E/predictions.json --judge-key $E/judge-key.json --pick 10 --seed 1
           node bin/wfeval.js estimate --config $E/config.json --pred $E/predictions.json --judge-key $E/judge-key.json \
             --key $E/person-key.json --target 50 --json "$out/estimate.json"
+          S=test/fixtures/suspects
+          node bin/wfeval.js suspects --config $S/config.json --key $S/key.json $S/run-a.json $S/run-b.json \
+            --rulings $S/rulings-pending.json --json "$out/suspects.json" --write-rulings "$out/suspects-rulings.json"
+          node bin/wfeval.js suspects --config $C/config.json --key $C/runs/exec-56.harness.json $C/runs/exec-5{6,7,8,9}.harness.json \
+            --rulings $C/rulings.json --top 10
+      - name: A held-out half (split) is drawn, kept hidden, checked and counted
+        shell: bash
+        run: |
+          set -e
+          out="$RUNNER_TEMP"
+          S=test/fixtures/split
+          node bin/wfeval.js check --config $S/config.json --pred $S/predictions.json --key $S/key.json
+          node bin/wfeval.js score --config $S/config.json --pred $S/predictions-v2.json --key $S/key.json --target 40 > "$out/split.txt"
+          node bin/wfeval.js score --config $S/config.json --pred $S/predictions-v2.json --key $S/key.json --target 40 --held-out > "$out/split-held.txt"
+          # The held-out half's silent error (S05) is never named without --show-held-out, looked at or not.
+          if grep -q S05 "$out/split.txt" "$out/split-held.txt"; then echo "a held-out record was named"; exit 1; fi
+          grep -q "HELD-OUT HALF  not looked at" "$out/split.txt"
+          node bin/wfeval.js score --config $S/config.json --pred $S/predictions-v2.json --key $S/key.json --show-held-out | grep -q S05
+          # Looks are asked for (--held-out) and counted in a log beside a copy of the config.
+          node -e "const fs = require('fs'); const c = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); c.split.log = 'split-log.json'; fs.writeFileSync(process.argv[2], JSON.stringify(c))" $S/config.json "$out/split-config.json"
+          node bin/wfeval.js score --config "$out/split-config.json" --pred $S/predictions-v3.json --key $S/key.json --target 40 --quiet
+          if [ -e "$out/split-log.json" ]; then echo "a report without --held-out was counted as a look"; exit 1; fi
+          node bin/wfeval.js score --config "$out/split-config.json" --pred $S/predictions.json --key $S/key.json --target 40 --quiet --held-out
+          node bin/wfeval.js score --config "$out/split-config.json" --pred $S/predictions-v2.json --key $S/key.json --target 40 --held-out | grep -q "Look 2 at this held-out half"
+          node bin/wfeval.js check --config "$out/split-config.json" --pred $S/predictions.json --key $S/key.json | grep -q "the next is look 3"
+          node bin/wfeval.js whatif --config $S/gate.json --pred test/fixtures/gate/predictions.json --key test/fixtures/gate/key.json --gate --target 40 --held-out
+          C=examples/compliance-reviewer
+          node bin/wfeval.js whatif --config $C/config-split.json --pred $C/golden500/exec-67.harness.json --key $C/golden500/exec-67.harness.json \
+            --policies $C/policies.json --target 5 --held-out
+          G=examples/metadata-enrichment/golden500
+          node bin/wfeval.js variance --config $G/config-split.json --key $G/exec-70.json $G/exec-7{0,1,2}.json --held-out
+          set +e
+          node bin/wfeval.js compare --config $S/config.json --key $S/key.json --before $S/predictions.json --after $S/predictions-bad.json \
+            --fail-if-worse silent-errors --held-out > /dev/null
+          code=$?
+          echo "compare: exit code $code (expected 3: silent errors worse on the held-out half)"
+          test "$code" -eq 3
       - name: --fail-on stops a build with a high-severity silent error or invented field; --fail-if-worse one that makes things worse
         shell: bash
         run: |
@@ -114,6 +156,27 @@ jobs:
           code=$?
           echo "compare in order: exit code $code (expected 0: unnecessary reviews better)"
           test "$code" -eq 0 || exit 1
+          # Segments: the silent error rate rises in chat only; the whole stays in control, the chat
+          # segment alarms. Silent omissions rise in email only. The run files raise no alarm.
+          S=test/fixtures/monitor-segments
+          node bin/wfeval.js monitor --counts $S/counts.csv --segment-by segment --target 5 --acceptable 2.5 --fail-on-alarm > /dev/null
+          code=$?
+          echo "monitor segments: exit code $code (expected 3: an alarm in chat)"
+          test "$code" -eq 3 || exit 1
+          node bin/wfeval.js monitor --counts $S/counts.csv --segment-by segment --watch silent-omissions --target 20 --acceptable 10 --fail-on-alarm > /dev/null
+          code=$?
+          echo "monitor segments, silent omissions: exit code $code (expected 3: an alarm in email)"
+          test "$code" -eq 3 || exit 1
+          node bin/wfeval.js monitor --config $S/config.json $S/runs/2026-W40.json $S/runs/2026-W41.json $S/runs/2026-W42.json \
+            --watch silent-omissions --target 20 --acceptable 10 --segment-by channel --fail-on-alarm > /dev/null
+          code=$?
+          echo "monitor run files, silent omissions by channel: exit code $code (expected 0: no alarm)"
+          test "$code" -eq 0 || exit 1
+          # A counts file whose segment column is not asked for is read as it always was: W40 alarms.
+          node bin/wfeval.js monitor --counts $S/segment-column.csv --target 5 --fail-on-alarm > /dev/null
+          code=$?
+          echo "monitor, segment column without --segment-by: exit code $code (expected 3: an alarm, as before)"
+          test "$code" -eq 3 || exit 1
           # The monitor fixture's silent error rate rises: an alarm in 2026-W42, none after a restart in W41.
           L=test/fixtures/monitor
           node bin/wfeval.js monitor --counts $L/counts.csv --target 5 --fail-on-alarm > /dev/null
@@ -123,7 +186,13 @@ jobs:
           node bin/wfeval.js monitor --counts $L/counts.csv --target 5 --since 2026-W41 --fail-on-alarm > /dev/null
           code=$?
           echo "monitor --since 2026-W41: exit code $code (expected 0: no alarm since the restart)"
-          test "$code" -eq 0
+          test "$code" -eq 0 || exit 1
+          # suspects --write-rulings never writes over a file that exists: it may hold a person's rulings.
+          S=test/fixtures/suspects
+          node bin/wfeval.js suspects --config $S/config.json --key $S/key.json $S/run-a.json --write-rulings $S/rulings.json > /dev/null
+          code=$?
+          echo "suspects --write-rulings onto an existing file: exit code $code (expected 1)"
+          test "$code" -eq 1 && git diff --exit-code $S/rulings.json
 
   samples:
     name: sample reports are up to date

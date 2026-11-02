@@ -148,6 +148,16 @@ tuned on, so a fresh run should confirm them:
 
 The harness reproduces this table exactly from run 67 with [policies.json](policies.json)
 (`wfeval whatif --policies`; the command is in [METRICS.md](../../docs/METRICS.md#routing-policies)).
+
+[config-split.json](config-split.json) splits the 500 documents in halves (230 to compare and
+certify the policies on, 270 held out) to show how `whatif` works with a split; it is not evidence
+for any policy. The policies above were chosen on all 500 documents before the split existed, so
+the held-out half has been looked at already, and no claim is made on it (the config keeps no log
+for that reason). What it shows: on the tuning half alone "Both" is not certified under 5% (2
+silent errors in 108), "Every note goes to a person" is (0 in 95), and that policy's held-out
+numbers are 0 in 116 ([METRICS.md](../../docs/METRICS.md#whatif-chosen-on-the-tuning-half-checked-on-the-held-out-half)).
+Confirming a policy needs documents that played no part in choosing it: a fresh run, or records
+added to the golden set later.
 Every row is a hold-if rule, so every row is exact. "Cap at 0.85" holds a document with a finding
 stated at 0.85 or more and not applied: a client's threshold decides whether a finding is
 applied, and any applied finding sends the document to a person. "Every note" means the model's

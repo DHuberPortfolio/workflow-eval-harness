@@ -1,0 +1,6 @@
+{
+  "policies": [
+    { "name": "Gate 0.75", "auto_publish": { "TOPIC": 0.75 } },
+    { "name": "Gate 0.85", "auto_publish": { "TOPIC": 0.85 } }
+  ]
+}

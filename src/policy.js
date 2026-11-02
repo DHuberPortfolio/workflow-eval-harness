@@ -33,7 +33,7 @@
 // records the gate can move (whatif.js), and rest on the same assumption.
 
 const fs = require('fs');
-const { problems } = require('./problems.js');
+const { problems, markId } = require('./problems.js');
 const { equivalentOf, DECLINED } = require('./config.js');
 
 const POLICY_KEYS = ['name', 'hold_if', 'auto_publish', 'auto_publish_cap'];
@@ -316,7 +316,7 @@ function checkPolicyData(policies, records, config, p, { sameFile = false } = {}
           said('E17', 'only the answer key has "' + c.field + '" (' + keyName + ' is "key"); a routing policy can only use what the workflow knew. ' +
             'If the workflow saw it, put it in the predictions and set ' + keyName + ': "predictions"', false);
         } else if (missing.length === records.length && records.length > 0) said('E15', 'no record has the field "' + c.field + '": probably misspelt', false);
-        else if (missing.length) said('E15', missing.length + ' record(s) lack the field "' + c.field + '" and are never held by it: ' + missing.slice(0, 20).join(', ') + (missing.length > 20 ? ' ...' : ''));
+        else if (missing.length) said('E15', missing.length + ' record(s) lack the field "' + c.field + '" and are never held by it: ' + missing.slice(0, 20).map(id => markId(id)).join(', ') + (missing.length > 20 ? ' ...' : ''));
         // E14 for a field: a value to compare with that no record has is probably misspelt.
         if (missing.length < records.length) {
           for (const x of c.equals !== undefined ? [c.equals] : c.in || []) {
@@ -327,7 +327,7 @@ function checkPolicyData(policies, records, config, p, { sameFile = false } = {}
         }
         if (c.below !== undefined || c.at_least !== undefined) {
           const texty = records.filter(r => r.fields && r.fields[c.field] !== undefined && asNumber(r.fields[c.field]) === null).map(r => r.id);
-          if (texty.length) said('E16', '"' + c.field + '" is not a number on ' + texty.length + ' record(s), which are never held by it: ' + texty.slice(0, 20).join(', ') + (texty.length > 20 ? ' ...' : ''));
+          if (texty.length) said('E16', '"' + c.field + '" is not a number on ' + texty.length + ' record(s), which are never held by it: ' + texty.slice(0, 20).map(id => markId(id)).join(', ') + (texty.length > 20 ? ' ...' : ''));
         }
       }
     }

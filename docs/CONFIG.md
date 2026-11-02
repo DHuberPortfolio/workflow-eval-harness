@@ -283,6 +283,9 @@ one kind of email against another, one branch of the workflow against another.
 | `groups.<name>.field` | required | Where each record's label is (a name or a dotted path). Text, a number or true/false is one label; a list puts the record in each of its labels' groups; missing, `null` or empty puts it in "(none)". An object is an error: point `field` at the text inside it. |
 | `groups.<name>.from` | `"key"` | `key` or `predictions`: the only file the field is read from, even when both are one file. The answer key is the usual place, since a label there belongs to the test record and no run can change it. `predictions` is for what the workflow reports about itself, such as which branch decided. |
 
+A `groups` field only reports a split made by hand. A held-out half kept out of tuning, with its
+records hidden and its looks counted, is `split` ([below](#a-tuning-half-and-a-held-out-half-split)).
+
 On the command line, `wfeval score ... --group-by split` adds a group read from the answer key,
 named by its path; repeat it for more. What is reported, and how to read it:
 [METRICS.md](METRICS.md#per-group).
@@ -318,6 +321,160 @@ record's own id when it is the original" is not a field most answer keys have, s
 `story` field) rather than pointing at `duplicate_of`, which leaves each original out of its own
 retellings' cluster. The headline, the per-group rows and `--target` are unchanged. What is
 reported, and how it is worked out: [METRICS.md](METRICS.md#ranges-that-count-clusters).
+
+## A tuning half and a held-out half (`split`)
+
+A golden set you tune on (choosing a gate, writing a policy, reworking a prompt after reading its
+mistakes) flatters whatever was tuned on it. `split` holds some of its records out from tuning, so
+the numbers you quote are not the numbers you tuned on. Every report is the tuning half's; the
+held-out half is looked at only when you ask (`--held-out`), as rates only, and every look is
+counted. Think of it as the sealed exam paper: practise on the past papers as often as you like,
+and open the sealed one on purpose, a few times at most.
+
+```json
+"split": { "held_out": 0.5, "log": "split-log.json" }
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `split.held_out` | `0.5` | The share of records held out, above 0 and below 1. Called "halves" whatever the share. |
+| `split.salt` | `""` | Any text: a different salt draws a different split. Choose it once, for a golden set, before anyone has looked at either half; changing it later moves tuned-on records into the held-out half, and a log stops (trap O9). |
+| `split.hash` | `"sha256"` | `"sha256"`: the first 4 bytes of SHA-256 of the salt, a colon and the unit's name (the name alone with no salt), read as a number from 0 to 1, held out when under `held_out`. `"crc32"`: CRC-32 of the name, odd held out, to reproduce a split made by hand that way; it takes no salt and no share but a half (trap O2). Why: [METRICS.md](METRICS.md#which-half-a-record-is-in). |
+| `split.by` | `"cluster"` | What a record is split by (its unit). `"cluster"`: its cluster's value (`clusters`, read from the answer key), else for a duplicate (`duplicate_of_field`) its primary's unit, else its own id, so retellings of one story stay on one side. `"id"`: its own id always, to reproduce a split made that way; the report then counts the duplicates and clusters split across the halves (trap O3). With `clusters.from: "predictions"`, `"cluster"` is refused: a run could move a record between halves (trap O4). |
+| `split.log` | - | A JSON file, relative to the config's folder (typically beside the answer key), where every look at the held-out half is recorded. Created at the first look. **Without it, no "shown under the target" claim is made**: `--held-out` still shows the held-out rates and ranges, and the reports say once how to turn counting on (trap O12). |
+
+A record's half depends on its own unit only, never on the other records, so records added to the
+golden set never move one already there. What decides the halves is the split's own settings and
+what makes a record's unit (`id_field`, `clusters`, `duplicate_of_field`): a log stops if any of
+them changes after a look (trap O9), and `score --cluster-by` is refused when the split follows
+clusters the config does not already name: put them in the config before the split is first used
+(trap O4). `wfeval check --config c.json --pred run.json --key key.json` shows the two halves and
+how each trap type and group splits, before anyone looks at a result: the time to draw another
+split with a new salt if a kind of record fell mostly into one half beyond what chance gives (trap O5).
+With a log, `check` also says how many looks the held-out half has had and what the next one may
+spend; it never looks itself.
+
+**A look is asked for.** Tune as often as you like: by default `score`, `compare`, `variance` and
+`whatif` read the tuning half only, show nothing of the held-out half and spend nothing. Each says
+in one line that the held-out half was not looked at, and what the next look would be (its number
+and its share of the 5%). `--held-out` looks: once a version is settled, check it on the held-out
+half. `--show-held-out` lists the held-out records too, and is a look as well (trap O25).
+
+**What each command does with it.** The split applies to these five commands only; `estimate`,
+`monitor`, `agree`, `grade` and `rate` score every record, whatever the config says (trap O1).
+
+- `score`: everything in the report is the tuning half's, as without a split (its target is labelled
+  "tuning half"). With `--held-out`, a HELD-OUT HALF section too: its records' count, its rates with
+  likely ranges, its silent errors by severity and its safeguard failures, never which records; with
+  `--target` and a log, whether the held-out half shows the silent error rate under the target at
+  this look (below).
+- `compare`: everything is the tuning half's. With `--held-out`, the paired counts on the held-out
+  half too (fixed, broke, verdict), never which records. `--after-key` draws the halves from both
+  keys: a record the two keys put in different halves (its primary or cluster differs between them)
+  stops a strict run, counted, not named; with `--lenient` it is set aside in both runs, and the look
+  records only the halves both keys agree on (trap O26).
+- `variance`: everything is the tuning half's. With `--held-out`, each run's silent error rate on the
+  held-out half too, and its worst run, the one to quote for it.
+- `whatif`: the sweep, the policies and their certification are the tuning half's. With `--target`,
+  the loosest gate or policy certified there is the choice; without `--held-out` the report names it
+  and says how to check it. With `--held-out` it is tried once on the held-out half. The report says
+  the held-out half disagrees when the held-out rate is at or above the target; that the tuning half
+  flattered the choice when the rate it was certified at there sits below the held-out half's whole
+  likely range; that there are too few records only when even no silent error could not show it;
+  otherwise, that it is not confirmed at this look, which is not evidence against the choice.
+- `suspects`: the held-out records are left out altogether, as suspects and from the evidence the
+  others are ranked on (their answers would move every weight); the report says how many, and
+  rulings on them are counted, never named. Nothing of the held-out half is shown, so it is not a
+  look. `--write-rulings` writes pending rulings for the tuning half's suspects only, and copies the
+  `--rulings` file's own rulings as written, those on held-out records too (traps O21-O24).
+- `--show-held-out` (on `score`, `compare`, `variance`, `whatif` and `suspects`) shows the held-out
+  half in full, its records and all, and is a look. Without it, no report names a held-out record,
+  warnings and stops included (`check`'s too): a warning about one counts it instead (trap O6). Which
+  words are record ids is known from where each problem wrote them, so a number elsewhere in a
+  message ("12 records") is never taken for a record, whatever the ids look like. When the answer
+  key cannot be read, which half a record is in is not known, and no record is named at all.
+
+**Build gates.** `score --fail-on` and `compare --fail-if-worse` read the held-out half only with
+`--held-out`: then the held-out half's silent errors and safeguard failures, or its paired
+verdicts, stop a build too, counted, never named (an outcome the held-out half does not measure is
+checked on the tuning half only, with a note). Without it the gate is the tuning half's, and a note
+says so. A build that gates on the held-out half spends a look on every run that is not the same
+look again: gate on the tuning half while a change is being made, and on the held-out half for the
+release. `--quiet --held-out` records a look like any other (its exit code says something about the
+held-out half); `--quiet` alone records none.
+
+**Looks, and what a claim may spend.** Each look gets half of what the looks before it left of the
+5% allowed for being wrong: a claim at the first look may use 2.5%, the second 1.25%, the third
+0.625%, and so on. In the report: "each look at the held-out half must pass a stricter test than the
+one before". That keeps a false "shown" under 5% when no version tested was chosen by its held-out
+numbers (proven); against an analyst who keeps what the held-out numbers liked, it held in every
+attack simulated, which is evidence, not proof ([METRICS.md](METRICS.md#counting-the-looks)). The
+claim uses the exact binomial bound at that share, shown beside the likely range. When even no
+silent error among the held-out records could not show it at a first look, the report says there
+are too few records; when a first look could have but this one cannot, the held-out half is used up
+for that target: add fresh records, which have had no look and get a claim of their own (trap O14).
+
+Looks are counted per record: a claim's look number is the number of looks that were at any of its
+records. A look on an older version of the key (before records were added) is no look at the
+records added since, and a listing (`--show-held-out`) covers only the records it showed: `suspects
+--show-held-out` lists the held-out suspects it shows, not the whole half. After a listing, a claim
+on the whole half spends nothing (some of its records could have been fixed one by one), while the
+newest records, if none of them was listed, keep their own claim (trap O13).
+
+The same command on the same files, with the same config (every setting, after `--group-by` and
+`--cluster-by`), the same mode (strict or `--lenient`) and, for `whatif`, the same options (for
+`suspects --show-held-out`, the same list: `--top`'s count, or all with `--json`) is the same look
+again, not counted twice (trap O8). Runs at the same time take turns: the log is written
+holding a lock file beside it (`split-log.json.lock`); a run that cannot take it within a few seconds
+stops, naming the file to delete if no other run is going (trap O17).
+
+**The held-out half's answer key.** `suspects` leaves the held-out half out, so its answer key is
+never checked that way, and a wrong entry there reads as a silent error, or hides one: in one test
+(300 generated records with 10 key mistakes planted), 6 of the 10 fell in the held-out half, and a
+run's held-out silent error rate read 16.5% (18 of 109) against 12.8% (14 of 109) on the true key.
+Listing the held-out half to clean it would spend it. The clean way, before the first
+look: have a second person label the held-out records on their own, from the records, without the
+first key or any model output; then settle each disagreement with
+`wfeval agree` ([below](#agreement-among-graders-wfeval-agree)) and correct the key. No model output
+is involved, so nothing about how the workflow does on those records leaks. Every held-out section
+of a report says once that its key has not been checked by suspects.
+
+The log is a record of what has been seen: keep it with the answer key, and do not edit it. A
+deleted log starts again at look 1, and the report says "no log file was found".
+
+```json
+{
+  "format": "wfeval-split-log/1",
+  "split": { "held_out": 0.5, "salt": "", "hash": "sha256", "by": "cluster",
+             "id_field": "id", "clusters": null, "duplicate_of_field": "duplicate_of" },
+  "looks": [
+    { "look": 1, "date": "2026-11-01T12:00:00.000Z", "command": "score", "predictions": "<sha256>", "key": "<sha256>",
+      "config": "<sha256>", "mode": "strict", "identity": "<sha256>", "held_out_records": 11, "ids_shown": false,
+      "held_out_ids": ["S03", "S04", "..."] },
+    { "look": 2, "date": "2026-11-02T09:00:00.000Z", "command": "score", "...": "...", "ids_shown": true,
+      "held_out_ids": ["S03", "S04", "..."] }
+  ],
+  "listings": [ { "after": 2, "covers": 2, "date": "2026-11-02T09:00:00.000Z", "ids": ["S03", "S04", "..."] } ],
+  "moved": {},
+  "records": { "held_out": { "S03": 1 }, "tuning": { "S01": 1 } }
+}
+```
+
+Dates in the log are exact times in UTC; reports show the date as your own calendar has it. Each
+look keeps the held-out records it was at (`held_out_ids`), and each listing the held-out records it
+showed (`ids`). `records` keeps the look at which each record was first seen in each half: that is
+how the report tells fresh held-out records apart, and catches a record that changed half since, in
+either direction. That stops a strict run (trap O10); with `--lenient` the record is set aside, in neither
+half, listed under `moved`, never written as held out and never counted as fresh. A file that is
+not a split log, or one written for another split, stops (traps O9, O11).
+
+Real examples, with no log: `examples/metadata-enrichment/golden500/config-split.json` reproduces
+the hand split behind that example's notes (`"hash": "crc32", "by": "id"`), and
+`examples/compliance-reviewer/config-split.json` splits the compliance golden set in halves. Both
+halves were looked at before any log existed (the metadata held-out numbers are in its notes; the
+compliance policies were chosen on all 500 documents), so a log starting at look 1 would count a
+first look that is not one. They show the mechanics, not evidence: with `--held-out`, the held-out
+numbers, and no claim. What they show: [METRICS.md](METRICS.md#a-tuning-half-and-a-held-out-half-split).
 
 ## Weighting to a real mix (`--mix`)
 
@@ -384,7 +541,7 @@ key and is read with it; the key file itself is never changed. A real one:
 | `output` | A set output from the config. Labels have one answer per record, so a key cannot be missing one. |
 | `value` | The value ruled on. Trimmed, and read through the config's `equivalents`, so a ruling written with an alias rules on the value it stands for. |
 | `ruling` | `add`, `reject` or `pending` (below). |
-| `by`, `on` | Who decided, and when. Required: an untraceable ruling is what the file replaces. Missing, scoring stops (strict mode) or warns (`--lenient`). |
+| `by`, `on` | Who decided, and when. Required for a decided ruling (every verb but `pending`): an untraceable ruling is what the file replaces. Missing, scoring stops (strict mode) or warns (`--lenient`). A `pending` ruling decides nothing yet and reads without them. |
 | `note` | Optional: why. |
 
 What each ruling does:
@@ -402,16 +559,72 @@ What each ruling does:
 The file stops scoring, naming the entry, when it is not this shape, has an unknown key, a ruling
 other than the three (with "did you mean" for `"Add"`), an output that is not a set output, or
 rules on the same value of the same record twice (an alias and its value count as the same). In
-strict mode it also stops on a ruling with no `by` or `on`, a record that is not in the answer
+strict mode it also stops on a decided ruling with no `by` or `on`, a record that is not in the answer
 key, or an `add` for a value outside the output's `allowed_values` (a typo would add a value
 nothing can fill). `--lenient` turns those into warnings: a ruling for an unknown record or a
 value not allowed is set aside, and one without `by` or `on` still applies. A ruling for
 a value the key already accepts (a plain value, an alternative of an any_of slot, or an
-equivalent of either) changes nothing: it is set aside with a warning.
+equivalent of either) changes nothing: it is set aside with a warning. For a plain `pending` the
+warning says how to ask the other question: `"proposed": "remove"` asks whether the key holds the
+value wrongly ([below](#rulings-on-what-the-key-holds-wfeval-suspects)).
 
 `compare --key old.json --after-key new.json --before run.json --after run.json` scores the same
 run against two answer keys, to see what a new key changes; `--rulings` then applies to both
 keys ([METRICS.md](METRICS.md#possible-key-gaps-and-rulings)).
+
+### Rulings on what the key holds (`wfeval suspects`)
+
+`wfeval suspects` questions the key in two more ways: a set value the key **lists** that the runs do
+not apply, and a **label** the runs give in place of the key's
+([METRICS.md](METRICS.md#answer-key-suspects)). Each kind has its own two verbs, so a ruling always
+says exactly what it changes, and `pending` works for all three:
+
+| The suspect | Verbs | What each does |
+|---|---|---|
+| a set value the key **lacks** | `add`, `reject` | as above: joins the key, or stays wrong and is not asked again |
+| a set value the key **lists** | `remove`, `keep` | `remove`: it leaves that record's key, for scoring only (from an any_of slot too: the slot keeps its other alternatives). `keep`: the key is right; not asked again |
+| a **label** | `replace`, `keep` | `replace`: the key's label (`value`) becomes the label in `"with"`, for scoring only. `keep`: the key's label is right; not asked again |
+| any of the three | `pending` | not decided: scored as the key stands. For a value the key lists, add `"proposed": "remove"`; for a label, name the proposed label in `"with"` |
+
+```json
+{ "rulings": [
+  { "id": "T10", "output": "tags", "value": "fraud", "ruling": "remove", "by": "DH", "on": "2026-11-01" },
+  { "id": "T8", "output": "tags", "value": "late", "ruling": "keep", "by": "DH", "on": "2026-11-01" },
+  { "id": "T8", "output": "category", "value": "billing", "ruling": "replace", "with": "shipping", "by": "DH", "on": "2026-11-01" },
+  { "id": "T6", "output": "tags", "value": "late", "ruling": "pending", "proposed": "remove", "by": "DH", "on": "2026-11-01" },
+  { "id": "T4", "output": "category", "value": "shipping", "ruling": "pending", "with": "billing", "by": "DH", "on": "2026-11-01" }
+] }
+```
+
+| Field | Meaning |
+|---|---|
+| `value` | For a label, the label the key says (the one ruled on). |
+| `with` | A label's `replace` or `pending` only: the label the key should say instead. One of the output's labels, never the same as `value`. |
+| `proposed` | A set value's `pending` only: `remove` for a value the key lists, `add` (the default, as before) for one it lacks. |
+
+`score`, `variance` and `compare` apply `remove` and `replace` as they apply `add`: in memory, before
+anything is counted, and every report names each change ("1 value removed: T10 tags fraud; 1 label
+replaced: T8 category billing with shipping"). The key file is never changed. With pending rulings,
+`score`'s line under the headline gives the rate with every pending ruling made as proposed, beside
+the rate as the key stands. It calls the two a bracket only after trying every way the pending
+rulings of the records out without review could be ruled (a label to any of its labels, not only
+the one proposed); when the rate could go further, it says how far ("it could be anywhere from 0.0%
+to 50.0%").
+
+**Turning a pending ruling into a decision.** Change `"pending"` to the verb and fill in `by` and
+`on` (a pending ruling may leave them empty; a decided one may not); nothing else needs to change. A set value's `"proposed"` left behind, or a `keep` ruling's
+`"with"` on a label, is dropped, with a note: the verb says what was decided. A verb is never guessed.
+
+It stops, naming the entry, on a verb that does not fit the output (`replace` on a set value, `add`,
+`reject` or `remove` on a label), a label's `replace` or `pending` without `"with"`, `"with"` on a set
+value, a `"with"` or label `value` that is not one of the output's labels (with "did you mean" for
+case), `"proposed"` on a label or other than `add` or `remove`, two rulings on one record's label,
+and any ruling on an output that is also the route (routes are out of scope). A `remove`, `keep` or
+`replace` that no longer fits the key (the value is not in the key; the key's label is another one,
+or a decline) was made on another version of the key: a warning, and it is set aside.
+`wfeval suspects` then lists its suspect as "set aside", and `--write-rulings` puts the new pending
+ruling in its place, with a note saying what it replaces. A file with none of these verbs reads and
+reports exactly as before.
 
 ## A judge's answer key checked by a person (`wfeval estimate`)
 
@@ -493,6 +706,58 @@ and key files that match no period file are listed in a note (trap A1).
 Records in a period file that did not go out without review (sent to a person, blocked or
 suppressed) are not part of the silent error rate; the report counts them in a note (trap L17).
 
+**What nobody sees: `--watch silent-omissions`.** A workflow that wrongly blocks or suppresses
+records looks perfect to a watch on the records out without review. When a person also checks a
+sample of the records it blocked or suppressed, put them in the same period files and add
+`--watch silent-omissions`: the base is then those records, and the rate the share **wrongly left
+out**: of the records blocked or suppressed, the share that should have gone out or to a person,
+judged as `score` judges a silent omission ([SILENT_ERRORS.md](SILENT_ERRORS.md#family-2-silent-omissions)).
+It is **not score's silent omission rate**: score divides by the records that should have been seen,
+monitor by the records left out, which is what a person checking a sample of the left-out records
+can measure. In the segments fixture's W40, score gives 1 of 6 (16.7%), monitor 1 of 3 (33.3%). To
+set `--acceptable` from before launch, run monitor itself with `--watch silent-omissions` on the
+golden-set run file as a single period: that gives the matching share (trap L30). Two cases need
+more:
+
+- **The answer key in a file of its own** (`--pred run.json --key key.json` for `score`): monitor
+  reads a period file as the run and its key at once, and stops at A8. Put the key in a folder under
+  the run file's name and add `--keys`: `keys/run-v1-1.json` beside `run-v1-1.json`, then
+  `monitor --config config.json run-v1-1.json --keys keys --watch silent-omissions --target 20`
+  (trap L35).
+- **A split in the config** (a tuning half and a held-out half): monitor ignores it, so the golden-set
+  file shows both halves, the held-out half too, and `split.log` does not count that look (trap L34).
+  Take the figure from the tuning half instead: `score` with the config keeps the halves apart, and
+  its silent error rate is the tuning half's, the same rate monitor watches. For the share wrongly
+  left out, divide its tuning half's silent omissions by the records it blocked or suppressed
+  (`--json`: `routing.by_class.block` plus `routing.by_class.exclude`). Or use the first weeks checked.
+
+`--target`,
+`--acceptable`, `--alarming` and `--false-alarm-every` then apply to that share, and the other
+records checked are counted in a note. It needs a correct route in the answer key
+(`routing.gold_field`); without one, only blocked records whose label was declined can be judged
+(trap L20). Watch each rate in a report of its own: two commands, two reports, each with its own
+settings.
+
+    node bin/wfeval.js monitor --config test/fixtures/monitor-segments/config.json test/fixtures/monitor-segments/runs/2026-W40.json test/fixtures/monitor-segments/runs/2026-W41.json test/fixtures/monitor-segments/runs/2026-W42.json --watch silent-omissions --target 20 --acceptable 10
+
+**Each segment: `--segment-by <field>`.** One monitor over all traffic can hide a rise confined to
+one channel or one customer. `--segment-by channel` gives each value of the field its own alarm
+and bound, beside the whole's. The field is read as `score --group-by` reads one: from the answer
+key (the period files themselves, when the answers are in them), or as declared when the config's
+`groups` has a group of that name (`"from": "predictions"` reads the workflow's own output). A record
+with no value is in the segment "(none)"; one with several values counts in each (traps L22, L23).
+
+**Name the segments in advance: `--segments chat,email,phone`.** The whole and the segments are
+shown under the target as one family (one 5% for every "shown"), and the family must be fixed before
+the first period for that 5% to hold. Named with `--segments`, it is those segments plus "(other)"
+(every value not named, pooled, and listed in the report) and "(none)", from the first period on:
+what is printed never changes as periods are added. Without `--segments`, the family is the segments
+in the periods given, and the report marks "shown" as provisional: a segment that first appears later
+joins the family, changes the bars, and can take a "shown" back (trap L31). Decide the list before the
+first period; changing it later starts a new list, as a change in the scoring does.
+
+    node bin/wfeval.js monitor --config test/fixtures/monitor-segments/config.json test/fixtures/monitor-segments/runs/2026-W40.json test/fixtures/monitor-segments/runs/2026-W41.json test/fixtures/monitor-segments/runs/2026-W42.json --target 5 --acceptable 2.5 --segment-by channel
+
 **A counts file, scored elsewhere** (a spreadsheet, a Python project). One row per period, in
 time order, as a JSON list or a `.csv` file with a header row. The CSV may be split by commas,
 ";" (Excel in many countries) or tabs: the header row says which, and the report notes it. Column
@@ -514,6 +779,35 @@ period,out_without_review,silent_errors,scored_with
 
     wfeval monitor --counts weekly.csv --target 5
 
+For `--watch silent-omissions` (trap L21), the columns counted are instead:
+
+| Column | Required | Meaning |
+|---|---|---|
+| `blocked_or_suppressed` | yes, with `--watch silent-omissions` | Records blocked or suppressed as a duplicate that were checked this period (a whole number) |
+| `silent_omissions` | yes, with `--watch silent-omissions` | Silent omissions among them: records the answer key says should have gone out or to a person (no more than `blocked_or_suppressed`) |
+
+One file may hold all four columns; each report reads the two of the series it watches.
+
+**Segments in a counts file.** With `--segment-by segment` (or the name of another column, read
+loosely), the file is one row per period and segment, in either layout: period by period, or segment
+by segment. Without `--segment-by` a segment column is an extra column, read as before; if the
+periods then repeat, it stops and says to add `--segment-by segment` (trap L29). The whole is the
+segments added up; an empty segment cell is the segment "(none)". Each segment's rows must be in
+time order and name each period once (trap L26). The period and the counted columns cannot be the
+segment (trap L23). There is no total row: a segment that holds the others added up in every period
+stops in strict mode (a warning with `--lenient`); one that does so in some periods only, or two
+segments with the same counts in every period, are warnings (trap L27).
+
+```csv
+period,segment,out_without_review,silent_errors,blocked_or_suppressed,silent_omissions
+2026-W40,chat,20,2,5,0
+2026-W40,email,20,0,5,2
+2026-W41,chat,20,2,5,0
+2026-W41,email,20,0,5,3
+```
+
+    node bin/wfeval.js monitor --counts test/fixtures/monitor-segments/counts.csv --segment-by segment --segments chat,email,phone --target 5 --acceptable 2.5
+
 **Names that give the order.** Name each period by its date (`2026-10-05`), month (`2026-10`),
 ISO week (`2026-W41`) or a number after the same text (`week-2`, `week-10`: compared as numbers),
 all the same way. Period files given out of order (a shell's `weeks/*.json` puts `week-10`
@@ -534,6 +828,9 @@ order stop in strict mode, and `--lenient` takes the order given.
 | `--period-size <records>` | the median so far | The period size the alarm level is set for, the same for every row. Without it, each row uses the median of the periods up to it, so a printed status never changes later |
 | `--since <period>` | the first period | Restart the alarm at this period, after an alarm was looked into and fixed. The bound keeps counting every period ([why](METRICS.md#is-it-shown-under-the-target-valid-however-often-you-look)) |
 | `--fail-on-alarm` | off | Exit with code 3 when the alarm is raised, for a scheduled job |
+| `--watch <series>` | `silent-errors` | `silent-omissions` watches the records blocked or suppressed and the share of them wrongly left out (not score's silent omission rate); the settings above then apply to that share |
+| `--segment-by <field>` | none | Each value of the field (or of a counts file's column) gets its own alarm and bound, beside the whole's. The alarms share `--false-alarm-every` (the whole and each segment are each set for twice it, so the report in all keeps it; with one segment, and no record in two, nothing is shared; when records carry several segments, each segment's alarm is set for that times the memberships per record, trap L36). The whole and the segments are shown under the target as one family. `--period-size` pins the whole's level only. `--fail-on-alarm` counts every segment's alarm ([why](METRICS.md#each-segment---segment-by)) |
+| `--segments <a,b,...>` | none | The segments to watch, chosen before the first period counted: the family is those, "(other)" and "(none)", fixed, so a printed "shown" never changes. Without it, every "shown" is provisional, marked `shown*` (trap L31). A list chosen after seeing the numbers is chosen by them |
 
 Percentages are percentages: `--target 0.05` means 0.05%, not 5%; the report warns when a
 value of 0.5 or less may have been meant as a fraction (trap L16). **Set `--acceptable` to the rate measured before launch** (score on

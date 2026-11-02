@@ -173,6 +173,12 @@ The workflow's own scorecard gives the same silent error rates.
   6.6% and 7.6% (worst: 8 of 105, likely 3.9-14.3%), inside the tuning half's 6.0% to 9.5%: no
   sign the 0.40 was fitted to the articles it was chosen on, though halves this size could only
   show a large gap. (The v2 prompt fixes were written from v1's mistakes across all 500.)
+  [golden500/config-split.json](golden500/config-split.json) is that split as a config
+  (`"hash": "crc32", "by": "id"`): `score` and `variance` with it and `--held-out` report the two
+  halves. Split by
+  id, 13 of the 34 duplicates sit in the other half from their primary; all of them were
+  suppressed or sent to an editor in these runs, so no figure above moved, but a new split should
+  keep them together (the default).
 - **The price is reviews.** v3 sends 21-27 articles per run to an editor on the new rung, about
   half of which needed one; straight-through falls from 46.6% to about 41%. Across the ladder,
   148-154 of v3's 256-268 reviews are ones the answer key says an editor did not need: the

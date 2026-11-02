@@ -166,6 +166,7 @@ const ruledValue = x => x.id + ' ' + x.output + ' ' + x.value;
 // in use is not the key file alone, so every report says so, and names the values it added.
 // against: which key, when a report has two (" (key-v2.json)").
 function rulingsWords(r, against = '') {
+  if (r.removed) return rulingsWordsAll(r, against);
   const n = r.added.length;
   const words = [n
     ? n + ' value' + (n === 1 ? '' : 's') + ' added to the answer key' + against + ' by rulings in ' + r.file + ': ' + some(r.added.map(ruledValue)) + '.'
@@ -177,29 +178,70 @@ function rulingsWords(r, against = '') {
   return words;
 }
 
+// The same for a file that uses suspects' verbs (remove, keep, replace; traps N11-N14): every
+// change to the key named, removes and replaced labels beside the adds.
+const replacedValue = x => x.id + ' ' + x.output + ' ' + x.value + ' with ' + x.with;
+function rulingsWordsAll(r, against) {
+  const changes = [];
+  const n = (k, one, many) => k + ' ' + (k === 1 ? one : many);
+  if (r.added.length) changes.push(n(r.added.length, 'value', 'values') + ' added: ' + some(r.added.map(ruledValue)));
+  if (r.removed.length) changes.push(n(r.removed.length, 'value', 'values') + ' removed: ' + some(r.removed.map(ruledValue)));
+  if (r.replaced.length) changes.push(n(r.replaced.length, 'label', 'labels') + ' replaced: ' + some(r.replaced.map(replacedValue)));
+  const words = [changes.length ? 'Changed in the answer key' + against + ' by rulings in ' + r.file + ': ' + changes.join('; ') + '.'
+    : 'no changes to the answer key' + against + ' by rulings in ' + r.file + '.'];
+  if (changes.length) words.push('Every number below scores against the key file with ' + (changes.length === 1 && r.added.length + r.removed.length + r.replaced.length === 1 ? 'this change' : 'these changes') +
+    '; the key file itself is unchanged.');
+  const also = [r.rejected.length + ' ruled not a gap', r.kept.length + ' kept as the answer key has ' + (r.kept.length === 1 ? 'it' : 'them'),
+    r.pending.length + ' pending (scored as the answer key stands)'];
+  if (r.set_aside.length) also.push(r.set_aside.length + ' set aside (see the warnings)');
+  words.push('Also in the file: ' + also.join(', ') + '.');
+  return words;
+}
+
 // The bracket for pending rulings (results.rulings.if_pending_added; trap I15), beside the strict
 // silent error rate: pending scored as wrong, against pending scored as added.
 function pendingLine(b, strict) {
+  if (b.not_one_way) return pendingLineAll(b, strict);
   const n = b.pending;
   const k = b.not_applied.length;
   const s = 'If the ' + n + ' pending ruling' + (n === 1 ? ' were' : 's were all') + ' added to the answer key: ' + pct(b.silent_errors) +
     ' (' + count(b.silent_errors) + ', likely ' + range(b.silent_errors) + '), against ' + pct(strict) + ' with ' + (n === 1 ? 'it' : 'them') + ' counted wrong.';
-  if (k === 0) return s + ' However ' + (n === 1 ? 'it is' : 'they are') + ' ruled, the rate lands between the two.';
-  return s + ' ' + (n === 1 ? 'It is a value' : k + ' of them ' + (k === 1 ? 'is a value' : 'are values')) + ' this run did not apply: added, ' +
-    (k === 1 ? 'it is a miss' : 'they are misses') + ' here, so the two are not a bracket.';
+  // Whether it is a bracket was worked out by trying every way the pending rulings could be ruled
+  // (score.js pendingRange): however_ruled is there only when it is not one.
+  if (!b.however_ruled) return s + ' However ' + (n === 1 ? 'it is' : 'they are') + ' ruled, the rate lands between the two.';
+  const why = k === 0 ? 'The two are not a bracket.' : (n === 1 ? 'It is a value' : k + ' of them ' + (k === 1 ? 'is a value' : 'are values')) +
+    ' this run did not apply: added, ' + (k === 1 ? 'it is a miss' : 'they are misses') + ' here, so the two are not a bracket.';
+  return s + ' ' + why + ' ' + howeverRuled(b.however_ruled, 'Ruled other ways, it');
+}
+// With pending removes or label replaces (trap N13): every pending ruling made as proposed. It is a
+// bracket when every way of ruling them (a label to any of its labels) lands between the two.
+function pendingLineAll(b, strict) {
+  const n = b.pending;
+  const s = 'If the ' + n + ' pending ruling' + (n === 1 ? ' were' : 's were all') + ' made as proposed (added, removed or replaced): ' + pct(b.silent_errors) +
+    ' (' + count(b.silent_errors) + ', likely ' + range(b.silent_errors) + '), against ' + pct(strict) + ' as the answer key stands.';
+  if (!b.however_ruled) return s + ' However ' + (n === 1 ? 'it is' : 'they are') + ' ruled, the rate lands between the two.';
+  return s + ' ' + howeverRuled(b.however_ruled, 'The two are not a bracket: ruled other ways, it');
+}
+// The lowest and highest rate over every way of ruling the pending rulings, or, when a record holds
+// too many to try them all, the condition under which the two figures are a bracket.
+function howeverRuled(h, lead) {
+  if (h.exact) return lead + ' could be anywhere from ' + pct(h.lowest) + ' (' + count(h.lowest) + ') to ' + pct(h.highest) + ' (' + count(h.highest) + ').';
+  return 'Record' + (h.records.length === 1 ? ' ' : 's ') + h.records.join(', ') + (h.records.length === 1 ? ' holds' : ' hold') +
+    ' too many pending rulings to try every way they could be ruled: the two are a bracket only if each pending ruling there, made any way, ' +
+    'can only clear an error (an add of a value this run applied, a remove of one it did not, a label replaced with the one this run gave).';
 }
 // "pending (DH, 2026-10-30)" or "unruled": a possible key gap's ruling, when a rulings file is in use.
 const rulingStatus = g => (g.ruling === 'pending' ? 'pending' + (g.by || g.on ? ' (' + [g.by, g.on].filter(Boolean).join(', ') + ')' : '') : 'unruled');
 
-// Rows of cells -> aligned lines. `right` lists the columns aligned right (numbers).
-function table(rows, right = [], indent = '  ') {
+// Rows of cells -> aligned lines. `right` lists the columns aligned right (numbers). gap: between columns.
+function table(rows, right = [], indent = '  ', gap = '   ') {
   const widths = [];
   for (const row of rows) row.forEach((c, i) => { widths[i] = Math.max(widths[i] || 0, String(c).length); });
   return rows.map(row => indent + row.map((c, i) => {
     const s = String(c);
     if (i === row.length - 1 && !right.includes(i)) return s;
     return right.includes(i) ? s.padStart(widths[i]) : s.padEnd(widths[i]);
-  }).join('   ')).join('\n');
+  }).join(gap)).join('\n');
 }
 
 // A wrong single label shown with what the answer key says ("shipping for technical"), as an

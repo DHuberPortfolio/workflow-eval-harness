@@ -1,0 +1,11 @@
+{
+  "id_field": "id",
+  "outputs": {
+    "TOPIC": { "type": "label", "field": "output.TOPIC", "key_field": "expected.TOPIC", "labels": ["billing", "refund", "shipping"] }
+  },
+  "routing": {
+    "field": "decision",
+    "gold_field": "expected_decision",
+    "map": { "SEND": "auto", "ASK": "review", "FILE": "block", "DUPLICATE": "exclude" }
+  }
+}

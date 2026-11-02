@@ -12,6 +12,11 @@
 //    McAuliffe & Sekhon 2021), with the mixing rates spread evenly below the target.
 //
 // Rates are proportions here (0.05 is 5%).
+//
+// The same arithmetic watches the records the workflow blocked or suppressed (--watch
+// silent-omissions): its base is then those records checked, and what counts against it the silent
+// omissions among them. And each segment of the traffic (--segment-by) gets its own CUSUM and bound
+// beside the whole's (monitorSegments, at the end).
 
 const { rate } = require('./stats.js');
 const { targetCheck } = require('./target.js');
@@ -183,9 +188,10 @@ const pctOf = x => Number((x * 100).toPrecision(12));   // 0.025 -> 2.5, without
 const median = xs => { const s = [...xs].sort((a, b) => a - b); const h = Math.floor(s.length / 2); return s.length % 2 ? s[h] : (s[h - 1] + s[h]) / 2; };
 
 // Records out without review, none of them a silent error, the bound needs to show `target`.
-// E rises with every right record, so doubling then halving finds the first that reaches 20.
-function perfectRunAnytime(target) {
-  const enough = F => mixtureLogE(0, F, target) >= Math.log(1 / ALPHA);
+// E rises with every right record, so doubling then halving finds the first that reaches 20 (or
+// `bar`: a segment's, counting the other segments; see closedBars).
+function perfectRunAnytime(target, bar = 1 / ALPHA) {
+  const enough = F => mixtureLogE(0, F, target) >= Math.log(bar);
   let hi = 1;
   while (!enough(hi)) { hi *= 2; if (hi > 1000000) return Infinity; }
   let lo = Math.floor(hi / 2);
@@ -211,28 +217,38 @@ function boundPct(upper, target) {
 // periodSize: the period size the alarm level is set for (--period-size), or null: then each
 // row's level is set for the median size of the periods up to it, from the restart on, so a
 // status once printed never changes when later periods arrive.
-function monitorSeries(periods, { acceptable, alarming, target = null, falseAlarmEvery = 2000, from = 0, periodSize = null }) {
+// light: for a segment's series (monitorSegments): the alarm only, with no upper bound per row, no
+// "shown" (the family's closed test sets those) and none of the bound's or the design's figures,
+// which only the whole's report prints.
+// Alarm levels already set, by their settings and period size: the chain behind one takes a moment,
+// and with segments the same level is asked for again and again. cusumThreshold is a pure function
+// of these four numbers, so a level kept is the level it would set again.
+const LEVELS = new Map();
+// falseAlarmEvery may also be a list, one budget per period (a segment's, when segments overlap:
+// monitorSegments), each row's level then set for its own.
+function monitorSeries(periods, { acceptable, alarming, target = null, falseAlarmEvery = 2000, from = 0, periodSize = null, light = false }) {
   const scores = cusumScores(acceptable, alarming);
-  const levels = new Map();   // period size -> alarm level
-  const levelFor = size => {
-    if (!(Number.isInteger(falseAlarmEvery) && falseAlarmEvery > size)) {
+  const everyAt = i => (Array.isArray(falseAlarmEvery) ? falseAlarmEvery[Math.min(i, falseAlarmEvery.length - 1)] : falseAlarmEvery);
+  const levelFor = (size, every = falseAlarmEvery) => {
+    if (!(Number.isInteger(every) && every > size)) {
       throw new Error('--false-alarm-every must be a whole number of records, more than the ' + size + ' in a typical period');
     }
-    if (!levels.has(size)) levels.set(size, cusumThreshold(acceptable, alarming, falseAlarmEvery, size));
-    return levels.get(size);
+    const key = acceptable + ':' + alarming + ':' + every + ':' + size;
+    if (!LEVELS.has(key)) LEVELS.set(key, cusumThreshold(acceptable, alarming, every, size));
+    return LEVELS.get(key);
   };
   const sizes = [];
   let S = 0, lastZero = from - 1, alarmAt = null, rise = null, silent = 0, out = 0, size = periodSize || 1, H = null;
   const rows = periods.map((p, i) => {
     silent += p.silent;
     out += p.out;
-    const upper = out === 0 ? null : mixtureUpper(silent, out - silent, ALPHA);
-    const shown = target !== null && out > 0 && mixtureLogE(silent, out - silent, target) >= Math.log(1 / ALPHA);
+    const upper = light || out === 0 ? null : mixtureUpper(silent, out - silent, ALPHA);
+    const shown = !light && target !== null && out > 0 && mixtureLogE(silent, out - silent, target) >= Math.log(1 / ALPHA);
     const row = { period: p.period, rate: rate(p.silent, p.out), counted: i >= from, upper_pct: upper === null ? null : boundPct(upper, target), shown };
     if (i < from) return { ...row, cusum: null, alarm: false };
     if (p.out > 0) sizes.push(p.out);
     if (periodSize === null) size = sizes.length ? Math.max(1, Math.round(median(sizes))) : 1;
-    H = levelFor(size);
+    H = levelFor(size, everyAt(i));
     S = cusumStep(S, p.silent, p.out, scores);
     if (alarmAt === null && S === 0) lastZero = i;
     if (alarmAt === null && S >= H) { alarmAt = i; rise = lastZero + 1; }
@@ -242,7 +258,19 @@ function monitorSeries(periods, { acceptable, alarming, target = null, falseAlar
   let since = null;
   for (let i = rows.length - 1; i >= 0 && rows[i].shown; i--) since = rows[i].period;
   const everShown = rows.filter(r => r.shown);
-  if (H === null) H = levelFor(size);
+  if (H === null) H = levelFor(size, everyAt(periods.length - 1));
+  if (light) {
+    return {
+      settings: { alarm_at: H, period_size: size },
+      periods: rows,
+      detector: {
+        status: alarmAt === null ? 'in control' : 'alarm',
+        alarm_since: alarmAt === null ? null : periods[alarmAt].period,
+        rise_started: rise === null ? null : periods[rise].period,
+        steps: S, level_pct: round1((100 * S) / H),
+      },
+    };
+  }
   const arl = p => cusumArl(acceptable, alarming, H, p, size);
   const detect = arl(alarming);
   // Above this rate the CUSUM drifts up on average: up x rate = down x (1 - rate).
@@ -284,4 +312,187 @@ function monitorSeries(periods, { acceptable, alarming, target = null, falseAlar
   };
 }
 
-module.exports = { cusumScores, cusumStep, cusumArl, cusumThreshold, mixtureLogE, mixtureUpper, monitorSeries, ALPHA };
+// ---------- Each segment ----------
+//
+// One CUSUM and one bound per segment (a channel, a customer), beside the whole's: one monitor
+// over all traffic can hide a rise confined to one segment. Chosen by simulation
+// (scripts/monitor-segments-sim.js; docs/METRICS.md, "Each segment"):
+// - The alarms share --false-alarm-every. Each CUSUM's level is set per records checked, so the
+//   segments together false-alarm about as often per record checked as the whole alone (2,041 to
+//   2,133 records per false alarm when each is set for 2,000, with uneven and small segments), and
+//   the whole with them twice as often (1,051 to 1,080). The report is read as one, and
+//   --fail-on-alarm fires on any of its alarms, so the whole and every segment are each set for
+//   twice the records asked: in all, about one false alarm per --false-alarm-every records checked.
+//   With one segment only (and no record in two), the segment is the whole: nothing to share.
+// - The bounds: one family, the whole and the segments, by closed testing on a weighted average of
+//   their evidence (familyBars), the whole weighted 1/2 and the segments sharing 1/2. One 5% then
+//   covers every "shown" in the report.
+
+// E at most e^700 in the sums below: far past any bar, and far from overflowing to Infinity.
+const shortfall = (logE, c) => Math.max(0, c - Math.exp(Math.min(logE, 700)));
+
+// Each segment's bar when the segments alone are the family, with equal weights: the evidence E (at
+// the target) it needs to be shown, by closed testing (Marcus, Peritz & Gabriel 1976) on the
+// arithmetic mean of the e-values (Vovk & Wang 2021, section 5, Algorithm 1). A segment is shown
+// when every set of segments that includes it averages E of 1 / alpha (20) or more: the average of
+// e-values is an e-value whatever their dependence, so if several segments were at or above the
+// target, their average would have to reach 20, at most 5% of the time however often it is looked
+// at (Ville 1939). The hardest sets add the other segments whose E is under 20, so the bar is 20 plus
+// each other segment's shortfall below 20: 20 when the others' evidence is strong, up to 20 for each
+// segment (Bonferroni's) when it is all near 0. Kept for the comparison in scripts/; the report uses
+// familyBars. logEs: each segment's log E. Returns each one's bar (as E, not a log).
+function closedBars(logEs, alpha = ALPHA) {
+  const c = 1 / alpha;
+  const short = logEs.map(l => shortfall(l, c));
+  const total = short.reduce((a, b) => a + b, 0);
+  return short.map(s => c + total - s);
+}
+
+// The bars of the report's one family: the whole, weighted 1/2, and m segments, weighted 1/(2m)
+// each. The weighted average of e-values, with weights fixed in advance, is an e-value too (Vovk &
+// Wang 2021), so closed testing on it keeps one 5% for every "shown": a member is shown when every
+// set that includes it has a weighted average (the weights taken over that set) of 20 or more. The
+// hardest sets add the members under 20, which gives, with shortfalls below 20:
+//   the whole:     20 + the segments' average shortfall                       (20 to 40)
+//   a segment k:   20 + m x the whole's shortfall + the other segments' shortfalls
+// logWhole: the whole's log E; logEs: each segment's. Returns { whole, segments } as E.
+function familyBars(logWhole, logEs, alpha = ALPHA) {
+  const c = 1 / alpha, m = logEs.length;
+  if (m === 0) return { whole: c, segments: [] };
+  const short = logEs.map(l => shortfall(l, c));
+  const total = short.reduce((a, b) => a + b, 0);
+  const wholeShort = shortfall(logWhole, c);
+  return { whole: c + total / m, segments: short.map(s => c + m * wholeShort + total - s) };
+}
+
+const round2 = x => Number(x.toFixed(2));
+// The latest run of "shown" rows, and the last one shown.
+function shownSpan(rows) {
+  let since = null;
+  for (let i = rows.length - 1; i >= 0 && rows[i].shown; i--) since = rows[i].period;
+  const ever = rows.filter(r => r.shown);
+  return { since, last: ever.length ? ever[ever.length - 1].period : null };
+}
+
+// Segments that overlap (a record in several, counted in each): set per records checked, the
+// segments' alarms false-alarm as often as their memberships, which are then more than the records.
+// So each segment's alarm is set for the budget times the memberships per record so far (rounded up
+// to a twentieth, so a few levels serve every row), and the segments together keep their half of
+// --false-alarm-every (scripts/monitor-segments-sim.js overlap). With no overlap, the budget itself.
+function overlapEvery(each, memberships, records) {
+  if (!(records > 0) || memberships <= records) return each;
+  return Math.round(each * (Math.ceil((memberships / records) * 20 - 1e-9) / 20));
+}
+
+// whole: the periods added up; segments: the family, [{ segment, periods }], each segment's periods
+// aligned with the whole's ({ period, out, silent }, out 0 where it had none). opts as monitorSeries',
+// and: shared, whether the alarms share --false-alarm-every (false with one segment, and no record
+// in two); provisional, whether the family is the segments seen so far rather than named in advance;
+// memberships, each period's segment memberships of the records counted (more than the records
+// when segments overlap), or null.
+// The whole: monitorSeries, its level set for twice the records asked when shared, and its bound
+// counted in the family. Each segment: its alarm (its own median period size: --period-size pins the
+// whole's only; the same restart, --since; with overlap, each row's level for overlapEvery) and its
+// bound by the family's closed test. Upper bounds are worked out where they are printed or claimed:
+// every row of the whole's, a segment's rows where it is shown, and its last.
+function monitorSegments(whole, segments, opts) {
+  const { target = null, falseAlarmEvery = 2000, shared = true, provisional = false, memberships = null } = opts;
+  const each = shared ? 2 * falseAlarmEvery : falseAlarmEvery;
+  const base = { acceptable: opts.acceptable, alarming: opts.alarming, target, from: opts.from || 0, periodSize: opts.periodSize === undefined ? null : opts.periodSize };
+  const series = monitorSeries(whole, { ...base, falseAlarmEvery: each });
+  series.settings.false_alarm_every = falseAlarmEvery;
+  series.settings.alarm_set_for = each;
+  // The whole without segments, for the report to set beside it: its level, how soon it flags, its alarm.
+  let without = null;
+  if (shared) {
+    const alone = monitorSeries(whole, { ...base, falseAlarmEvery });
+    without = { alarm_at: alone.settings.alarm_at, detect_records: alone.design.detect_records, alarm_since: alone.detector.alarm_since };
+  }
+  // With overlap, each row's budget for the memberships per record up to it, so a printed status never changes (L14).
+  let segEvery = each, overlap = null;
+  if (memberships && memberships.reduce((a, b) => a + b, 0) > whole.reduce((a, x) => a + x.out, 0)) {
+    let m = 0, n = 0;
+    segEvery = whole.map((x, t) => { m += memberships[t]; n += x.out; return overlapEvery(each, m, n); });
+    overlap = { memberships: m, records: n, every_segment: segEvery[segEvery.length - 1] };
+  }
+  const rows = segments.map(s => monitorSeries(s.periods, { ...base, falseAlarmEvery: segEvery, periodSize: null, light: true }));
+  const lastBars = segments.map(() => null);
+  if (target !== null) {
+    const cum = segments.map(() => [0, 0]);
+    let ws = 0, wf = 0, wholeBar = null;
+    whole.forEach((x, t) => {
+      ws += x.silent; wf += x.out - x.silent;
+      segments.forEach((seg, k) => { const y = seg.periods[t]; cum[k][0] += y.silent; cum[k][1] += y.out - y.silent; });
+      const logW = mixtureLogE(ws, wf, target), logs = cum.map(([s, f]) => mixtureLogE(s, f, target));
+      const bars = familyBars(logW, logs);
+      const w = series.periods[t];
+      w.shown = ws + wf > 0 && logW >= Math.log(bars.whole);
+      w.upper_pct = ws + wf === 0 ? null : boundPct(mixtureUpper(ws, wf, 1 / bars.whole), target);
+      w.bar = round2(bars.whole);
+      // A "shown" from a family seen so far, not named in advance, can be taken back (L31).
+      if (provisional && w.shown) w.provisional = true;
+      wholeBar = bars.whole;
+      rows.forEach((r, k) => {
+        const row = r.periods[t];
+        row.shown = cum[k][0] + cum[k][1] > 0 && logs[k] >= Math.log(bars.segments[k]);
+        row.bar = round2(bars.segments[k]);
+        // A claim carries its bound: the rate its bar rules out, in every row it is shown.
+        if (row.shown) row.upper_pct = boundPct(mixtureUpper(cum[k][0], cum[k][1], 1 / bars.segments[k]), target);
+        if (provisional && row.shown) row.provisional = true;
+        lastBars[k] = bars.segments[k];
+      });
+    });
+    const span = shownSpan(series.periods), last = series.periods[series.periods.length - 1];
+    series.bound = {
+      target_pct: pctOf(target), shown: Boolean(last && last.shown), shown_since: span.since, last_shown: span.last,
+      upper_pct: last ? last.upper_pct : null, records: series.bound.records, silent: series.bound.silent,
+      perfect_run: { anytime: perfectRunAnytime(target, wholeBar === null ? 1 / ALPHA : wholeBar), fixed: series.bound.perfect_run.fixed },
+      bar: last ? last.bar : null, provisional,
+    };
+  }
+  const summaries = rows.map((r, k) => {
+    const records = r.periods.reduce((t, x) => t + x.rate.d, 0), silent = r.periods.reduce((t, x) => t + x.rate.n, 0);
+    const last = r.periods[r.periods.length - 1];
+    const span = shownSpan(r.periods);
+    // Too few records to show anything: fewer than the bar needs even with no silent error at all
+    // (E falls with every silent error), so the bound would only print noise.
+    const needed = target === null ? null : perfectRunAnytime(target, lastBars[k]);
+    const tooFew = target !== null && records < needed;
+    if (target !== null && !tooFew && records > 0) {
+      const s = cum0(r.periods);
+      last.upper_pct = boundPct(mixtureUpper(s.silent, s.out - s.silent, 1 / lastBars[k]), target);
+    }
+    return {
+      segment: segments[k].segment, records, silent, rate: rate(silent, records),
+      settings: r.settings,
+      detector: r.detector,
+      bound: target === null ? null : {
+        target_pct: pctOf(target), shown: Boolean(last.shown), shown_since: span.since, last_shown: span.last,
+        upper_pct: tooFew ? null : last.upper_pct, bar: last.bar, too_few: tooFew ? { needed } : null,
+      },
+      periods: r.periods,
+    };
+  });
+  return { ...series, segments: { members: segments.length, false_alarm_every_each: each, without_segments: without, rows: summaries, ...(overlap ? { overlap } : {}) } };
+}
+// A series' records and silent errors over all its periods (the bound counts every period).
+const cum0 = rows => rows.reduce((t, x) => ({ out: t.out + x.rate.d, silent: t.silent + x.rate.n }), { out: 0, silent: 0 });
+
+// What each series (--watch) counts, in the reports' words (src/report/format.js, CLASS_LABELS).
+// The records blocked or suppressed are a base of their own: the share of them wrongly left out is
+// not score's silent omission rate, whose base is the records that should have been seen.
+const SERIES = {
+  'silent-errors': {
+    rate: 'silent error rate', header: 'silent errors of the records out without review checked', base: 'records out without review',
+    hit: 'silent error', hits: 'silent errors', column: 'out', hitColumn: 'silent', none: 'none out', fixedTest: 'score --target',
+  },
+  'silent-omissions': {
+    rate: 'share wrongly left out',
+    header: 'wrongly left out: of the blocked or suppressed records a person checked, the share that should have gone out or to a person (not score\'s silent omission rate)',
+    base: 'records blocked or suppressed', hit: 'record wrongly left out', hits: 'records wrongly left out', column: 'left out', hitColumn: 'wrongly', none: 'none left',
+    // score --target tests only the silent error rate; rate --target takes any count.
+    fixedTest: 'rate --target',
+  },
+};
+
+module.exports = { cusumScores, cusumStep, cusumArl, cusumThreshold, mixtureLogE, mixtureUpper, monitorSeries, monitorSegments, closedBars, familyBars, overlapEvery, perfectRunAnytime, SERIES, ALPHA };

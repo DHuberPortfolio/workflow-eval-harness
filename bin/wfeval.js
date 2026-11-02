@@ -21,7 +21,7 @@ commands:
   score     --config <file> --pred <file> --key <file> [--lenient] [--rulings <file>]
             [--json <file>] [--html <file>] [--quiet] [--fail-on <severity>]
             [--target <percent> [--chance 0.8|0.9|0.95]] [--group-by <field> ...]
-            [--cluster-by <field>] [--mix <file>]
+            [--cluster-by <field>] [--mix <file>] [--held-out] [--show-held-out]
             score one run. --fail-on critical|high|medium|low exits with code 3 when a
             silent error or safeguard failure at or above that severity is found (for CI).
             --target 5 says whether the silent error rate is shown to be under 5%, and if
@@ -34,10 +34,11 @@ commands:
             silent error rate that mix would see, beside this golden set's: a reweighting,
             not a measurement (the group comes from --group-by or the config's groups).
             Lists the possible key gaps: applied values the answer key does not list.
-            --rulings reads a person's rulings on them (add, reject, pending): adds join the
+            --rulings reads a person's rulings on them (add, reject or pending; and remove,
+            keep or replace for what suspects lists): adds, removes and replaces change the
             key for scoring (the key file is never changed), rejected gaps are no longer
             listed, and with pending rulings the silent error rate is also given as if they
-            were all added
+            were all made, with how far it could go however they are ruled
 
   score     --grades <file> [--second-reviewer <file>] [--lenient]
             [--json <file>] [--quiet] [--fail-on <severity>]
@@ -51,7 +52,7 @@ commands:
             field faithful, invented or missing against its source, and saves the grades
 
   variance  --config <file> --key <file> <run> <run> [<run> ...] [--lenient] [--json <file>]
-            [--rulings <file>]
+            [--rulings <file>] [--held-out] [--show-held-out]
             several runs of identical code: mean and spread of every metric, the worst
             run's silent error rate (the one to quote), how many different records were a
             silent error in at least one run, the records that behave differently from run
@@ -59,7 +60,7 @@ commands:
 
   compare   --config <file> --key <file> --before <file> --after <file>
             [--noise <run> --noise <run> ...] [--after-key <file>] [--rulings <file>]
-            [--lenient] [--json <file>] [--fail-if-worse <outcomes>]
+            [--lenient] [--json <file>] [--fail-if-worse <outcomes>] [--held-out] [--show-held-out]
             what changed between two runs: record by record, the records each outcome
             fixed and broke, judged on their own; and every rate, judged against the
             noise of repeated identical runs (give those with --noise). --after-key scores
@@ -78,6 +79,7 @@ commands:
             (--gate | --floor | --policies <file> | --hold-if <rule> ...)
             [--output <name>] [--from <n>] [--to <n>] [--step <n>]
             [--lenient] [--json <file>] [--target <percent> [--confidence 0.9|0.95|0.99]]
+            [--held-out] [--show-held-out]
             what the numbers would be at other thresholds. --gate sweeps the auto-publish
             gate (all gated outputs, or one with --output); --floor sweeps the value floor.
             --gate --target 5 marks the gates certified under 5%: each tested on its own
@@ -117,7 +119,9 @@ commands:
 
   monitor   (--config <file> <period file> [<period file> ...] [--keys <dir>] | --counts <file>)
             [--target <percent>] [--acceptable <percent>] [--alarming <percent>]
-            [--false-alarm-every <records>] [--period-size <records>] [--since <period>] [--fail-on-alarm]
+            [--false-alarm-every <records>] [--period-size <records>] [--since <period>]
+            [--fail-on-alarm] [--watch silent-errors|silent-omissions]
+            [--segment-by <field> [--segments <a,b,...>]]
             [--lenient] [--json <file>]
             live samples over time: one period per file, in time order, each holding that
             period's checked records with the person's answers (named after the file:
@@ -132,6 +136,20 @@ commands:
             median size so far, or of --period-size. --since restarts the alarm at a period
             after a fix (the bound keeps counting every period). --fail-on-alarm exits with
             code 3 on an alarm (for scheduled jobs)
+            --watch silent-omissions watches the records the workflow blocked or suppressed
+            instead (a person checks a sample of those too; counts file: blocked_or_suppressed,
+            silent_omissions): the share of them wrongly left out, the answer key saying they
+            should have gone out or to a person (not score's silent omission rate, whose base
+            is the records that should have been seen). --target and the other settings then
+            apply to that share.
+            --segment-by channel gives each value of a field (a channel, a customer) its own
+            alarm and bound beside the whole's (run files: read from the answer key as score
+            --group-by reads it, or a group the config names; a counts file: the column of that
+            name, one row per period and segment). The alarms share --false-alarm-every; the
+            whole and the segments are shown under the target as one family (at most 5% that
+            anything is wrongly shown). --segments chat,email,phone names the segments before
+            the first period ((other) pools the rest), so a printed "shown" never changes;
+            without it, "shown" is provisional. --fail-on-alarm counts every segment's alarm
 
   agree     --config <file> --keys <key> <key> [<key> ...] [--names <a,b,...>] [--output <name> ...]
             [--lenient] [--json <file>] [--resamples <n>] [--seed <n>] [--write-key <file>]
@@ -144,6 +162,27 @@ commands:
             ("route" is the routing gold field). --write-key majority.json also writes a
             majority answer key: per record and output, the value most graders gave; records
             with a tie, or labelled by one grader, are left out and listed to settle
+
+  suspects  --config <file> --key <file> <run> [<run> ...] [--rulings <file>] [--top <n>]
+            [--write-rulings <new file>] [--show-held-out] [--lenient] [--json <file>]
+            the answer-key entries one or more runs disagree with, the likeliest key errors
+            first, for a person to rule on: values the key may be missing, values it may list
+            wrongly, and labels it may have wrong. Each comes with why, in the numbers the
+            ranking used, measured on the key's other records. --top 20 (the default) lists
+            that many; --json has them all. --rulings reads earlier rulings: ruled entries are
+            not listed again, pending ones show their status. --write-rulings writes a new
+            rulings file (never over an existing one): the --rulings file's rulings, then the
+            listed suspects as pending, with by and on to fill in
+
+  with a split in the config (docs/CONFIG.md, "A tuning half and a held-out half"): score,
+            compare, variance and whatif report the tuning half only, and say what a look at the
+            held-out half would be (whatif chooses on the tuning half). --held-out looks at it:
+            its rates only, never which records, and whatif checks its choice there. Each look
+            is counted in split.log and makes the next one's test stricter; without a log, no
+            claim is made. --fail-on and --fail-if-worse read the held-out half only with
+            --held-out. suspects lists the tuning half's suspects only, ranked on the tuning
+            half's records. --show-held-out lists the held-out records too (a look), and the log
+            records which it listed
 
 exit codes: 0 done · 1 a problem in the files or an option's value (listed) · 2 bad command
             (an unknown command or option, or an option given without its value) · 3 --fail-on,
@@ -188,6 +227,25 @@ function writeFile(file, text) {
 }
 // --rulings <file>: read and checked once, before any run is scored (traps I12, I13).
 const rulingsOf = (values, config) => (values.rulings ? loadRulings(values.rulings, config, MODE(values)) : null);
+// config.split: the report is the tuning half's. --held-out looks at the held-out half too (a look,
+// recorded in split.log: trap O25), and --show-held-out lists its records (a look as well). Nothing
+// without a split, so those runs are as before.
+function splitOptions(values, config) {
+  if (!config.split) {
+    if (values['show-held-out']) throw new Error('--show-held-out goes with a split in the config (split): there is no held-out half to show');
+    if (values['held-out']) throw new Error('--held-out goes with a split in the config (split): there is no held-out half to look at');
+    return {};
+  }
+  const show = Boolean(values['show-held-out']);
+  const held = show || Boolean(values['held-out']);
+  return { applySplit: true, heldOut: held, look: held, showHeldOut: show };
+}
+// With a split, a rulings file's stop counts held-out records instead of naming them (trap O6).
+function splitRulingsOf(values, config) {
+  try { return rulingsOf(values, config); } catch (e) {
+    throw config.split && !values['show-held-out'] ? require('../src/score.js').maskLoadStop(e, config, values.key) : e;
+  }
+}
 
 function score(args) {
   const { values } = parseArgs({ args, options: {
@@ -198,6 +256,7 @@ function score(args) {
     // Collected as a list only to refuse a second one: the last would otherwise win unseen.
     'cluster-by': { type: 'string', multiple: true },
     mix: { type: 'string' },
+    'show-held-out': { type: 'boolean' }, 'held-out': { type: 'boolean' },
   } });
   const failOn = values['fail-on'];
   if (failOn !== undefined && !SEVERITIES.includes(failOn)) throw new Error('--fail-on must be one of: ' + SEVERITIES.join(', '));
@@ -211,7 +270,8 @@ function score(args) {
   if (clusterBy.length) config = addClusterBy(config, clusterBy[0]);
   // --mix <file>: read and checked before the run is scored, against the groups --group-by added (trap G18).
   const mix = values.mix ? loadMix(values.mix, config) : null;
-  const results = scoreRun({ config, predPath: values.pred, keyPath: values.key, mode: MODE(values), rulings: rulingsOf(values, config), mix, ...targetOptions(values) });
+  const results = scoreRun({ config, predPath: values.pred, keyPath: values.key, mode: MODE(values), rulings: splitRulingsOf(values, config), mix, ...targetOptions(values),
+    ...splitOptions(values, config) });
   if (!values.quiet) process.stdout.write(renderTerminal(results));
   if (values.json) writeFile(values.json, JSON.stringify(resultsJson(results), null, 2) + '\n');
   if (values.html) writeFile(values.html, require('../src/report/html.js').renderHtml(results));
@@ -223,6 +283,15 @@ function score(args) {
       ...r.silent_errors.records.filter(x => SEVERITIES.indexOf(x.severity) <= limit).map(x => x.id + ' (' + x.severity + ')'),
       ...(SEVERITIES.indexOf('critical') <= limit ? r.safeguard_failures.detail.map(d => d.id + ' (safeguard)') : []),
     ];
+    // config.split with --held-out: the held-out half's silent errors and safeguard failures stop a
+    // build too, counted, never named. Without it the half is not read, and the gate is the tuning half's.
+    if (results.split && !results.split.looked) console.error('fail-on: the tuning half only; --held-out reads the held-out half too (a look)');
+    if (results.split && results.split.looked) {
+      const h = results.split.held_out;
+      const n = Object.entries(h.silent_errors.by_severity).filter(([s]) => SEVERITIES.indexOf(s) <= limit).reduce((a, [, k]) => a + k, 0);
+      if (n) hits.push(n + ' held-out record(s) (' + failOn + ' or worse)');
+      if (SEVERITIES.indexOf('critical') <= limit && h.safeguard_failures) hits.push(h.safeguard_failures + ' held-out record(s) (safeguard)');
+    }
     if (hits.length) { console.error('fail-on ' + failOn + ': ' + hits.join(', ')); return 3; }
   }
   return 0;
@@ -231,7 +300,7 @@ function score(args) {
 // score --grades: a person's grades of free-text fields, scored as labels.
 function scoreGrades(values, failOn) {
   if (!values.grades) throw new Error('--second-reviewer goes with --grades <file>');
-  const extra = ['config', 'pred', 'key', 'html', 'group-by', 'cluster-by', 'rulings', 'mix'].filter(k => values[k]);
+  const extra = ['config', 'pred', 'key', 'html', 'group-by', 'cluster-by', 'rulings', 'mix', 'show-held-out', 'held-out'].filter(k => values[k]);
   if (extra.length) throw new Error('score --grades reads everything from the grades file; it does not take ' + extra.map(k => '--' + k).join(' '));
   const g = scoreGradesRun({ gradesPath: values.grades, secondPath: values['second-reviewer'] || null, mode: MODE(values) });
   if (!values.quiet) process.stdout.write(renderGrades(g));
@@ -280,6 +349,14 @@ function check(args) {
   const groups = Object.entries(c.groups).map(([n, g]) => n + ' (' + g.from + ' field "' + g.field + '")');
   if (groups.length) console.log('  groups      ' + groups.join(', '));
   if (c.clusters) console.log('  clusters    ' + c.clusters.from + ' field "' + c.clusters.field + '" (the silent error rate\'s range also counts clusters)');
+  // config.split: how the halves are drawn, and with the files, how each kind of record splits.
+  if (c.split) {
+    const s = c.split;
+    console.log('  split       ' + (s.hash === 'crc32' ? 'odd CRC-32 checksums held out (half)' : Number((s.held_out * 100).toPrecision(3)) + '% held out by sha256' + (s.salt ? ' (salt "' + s.salt + '")' : '')) +
+      ', by ' + (s.by === 'id' ? 'each record\'s own id' : 'cluster, a duplicate\'s primary, or id') + '; looks ' + (s.log ? 'counted in ' + s.log : 'not counted (no split.log)'));
+    // Without the files, the looks the log holds so far (with them, the next look's share, below).
+    if (s.log && !values.pred) console.log('  looks       ' + require('../src/report/split.js').nextLookWords(require('../src/split-log.js').lookStatus(c)));
+  }
   const t = c.thresholds;
   if (!t) {
     console.log('  thresholds  not set');
@@ -291,7 +368,11 @@ function check(args) {
   if (!values.pred) return;
 
   const mode = values.lenient ? 'lenient' : 'strict';
-  const run = loadRun({ config: c, predPath: values.pred, keyPath: values.key, mode });
+  // config.split: warnings and stops count held-out records instead of naming them, as score's do (trap O6).
+  let run;
+  try { run = loadRun({ config: c, predPath: values.pred, keyPath: values.key, mode }); } catch (e) {
+    throw c.split ? require('../src/score.js').maskLoadStop(e, c, values.key, require('../src/split.js').plainNote) : e;
+  }
   console.log('data OK  (' + mode + ' mode)');
   console.log('  predictions ' + run.predictions.length + ' records   ' + values.pred);
   console.log('  answer key  ' + run.key.length + ' records   ' + values.key);
@@ -300,6 +381,23 @@ function check(args) {
   console.log('  matched     ' + run.records.length + ' records');
   console.log('  routed      ' + count('route_class'));
   if (c.routing.gold_field) console.log('  should be   ' + count('gold_class'));
+  // config.split: the halves and the balance of each kind of record, before anyone looks at a result
+  // (check shows none, so it is not a look). A split beyond chance is best redrawn now, with a new salt.
+  if (c.split) {
+    const { splitOf, balanceOf, maskProblems, plainNote } = require('../src/split.js');
+    const halves = splitOf(run.records, c);
+    const b = balanceOf(run.records, c, halves);
+    maskProblems(run.problems, halves.held_out, plainNote);
+    console.log('  halves      tuning ' + halves.tuning.length + ' · held out ' + halves.held_out.length +
+      (halves.straddling.duplicates || halves.straddling.clusters ? ' · straddling: ' + halves.straddling.duplicates + ' duplicate(s), ' + halves.straddling.clusters + ' cluster(s)' : ''));
+    for (const d of b.dimensions) {
+      console.log('  ' + d.name.padEnd(11) + ' ' + d.labels.map(x => x.label + ' ' + x.held_out + '/' + x.records + (x.beyond_chance ? ' (beyond chance)' : '')).join(' · ') + '  (held out / records)');
+    }
+    if (b.beyond_chance.length) console.log('  ! split beyond what chance gives (O5): before anyone looks at either half, a new split.salt draws another split');
+    // The looks so far, and the next one's share (read from split.log, which check never writes).
+    const lk = require('../src/split-log.js').lookStatus(c, halves.held_out);
+    if (lk.counted) console.log('  looks       ' + require('../src/report/split.js').nextLookWords(lk));
+  }
   for (const level of ['warn', 'fix']) {
     const found = run.problems.filter(i => i.level === level);
     if (found.length === 0) continue;
@@ -311,10 +409,11 @@ function check(args) {
 function variance(args) {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
     config: { type: 'string' }, key: { type: 'string' }, lenient: { type: 'boolean' }, json: { type: 'string' }, rulings: { type: 'string' },
+    'show-held-out': { type: 'boolean' }, 'held-out': { type: 'boolean' },
   } });
   need(values, ['config', 'key'], 'variance');
   const config = loadConfig(values.config);
-  const v = varianceRun({ config, keyPath: values.key, predPaths: positionals, mode: MODE(values), rulings: rulingsOf(values, config) });
+  const v = varianceRun({ config, keyPath: values.key, predPaths: positionals, mode: MODE(values), rulings: splitRulingsOf(values, config), ...splitOptions(values, config) });
   process.stdout.write(renderVariance(v));
   if (values.json) writeFile(values.json, JSON.stringify(resultsJson(v), null, 2) + '\n');
 }
@@ -326,17 +425,32 @@ function compare(args) {
     'after-key': { type: 'string' }, rulings: { type: 'string' },
     // Repeatable, and the lists add up: a second flag never silently replaces the first.
     'fail-if-worse': { type: 'string', multiple: true },
+    'show-held-out': { type: 'boolean' }, 'held-out': { type: 'boolean' },
   } });
   const gates = values['fail-if-worse'] ? gateNames(values['fail-if-worse']) : null;
   need(values, ['config', 'key', 'before', 'after'], 'compare');
   const config = loadConfig(values.config);
   const c = compareRun({
     config, keyPath: values.key, afterKeyPath: values['after-key'] || null, beforePath: values.before, afterPath: values.after,
-    noisePaths: values.noise || [], mode: MODE(values), rulings: rulingsOf(values, config),
+    noisePaths: values.noise || [], mode: MODE(values), rulings: splitRulingsOf(values, config), ...splitOptions(values, config),
   });
   // Read before the report is printed, so a named outcome this compare does not measure stops
   // as an input problem instead of following a report that looks like a pass (trap I19).
   const worse = gates ? worseOutcomes(c.paired, gates) : [];
+  // config.split with --held-out: the held-out half's paired verdicts stop a build too (counts only,
+  // no ids). An outcome the held-out half does not measure (no record in both runs) is checked on the
+  // tuning half only, and a note says so. Without --held-out the half is not read.
+  if (gates && c.split && !c.split.looked) console.error('fail-if-worse: the tuning half only; --held-out reads the held-out half too (a look)');
+  if (gates && c.split && c.split.looked) {
+    const { GATE_OUTCOMES } = require('../src/metrics/runs.js');
+    const measured = new Set(c.split.held_out.paired.outcomes.filter(o => o.verdict !== 'not measured').map(o => o.name));
+    const named = gates.includes('any') ? Object.keys(GATE_OUTCOMES) : gates;
+    const skipped = named.filter(g => !measured.has(GATE_OUTCOMES[g]));
+    if (skipped.length && !gates.includes('any')) console.error('fail-if-worse: the held-out half does not measure ' + skipped.join(', ') + ' (no record in both runs): checked on the tuning half only');
+    if (measured.size === 0 && gates.includes('any')) console.error('fail-if-worse: the held-out half does not measure any outcome (no record in both runs): checked on the tuning half only');
+    const usable = gates.includes('any') ? (measured.size ? ['any'] : []) : gates.filter(g => !skipped.includes(g));
+    if (usable.length) worse.push(...worseOutcomes(c.split.held_out.paired, usable).map(o => ({ ...o, flag: o.flag + ' on the held-out half' })));
+  }
   process.stdout.write(renderCompare(c));
   if (values.json) writeFile(values.json, JSON.stringify(resultsJson(c), null, 2) + '\n');
   if (worse.length) {
@@ -353,6 +467,7 @@ function whatif(args) {
     from: { type: 'string' }, to: { type: 'string' }, step: { type: 'string' }, json: { type: 'string' },
     target: { type: 'string' }, confidence: { type: 'string' },
     policies: { type: 'string' }, 'hold-if': { type: 'string', multiple: true },
+    'show-held-out': { type: 'boolean' }, 'held-out': { type: 'boolean' },
   } });
   need(values, ['config', 'pred', 'key'], 'whatif');
   const holdIf = values['hold-if'] || [];
@@ -379,16 +494,29 @@ function whatif(args) {
   }
   // The run's own warnings and clean-ups (a record's own threshold read as text, say) are shown
   // below the what-if, as score shows them.
-  const { paired, problems: loaded } = scoreRun({ config, predPath: values.pred, keyPath: values.key, mode: MODE(values) });
+  // With config.split, paired is the tuning half's records: every sweep below runs on it (trap O16).
+  const splitLook = splitOptions(values, config);
+  const { paired, problems: loaded, split } = scoreRun({ config, predPath: values.pred, keyPath: values.key, mode: MODE(values),
+    applySplit: Boolean(splitLook.applySplit), showHeldOut: Boolean(splitLook.showHeldOut) });
+  // config.split: the choice made on the tuning half, checked on the held-out half (src/split-whatif.js).
+  const heldOutCheck = (w, kind) => require('../src/split-whatif.js').heldOutWhatif(w, {
+    split, config, kind, policies: policies || [], ...splitLook, mode: MODE(values),
+    files: { predictions: values.pred, key: values.key, policies: values.policies || null },
+    options: { kind, hold_if: holdIf, ...Object.fromEntries(['output', 'from', 'to', 'step', 'target', 'confidence'].map(k => [k, values[k] ?? null])) },
+  });
   if (policyMode) {
     const { checkPolicyData } = require('../src/policy.js');
     const { policySweep } = require('../src/metrics/policy.js');
     // One file passed as both, by name or by content: its key-side fields are the key's (E17).
     const sameFile = require('node:path').resolve(values.pred) === require('node:path').resolve(values.key) ||
       fs.readFileSync(values.pred).equals(fs.readFileSync(values.key));
-    checkPolicyData(policies, paired, config, p, { sameFile });
+    // With a split, the policies are checked against every record (a value stated only in the held-out half is no typo).
+    checkPolicyData(policies, split ? split.every : paired, config, p, { sameFile });
+    // Its warnings name records: a held-out one is counted instead (trap O6).
+    if (split && !splitLook.showHeldOut) require('../src/split.js').maskProblems(p.items, split.hidden);
     p.throwIfStopped();
     const w = { ...policySweep(paired, config, policies, certify), problems: [...loaded, ...p.items] };
+    if (split) w.split = heldOutCheck(w, 'policies');
     process.stdout.write(renderWhatif(w));
     if (values.json) writeFile(values.json, JSON.stringify(resultsJson({ inputs: { predictions: values.pred, key: values.key, ...(values.policies ? { policies: values.policies } : {}) }, ...w }), null, 2) + '\n');
     return;
@@ -401,6 +529,12 @@ function whatif(args) {
   }
   const { gateSweep, floorSweep } = require('../src/metrics/whatif.js');
   const w = values.gate ? gateSweep(paired, config, { ...opts, ...certify, outputs: values.output ? [values.output] : null }) : floorSweep(paired, config, opts);
+  if (split) {
+    w.problems = [];
+    w.split = heldOutCheck(w, values.gate ? 'gate' : 'floor');
+    loaded.push(...w.problems);
+    delete w.problems;
+  }
   process.stdout.write(renderWhatif({ ...w, problems: loaded }));
   if (values.json) writeFile(values.json, JSON.stringify(resultsJson({ inputs: { predictions: values.pred, key: values.key }, ...w }), null, 2) + '\n');
 }
@@ -485,6 +619,7 @@ function monitor(args) {
     config: { type: 'string' }, counts: { type: 'string' }, target: { type: 'string' }, acceptable: { type: 'string' },
     alarming: { type: 'string' }, 'false-alarm-every': { type: 'string' }, since: { type: 'string' },
     'fail-on-alarm': { type: 'boolean' }, lenient: { type: 'boolean' }, json: { type: 'string' }, 'period-size': { type: 'string' }, keys: { type: 'string' },
+    watch: { type: 'string' }, 'segment-by': { type: 'string' }, segments: { type: 'string' },
   } });
   const percent = flag => {
     if (values[flag] === undefined) return null;
@@ -499,6 +634,10 @@ function monitor(args) {
   if (size !== undefined && !/^\d+$/.test(size)) throw new Error('--period-size must be a whole number of records, 1 or more, got ' + JSON.stringify(size));
   const opts = { target: percent('target'), acceptable: percent('acceptable'), alarming: percent('alarming'), falseAlarmEvery: every, since: values.since === undefined ? null : values.since, lenient: Boolean(values.lenient),
     periodSize: size === undefined ? null : Number(size) };
+  // --watch and --segment-by: the series watched, and each segment's own alarm and bound.
+  if (values.watch !== undefined) opts.watch = values.watch;
+  if (values['segment-by'] !== undefined) opts.segmentBy = values['segment-by'];
+  if (values.segments !== undefined) opts.segments = values.segments.split(',');
   if (values.counts && values.config) throw new Error('--counts holds counts scored elsewhere: it takes no --config');
   const { monitorRun } = require('../src/monitor.js');
   const { renderMonitor } = require('../src/report/monitor.js');
@@ -506,8 +645,11 @@ function monitor(args) {
   if (values.config) m.inputs.config = values.config;
   process.stdout.write(renderMonitor(m));
   if (values.json) writeFile(values.json, JSON.stringify(resultsJson(m), null, 2) + '\n');
-  if (values['fail-on-alarm'] && m.detector.status === 'alarm') {
-    console.error('fail-on-alarm: ALARM since ' + m.detector.alarm_since + ' (the rise likely started in ' + m.detector.rise_started + ')');
+  // A segment's alarm stops the job too: a rise confined to one segment can hide in the whole.
+  const segmentAlarms = m.segments ? m.segments.rows.filter(r => r.detector.status === 'alarm') : [];
+  if (values['fail-on-alarm'] && (m.detector.status === 'alarm' || segmentAlarms.length)) {
+    if (m.detector.status === 'alarm') console.error('fail-on-alarm: ALARM since ' + m.detector.alarm_since + ' (the rise likely started in ' + m.detector.rise_started + ')');
+    for (const r of segmentAlarms) console.error('fail-on-alarm: ALARM in segment ' + r.segment + ' since ' + r.detector.alarm_since + ' (the rise likely started in ' + r.detector.rise_started + ')');
     return 3;
   }
   return 0;
@@ -568,7 +710,68 @@ function agree(args) {
   return 0;
 }
 
-const COMMANDS = { check, score, variance, compare, whatif, grade, rate: rateCmd, estimate, monitor, agree };
+// suspects: the answer-key entries most likely wrong, ranked for a person (traps N1-N19).
+function suspects(args) {
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
+    config: { type: 'string' }, key: { type: 'string' }, rulings: { type: 'string' }, top: { type: 'string' },
+    'write-rulings': { type: 'string' }, lenient: { type: 'boolean' }, json: { type: 'string' },
+    'show-held-out': { type: 'boolean' },
+  } });
+  // N1, N9: checked before any file is read, so nothing is scored for a command that cannot finish.
+  if (values.top !== undefined && (!/^\d+$/.test(values.top) || Number(values.top) < 1)) {
+    throw new Error('[N1] --top must be a whole number of 1 or more (the suspects to list), got ' + JSON.stringify(values.top));
+  }
+  const top = values.top === undefined ? 20 : Number(values.top);
+  const out = values['write-rulings'];
+  if (out !== undefined) {
+    const path = require('node:path');
+    const folder = path.dirname(path.resolve(out));
+    if (!fs.existsSync(folder) || !fs.statSync(folder).isDirectory()) {
+      throw new Error('[N9] --write-rulings: the folder ' + folder + ' does not exist; name a file in a folder that does');
+    }
+    if (fs.existsSync(out)) throw new Error('[N9] --write-rulings writes a new file, and ' + out + ' already exists: it may hold a person\'s rulings. Name a new file');
+    if (values.json && path.resolve(values.json) === path.resolve(out)) {
+      throw new Error('[N9] --write-rulings and --json name the same file, ' + out + ': the rulings would replace the results. Name two files');
+    }
+  }
+  need(values, ['config', 'key'], 'suspects');
+  const config = loadConfig(values.config);
+  // config.split (traps O21-O24): the held-out records are left out, as suspects and as evidence;
+  // --show-held-out lists them, a look recorded in split.log. A rulings file's stop counts them.
+  const splitLook = splitOptions(values, config);
+  const rulings = splitRulingsOf(values, config);
+  const { suspectsRun, rulingsText } = require('../src/suspects.js');
+  const { renderSuspects } = require('../src/report/suspects.js');
+  // What a look lists (its identity, trap O8): --top's count, or every suspect when --json is written.
+  const s = suspectsRun({ config, keyPath: values.key, predPaths: positionals, mode: MODE(values), rulings, ...splitLook,
+    lookOptions: { listed: values.json ? 'all' : top } });
+  process.stdout.write(renderSuspects(s, top));
+  if (values.json) writeFile(values.json, JSON.stringify(resultsJson(s), null, 2) + '\n');
+  if (out !== undefined) {
+    const w = rulingsText(s, rulings, top);
+    if (!w) {
+      console.error('nothing written to ' + out + ': ' + (s.suspects.length ? 'every listed suspect already has a ruling' : 'there is no suspect to rule on'));
+    } else {
+      // 'wx': never over a file, even one that appeared after the check above.
+      fs.writeFileSync(out, w.text, { flag: 'wx' });
+      console.error('wrote ' + out);
+      const others = !w.carried ? '' : w.replaced ? ', with the other ' + w.carried + ' ruling(s) of ' + rulings.file + ' as written'
+        : ', after the ' + w.carried + ' ruling(s) of ' + rulings.file;
+      // With a split (trap O24): the rulings on held-out records are copied as written (left out, they
+      // would change the key score uses for the held-out half), counted here, never named.
+      const r = s.split && s.split.rulings ? s.split.rulings.held_out : null;
+      const heldOut = r ? Object.values(r).reduce((a, b) => a + b, 0) : 0;
+      const copied = heldOut ? ' (' + heldOut + ' of them on held-out records, copied as written)' : '';
+      console.error(w.fresh + ' listed suspect(s) written as pending' + (w.replaced ? ' (' + w.replaced + ' in place of rulings set aside)' : '') + others + copied +
+        '. Fill in "by" and "on" for each and change "pending" to the ruling (the report lists the choices); a "proposed" left behind, or a ' +
+        'keep\'s "with", is then dropped, with a note. Pass the file with --rulings: a ruling still pending reads as it is, and a decided one ' +
+        'without "by" and "on" stops in strict mode (trap I13).');
+    }
+  }
+  return 0;
+}
+
+const COMMANDS = { check, score, variance, compare, whatif, grade, rate: rateCmd, estimate, monitor, agree, suspects };
 
 function main(argv) {
   const [cmd, ...rest] = argv;

@@ -215,6 +215,8 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
   // Trap I11: with a rulings file, the key in use is not the key file alone. Only then: a report
   // scored without rulings comes out exactly as before.
   if (results.rulings) s.push('<p class="meta">' + rulingsWords(results.rulings).map(esc).join('<br>') + '</p>');
+  // config.split only: which half every number below is, above the headline.
+  if (results.split) s.push(require('./split.js').splitHtml(results, esc));
 
   // Headline
   const se = r.silent_errors;
@@ -229,8 +231,10 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
   s.push(tiles(r, results));
   if (results.target) {
     const [first, ...rest] = [...targetLines(results.target, TARGET_WORDS.run), ...(results.clusters ? [CLUSTER_TARGET_NOTE] : [])];
-    s.push('<p><strong>Target ' + esc(first) + '</strong>' + rest.map(l => '<br>' + esc(l)).join('') + '</p>');
+    s.push('<p><strong>Target ' + (results.split ? '(tuning half) ' : '') + esc(first) + '</strong>' + rest.map(l => '<br>' + esc(l)).join('') + '</p>');
   }
+  // config.split only: the held-out half's summary (everything else in the report is the tuning half's).
+  if (results.split) s.push(require('./split.js').heldOutHtml(results, esc));
 
   // Silent errors
   s.push('<h2>Silent errors</h2>');

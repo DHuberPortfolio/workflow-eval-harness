@@ -142,6 +142,32 @@ independent review before it was merged.
       levels, sets and routes, or free-text grades, with a bootstrap range (traps M1-M17,
       `test/fixtures/agree/`)
 
+## Answer-key suspects, a held-out half, and what nobody sees (Nov 1, 2026)
+- [x] Answer-key suspects: `wfeval suspects`, the key entries one or more runs disagree with (values
+      the key may be missing, values it may list wrongly, labels), ranked by the odds the key is
+      wrong from leave-one-out evidence on the key's other records, chosen by a seeded comparison
+      with today's order, confidence, confident learning and self-consistency; rulings gain remove,
+      keep and replace, and `--write-rulings` starts the file (traps N1-N19, `test/fixtures/suspects/`)
+- [x] A tuning half and a held-out half: `split` in the config holds a share of the golden set out
+      by a SHA-256 hash of each record's unit (retellings kept together; CRC-32 only to reproduce a
+      hand split), reports the tuning half, looks at the held-out half only when asked
+      (`--held-out`) and then as rates only, has `whatif` choose on the tuning half and check once
+      on the held-out half, and counts each look in `split.log`, per record, each getting half of
+      what the looks before it left of the 5% (proven for analysts who choose without the held-out
+      numbers; chosen by `scripts/split-sim.js` against budgets and 1/k^2 spending under
+      hill-climbing, boosting and group-testing attacks); no claim without a log; fresh records get
+      a claim of their own; warnings count held-out records by where their ids were written;
+      `compare --after-key` keeps the two keys' halves apart; `suspects` joined to the split
+      (O21-O24: held-out records left out as suspects and as evidence, `--show-held-out` a look
+      that records which records it listed) (traps O1-O26, `test/fixtures/split/`)
+- [x] `monitor` watches what nobody sees, and each segment: `--watch silent-omissions` for the
+      share of the blocked or suppressed records wrongly left out; `--segment-by` (with
+      `--segments` to name them in advance) for one alarm and one bound per channel or customer,
+      the alarms sharing `--false-alarm-every` and the whole and the segments shown under the target
+      as one family by a weighted closed test on their evidence (Vovk & Wang 2021), chosen by a
+      seeded simulation (`scripts/monitor-segments-sim.js`; traps L19-L37,
+      `test/fixtures/monitor-segments/`)
+
 ## Out of scope for now
 - Snapshot backdating fixture: a test utility with nothing to score.
 

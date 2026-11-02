@@ -1,0 +1,17 @@
+{
+  "id_field": "id",
+  "outputs": {
+    "tags": { "type": "set" },
+    "category": {
+      "type": "label",
+      "labels": ["billing", "shipping", "account"],
+      "confidence_field": "category_confidence",
+      "decline": { "values": ["unsure"] }
+    }
+  },
+  "routing": {
+    "field": "route",
+    "map": { "SEND": "auto", "HOLD": "review", "DUP": "exclude" }
+  },
+  "allowed_values": { "tags": ["refund", "late", "damaged", "wrong-item", "fraud"] }
+}

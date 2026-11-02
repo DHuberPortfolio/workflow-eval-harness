@@ -130,16 +130,18 @@ test('I12: the same (id, output, value) twice stops, aliases included', () => {
 
 // ---------- I13: an unrecorded ruling, or one for another key ----------
 
-test('I13: a ruling without who or when stops in strict mode, warns with --lenient', () => {
-  const noBy = { rulings: [ruling({ by: undefined })] };
+test('I13: a decided ruling without who or when stops in strict mode, warns with --lenient', () => {
+  const noBy = { rulings: [ruling({ ruling: 'reject', by: undefined })] };
   const msg = loadError(noBy);
   assert.match(msg, /\* \[I13\].*"by"/);
-  assert.match(loadError({ rulings: [ruling({ on: '' })] }), /\[I13\].*"on"/);
+  assert.match(loadError({ rulings: [ruling({ ruling: 'add', on: '' })] }), /\[I13\].*"on"/);
   const t = tmpFile('r.json', noBy);
   const rl = loadRulings(t.file, config, 'lenient');
   t.done();
   assert.deepEqual(rl.problems.map(p => p.level + ' ' + p.trap), ['warn I13']);
   assert.equal(rl.list[0].by, null);
+  // A pending ruling decides nothing yet: it reads without them, in strict mode too.
+  assert.equal(loadError({ rulings: [ruling({ by: undefined, on: '' })] }), null);
 });
 
 test('I13: a ruling for a record not in the answer key stops in strict mode; with --lenient it is set aside', () => {
@@ -248,7 +250,9 @@ test('I15: the terminal and HTML say it under the headline, and when it is not a
   const out = renderTerminal(R);
   assert.match(out, /If the 2 pending rulings were all added to the answer key: 42\.9% \(3 of 7, likely 15\.8-75\.0%\), against 57\.1% with them counted wrong\. However they are ruled, the rate lands between the two\./);
   assert.ok(out.indexOf('If the 2 pending') < out.indexOf('SILENT ERRORS'));
-  assert.match(out, /RULINGS {2}1 value added to the answer key by rulings in .*rulings\.json: K2 SUBJECT SUBJ-MNA\./);
+  // Wrapped to 100 columns: a long path takes a line of its own, and where the rest breaks depends
+  // on how long the folder's path is, so any space may be a line break.
+  assert.match(out, /RULINGS {2}1 value added to the answer key by rulings in\s+\S*rulings\.json:\s+K2\s+SUBJECT\s+SUBJ-MNA\./);
   assert.match(out, /the key file itself is unchanged/);
   assert.match(out, /1 ruled not a gap, 2 pending \(counted wrong\), 1 set aside/);
   const html = renderHtml(R, '2026-10-31T00:00:00.000Z');
@@ -269,7 +273,7 @@ test('I15: no pending ruling, no bracket', () => {
   assert.equal(R.rulings.if_pending_added, null);
   const out = renderTerminal(R);
   assert.doesNotMatch(out, /pending rulings? were/);
-  assert.match(out, /RULINGS {2}no values added to the answer key by rulings in .*tiny-rulings\.json\./);
+  assert.match(out, /RULINGS {2}no values added to the answer key by rulings in\s+\S*tiny-rulings\.json\./);
 });
 
 // ---------- variance with rulings ----------

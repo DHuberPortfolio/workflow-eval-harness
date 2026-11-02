@@ -122,29 +122,33 @@ test('Golden 500, metadata: articles silent in at least one of runs 70-72', () =
 });
 
 // The guard's 0.40 was chosen on the articles whose id's CRC-32 (zlib's) is even, and checked
-// on the odd ones. Written out because zlib.crc32 needs Node 22.2.
-const CRC = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
-const crc32 = s => { let c = 0xffffffff; for (const b of Buffer.from(s)) c = CRC[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
-
+// on the odd ones: that hand split is config-split.json's split (hash "crc32", by "id").
 test('Golden 500, metadata: v3 run by run on the tuning and held-out halves, and v1 articles missing a regulation or litigation subject', () => {
-  const { rate } = require('../src/metrics/stats.js');
+  const { crc32 } = require('../src/split.js');
   assert.equal(crc32('123456789'), 0xcbf43926);   // the standard CRC-32 check value
   const G = path.join(dir, 'golden500');
   const cfg = loadConfig(path.join(G, 'config.json'));
+  const split = loadConfig(path.join(G, 'config-split.json'));
+  assert.deepEqual(split.split, { held_out: 0.5, salt: '', hash: 'crc32', by: 'id', log: null });
   const run = n => path.join(G, 'exec-' + n + '.json');
-  // Each run on its own; never added up (trap I8).
+  // Each run on its own; never added up (trap I8). The tuning half is the report itself; the
+  // held-out half its summary.
   const halves = { tuning: [], held_out: [] };
   for (const n of [70, 71, 72]) {
-    const out = scoreRun({ config: cfg, predPath: run(n), keyPath: run(n) }).records.filter(r => r.route_class === 'auto');
-    for (const [name, parity] of [['tuning', 0], ['held_out', 1]]) {
-      const half = out.filter(r => crc32(r.id) % 2 === parity);
-      halves[name].push([half.filter(r => r.silent).length, half.length]);
-    }
+    const r = scoreRun({ config: split, predPath: run(n), keyPath: run(n), applySplit: true, heldOut: true });
+    halves.tuning.push([r.routing.silent_errors.rate.n, r.routing.silent_errors.rate.d]);
+    halves.held_out.push([r.split.held_out.silent_errors.n, r.split.held_out.silent_errors.d]);
+    // Split by id, 13 of the 34 duplicates sit in the other half from their primary (trap O3);
+    // all were suppressed in these runs, so none is among the records counted here.
+    assert.deepEqual(r.split.straddling, { clusters: 0, duplicates: 13 });
   }
   assert.deepEqual(halves.tuning, [[8, 107], [6, 100], [10, 105]]);
   assert.deepEqual(halves.held_out, [[5, 92], [7, 106], [8, 105]]);
-  const worst = rate(8, 105);
-  assert.deepEqual([worst.pct, worst.low_pct, worst.high_pct], [7.6, 3.9, 14.3]);
+  // The held-out half's worst run, the one to quote for it.
+  const { varianceRun } = require('../src/score.js');
+  const v = varianceRun({ config: split, keyPath: run(70), predPaths: [run(70), run(71), run(72)], applySplit: true, heldOut: true });
+  const worst = v.split.held_out.worst_run;
+  assert.deepEqual([worst.run, worst.n, worst.d, worst.pct, worst.low_pct, worst.high_pct], [3, 8, 105, 7.6, 3.9, 14.3]);
   // v1: count articles, not problems. B223 is missing both subjects.
   const silent = scoreRun({ config: cfg, predPath: run(68), keyPath: run(68) }).records.filter(r => r.silent);
   const missing = (r, code) => ['missing', 'missing_rejected'].some(b => ((r.differences[b] || {}).SUBJECT || []).includes(code));
@@ -219,6 +223,35 @@ test('compliance policies: policies.json reproduces the NOTES.md what-if table e
   // Every record held was a silent error, except the 20 notes nobody needed to see.
   assert.deepEqual(W.rows.slice(1).map(r => [r.held.length, r.paired.silent_errors.fixed, r.paired.silent_errors.broke, r.paired.unnecessary_reviews.broke]),
     [[7, 7, 0, 0], [15, 15, 0, 0], [22, 22, 0, 0], [45, 25, 0, 20]]);
+});
+
+// The table above chose and measured its policies on the same 500 documents (its notes say a fresh
+// run should confirm them). Split in halves (config-split.json, trap O16), the policies are compared
+// and certified on the tuning half alone, and the one chosen is checked once on the held-out half.
+test('compliance policies with a split: chosen on the tuning half, checked on the held-out half', () => {
+  const { loadPolicies, policyFields } = require('../src/policy.js');
+  const { policySweep } = require('../src/metrics/policy.js');
+  const { heldOutWhatif } = require('../src/split-whatif.js');
+  const C = path.join(__dirname, '..', 'examples', 'compliance-reviewer');
+  const base = loadConfig(path.join(C, 'config-split.json'));
+  const policies = loadPolicies(path.join(C, 'policies.json'), base);
+  const cfg = policyFields(base, policies);
+  const run = path.join(C, 'golden500', 'exec-67.harness.json');
+  const { paired, split } = scoreRun({ config: cfg, predPath: run, keyPath: run, applySplit: true });
+  assert.deepEqual([split.tuning.records, split.held_out.records], [230, 270]);
+  const W = policySweep(paired, cfg, policies, { target: 5 });
+  assert.deepEqual(W.rows.map(r => [r.name, r.silent_error_rate.n, r.silent_error_rate.d, r.certified]), [
+    ['as run', 11, 117, false],
+    ["Cap every client's threshold at 0.85", 10, 116, false],
+    ['Award claims always go to a person', 3, 109, false],
+    ['Both', 2, 108, false],
+    ['Every note goes to a person', 0, 95, true],
+  ]);
+  const h = heldOutWhatif(W, { split, config: cfg, kind: 'policies', policies, heldOut: true });
+  assert.equal(h.chosen.name, 'Every note goes to a person');
+  // The example keeps no log: its documents were looked at before any split existed (the policies were
+  // chosen on all 500), so a log starting at look 1 would claim a first look that is not one. Numbers, no claim.
+  assert.deepEqual([h.chosen.silent_errors.n, h.chosen.silent_errors.d, h.chosen.target.why], [0, 116, 'not_counted']);
 });
 
 // Why "cap at 0.85" is a hold-if rule for this data: a finding is applied when its confidence is

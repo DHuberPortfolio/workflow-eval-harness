@@ -9,6 +9,7 @@
 // with clusters, cluster: its cluster's value from its own side, or null for a cluster of its own.
 
 const { resolveSet } = require('./metrics/slots.js');
+const { markId } = require('./problems.js');
 
 const has = (obj, k) => Object.prototype.hasOwnProperty.call(obj, k);
 
@@ -16,7 +17,7 @@ const has = (obj, k) => Object.prototype.hasOwnProperty.call(obj, k);
 // should read as one problem with a list.
 function reportIds(p, trap, where, ids, what) {
   if (ids.length === 0) return;
-  const shown = ids.slice(0, 20).map(id => '"' + id + '"').join(', ');
+  const shown = ids.slice(0, 20).map(id => '"' + markId(id) + '"').join(', ');
   const more = ids.length > 20 ? ' and ' + (ids.length - 20) + ' more' : '';
   p.stop(trap, where, ids.length + ' ' + what + ': ' + shown + more);
 }
@@ -29,7 +30,7 @@ function indexById(records, trap, where, p) {
     if (byId.has(r.id)) repeats.set(r.id, (repeats.get(r.id) || 1) + 1);
     else byId.set(r.id, r);
   }
-  for (const [id, n] of repeats) p.stop(trap, where, 'id "' + id + '" appears ' + n + ' times');
+  for (const [id, n] of repeats) p.stop(trap, where, 'id "' + markId(id) + '" appears ' + n + ' times');
   return byId;
 }
 
@@ -96,7 +97,7 @@ function align(predictions, key, config, p, opts = {}) {
   for (const id of predOnly) {
     const match = keyOnlyByLower.get(id.toLowerCase());
     if (match === undefined) continue;
-    p.stop('B9', predSource, 'id "' + id + '" is not in the answer key, which has "' + match + '". Ids must match exactly, including upper and lower case.');
+    p.stop('B9', predSource, 'id "' + markId(match, id) + '" is not in the answer key, which has "' + markId(match) + '". Ids must match exactly, including upper and lower case.');
     paired.add(id);
     paired.add(match);
   }
@@ -112,18 +113,18 @@ function align(predictions, key, config, p, opts = {}) {
   for (const [id, k] of answers) {
     const pr = preds.get(id);
     if (!pr) continue;
-    const routeClassOf = routeClass(pr.route, map, predSource + ' ' + id, p, 'route', 'C2', 'C1');
+    const routeClassOf = routeClass(pr.route, map, predSource + ' ' + markId(id), p, 'route', 'C2', 'C1');
     const goldClass = config.routing.gold_field
-      ? routeClass(k.gold_route, map, keySource + ' ' + id, p, 'correct route (' + config.routing.gold_field + ')', 'C4', 'C5')
+      ? routeClass(k.gold_route, map, keySource + ' ' + markId(id), p, 'correct route (' + config.routing.gold_field + ')', 'C4', 'C5')
       : null;
     // Duplicate groups (C9, C11): a duplicate must point at a real, different record, and
     // the key should agree with itself that a duplicate is suppressed.
     const dup = k.duplicate_of ?? null;
     if (dup !== null) {
-      if (dup === id) p.stop('C9', keySource + ' ' + id, 'is marked as a duplicate of itself');
-      else if (!answers.has(dup)) p.stop('C9', keySource + ' ' + id, 'is marked as a duplicate of "' + dup + '", which is not in the answer key');
+      if (dup === id) p.stop('C9', keySource + ' ' + markId(id), 'is marked as a duplicate of itself');
+      else if (!answers.has(dup)) p.stop('C9', keySource + ' ' + markId(id), 'is marked as a duplicate of "' + markId(dup) + '", which is not in the answer key');
       if (goldClass !== null && goldClass !== 'exclude') {
-        p.strict('C11', keySource + ' ' + id, 'is marked as a duplicate of "' + dup + '", but its correct route is "' + k.gold_route + '", not a suppressing one');
+        p.strict('C11', keySource + ' ' + markId(id), 'is marked as a duplicate of "' + markId(dup) + '", but its correct route is "' + k.gold_route + '", not a suppressing one');
       }
     }
     const rec = {

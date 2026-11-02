@@ -1,0 +1,20 @@
+{
+  "rulings": [
+    {
+      "id": "S05",
+      "output": "codes",
+      "value": "D",
+      "ruling": "pending",
+      "by": "DH",
+      "on": "2026-10-31"
+    },
+    {
+      "id": "S02",
+      "output": "codes",
+      "value": "D",
+      "ruling": "pending",
+      "by": "DH",
+      "on": "2026-10-31"
+    }
+  ]
+}

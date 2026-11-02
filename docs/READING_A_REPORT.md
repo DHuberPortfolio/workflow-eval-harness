@@ -155,6 +155,79 @@ the headline gives the silent error rate as if every pending ruling were added. 
 decided, the rate lands between the two, unless that line says otherwise
 ([why](METRICS.md#the-bracket-for-pending-rulings)).
 
+## In the terminal: answer-key suspects (`wfeval suspects`)
+
+`wfeval suspects` lists the answer-key entries one or more runs disagree with, the likeliest key
+errors first, for a person to read and rule on. On the fixture in `test/fixtures/suspects/`
+(`--config config.json --key key.json run-a.json`):
+
+```
+  #  record  output    the answer key  the run
+  1  T8      category  says billing    says shipping (0.95)
+       Where this workflow gives a category label at about this level on other records, the answer
+       key agreed on 6 of 6 at 0.90 or more; with so few records, the tool reads that as about 93%.
+       Rule: replace (with shipping) or keep.
+  2  T8      tags      lists late      does not say it
+       This workflow leaves late out on 0 of the 3 other records whose answer key lists it, and on
+       6 of the 7 whose key lacks it. Rule: remove or keep.
+```
+
+- **The answer key column** says what is questioned: **lacks** a value (the key may be missing it),
+  **lists** a value (it may hold it wrongly), or **says** a label (it may have the wrong one).
+- **The run column** says what the runs did: how many state the value or give the label, how many
+  applied it, and their confidences ("no confidence" for a rule's output). With several runs,
+  "4 of 4 say it" is stronger than "1 of 4".
+- **The line under each** says why it is listed, in the numbers the ranking used, measured on the
+  answer key's other records: where the workflow answers like this elsewhere, how often the key
+  agrees. The higher that agreement, the more surprising this disagreement, and the higher the
+  suspect. Counts ("0 of the 3") are what happened on other records. A percentage comes after the
+  counts it was read from, as what "the tool reads that as": half a record each way pulls a level
+  with few records toward even, so 6 of 6 reads as about 93% ("with so few records" says so, under
+  20 records), and between two levels it is read in a straight line ("reading between them").
+  With several runs, the line starts with the number the suspect is ranked on: "Average 0.48 over
+  2 runs, counting 0 for the run that does not say it" (or "that gives another label"). A value
+  stated with no confidence is counted as 1, and the line says so. It ends with the rulings to
+  choose from.
+- **A suspect is not proof.** Each is a mistake by the workflow or by the answer key; read the
+  record. The ranking puts the likeliest key errors first, but it measures the key against itself,
+  so a key that leaves the same code out of every document of a kind looks like a workflow that
+  over-states it. A pattern you find is a reason to read the rest of that kind, whatever their rank
+  ([what the ranking can and cannot do](METRICS.md#answer-key-suspects)).
+- **Rulings.** Record each decision in a rulings file (add or reject, remove or keep, replace or
+  keep, or pending; [CONFIG.md](CONFIG.md#rulings-on-what-the-key-holds-wfeval-suspects)) and pass
+  it with `--rulings`: a ruled suspect is not listed again, only counted ("2 more were ruled ... not
+  listed again"), a pending one is listed with who and when, one whose ruling no longer fits the
+  key is listed as "set aside", and a **RULINGS** section names every change the rulings made to the
+  key. `--write-rulings new.json` starts the file for you: the listed suspects as pending rulings,
+  with any rulings you already have (a set-aside one replaced, with a note), and `by` and `on` left
+  to fill in. A pending ruling reads without them. To decide one, change "pending" to the ruling and
+  fill in `by` and `on` (strict mode stops without them): a "proposed" left behind, or a keep's
+  "with", is dropped with a note.
+- **Records the answer key blocks or suppresses as duplicates** (with a correct route,
+  `routing.gold_field`) are left out, as suspects and as evidence, and one line says how many
+  (`key_leaves_out` in `--json`; with a split, of the half shown):
+  they must not go out whatever their values, so their values change no routing rate (only output
+  quality counts them). With `"wrong_when": "any_mismatch"` the values decide, and nothing is left
+  out.
+- `--top 20` (the default) lists the first 20; `--json` has every suspect, with its weight and the
+  counts behind it.
+- **With a split in the config**, a **SPLIT** line under the header says how many held-out records
+  were left out. They are neither listed nor read as evidence for the others: a held-out record in
+  the list would say the workflow got it wrong, which is what the held-out half keeps hidden. On
+  the same fixture with `--config config-split.json`:
+
+  ```
+  SPLIT  The tuning half: 8 of 13 records.
+    The other 5 records are held out from tuning (30% held out by a hash of each record's cluster, a
+    duplicate's primary, or its id): left out here, both as suspects and from the evidence each
+    suspect is ranked on. --show-held-out includes them.
+  ```
+
+  Rulings on held-out records are counted on the line after it, never named, and a warning about a
+  held-out record counts it instead. `--show-held-out` lists both halves, and with `split.log` the
+  log records that the held-out records were listed
+  ([CONFIG.md](CONFIG.md#a-tuning-half-and-a-held-out-half-split)).
+
 ## In the terminal: a judge checked by a person (`wfeval estimate`)
 
 For production records with no answer key: an AI judge wrote one for every record, and a person
@@ -217,12 +290,28 @@ is written.
   lists the records that changed route between runs, and **possible key gaps**:
   values stated in every run that the answer key does not list, for a person to rule on (with
   `--rulings`, each shows its ruling, and rejected ones are only counted).
-- **`wfeval compare`**: what changed between two runs, and whether each change is bigger than
-  the spread of identical runs ("beyond noise") or not ("within noise"). Its **paired** table
-  needs no repeated runs: on the same records, for silent errors, unnecessary reviews and the
-  rest, how many records the change fixed and how many it broke, and whether that is better,
-  worse or unclear. Plus every record whose route was fixed or broken. With `--after-key`, the
-  same run against an old and a new answer key: every change is the key's.
+- **`wfeval compare`**: what changed between two runs, judged two ways, each asking its own
+  question.
+  - **The noise check** (the first table's verdict column) compares each change with the
+    spread of repeated runs of the unchanged workflow (`--noise`): the highest minus the lowest
+    value of the same metric over those runs. A bigger change is "beyond noise", one no bigger
+    is "within noise". It asks: did the number move more than re-running the same workflow moves
+    it? Without `--noise` it says "no noise baseline" and judges nothing.
+  - **The paired verdict** (the PAIRED table) needs no repeated runs. On the same records, for
+    silent errors, unnecessary reviews and the rest, it counts the records the change fixed and
+    the ones it broke, and asks whether the fixed outnumber the broken by more than chance would:
+    better, worse or unclear.
+  - **When they disagree, act on the paired verdict** for the outcomes it counts. Re-running
+    flips records both ways alike, so the noise is already in its counts; and a rate can move
+    only because records joined or left its base, which a count of records fixed and broken
+    cannot. "Beyond noise" beside "unclear" usually means the rate's base moved, or a few repeated
+    runs gave a narrow spread: not a win yet. "Within noise" beside "better" means the change
+    fixed clearly more records than it broke, though the rate's run-to-run spread hides it: the
+    paired verdict stands. For the metrics the paired table does not count (straight-through, an
+    output's precision and recall, calibration), the noise check is the only verdict.
+
+  Plus every record whose route was fixed or broken. With `--after-key`, the same run against an
+  old and a new answer key: every change is the key's.
 - **`wfeval rate 2 15 --target 5`**: the likely range for any count, and what a target needs.
 - **`wfeval whatif`**: what the numbers would be at another threshold. Read the silent error
   count beside the rate: a rate can fall only because correct records joined it. With
@@ -271,6 +360,84 @@ policy lets out more silent errors than the run as it was, the next line says so
 gates, a policy picked from many because it looks good proves less than it seems: confirm it on
 records it was not chosen on ([why](METRICS.md#routing-policies)).
 
+## A tuning half and a held-out half (`split`)
+
+With `split` in the config, a report has two halves, and reads them differently
+([CONFIG.md](CONFIG.md#a-tuning-half-and-a-held-out-half-split)).
+
+- **SPLIT**, at the top: how many records are in the tuning half, how many are held out, and how
+  they were drawn. Every other number in the report (the headline, the target, every list of
+  records, the quality, traps, groups, calibration, possible key gaps) is the **tuning half's**: the
+  records you may read, fix and tune on. The target says "(tuning half)".
+- **HELD-OUT HALF  not looked at**, by default: nothing of the held-out half is in the report, and
+  no look was spent. The line says what `--held-out` would be: "2 looks at this held-out half so
+  far (split-log.json); the next is look 3, which may use 0.625% of the 5% allowed for being
+  wrong". Tune as often as you like; look on purpose. `wfeval check` says the same.
+- **HELD-OUT HALF**, with `--held-out`: the records kept out of tuning, as rates only. The same rows
+  and words as the headline, each with its count and likely range, its safeguard failures, and the
+  silent errors' count by severity; never which records. Seeing which held-out records failed is
+  what would let you fix exactly those, and then the held-out half would flatter you as the tuning
+  half does. Warnings about a held-out record count it instead of naming it. With `--show-held-out`
+  the header says the records are listed in full further down.
+
+Under it, the look this report is, and the claim. From the split fixture's second look
+(`test/fixtures/split/`, `predictions-v2.json`, `--target 40 --held-out`, with a log):
+
+```
+  Look 2 at this held-out half (counted in split-log.json).
+  Not yet shown under 40%: with these records the true rate could still be as high as 49.1%.
+  Each look at the held-out half must pass a stricter test than the one before; this is look 2,
+  which may use 1.25% of the 5% allowed for being wrong. Over all looks, a false "shown" stays under
+  5%: proven if no version tested was chosen by its held-out numbers; if one was, that held in
+  simulation, not by proof.
+```
+
+- **Look N**: how many looks at this held-out half (`split.log` counts them, per record: a look on
+  an older key, before records were added, is no look at those records). "Look 2 ... again" means
+  the same command, files, config and mode as before: nothing new was shown, so nothing was spent.
+  **Without a log, no claim is made**: the rates and ranges are shown, and one line says how to
+  count looks.
+- **Shown under 40% / Not yet shown under 40%**: the yes or no, with the exact binomial bound it
+  rests on: the highest rate these records do not rule out at this look. Shown when that bound is at
+  or under the target. "Must pass a stricter test than the one before" is the look count at work:
+  each look may use half of what the looks before it left of the 5%.
+- **The likely range and the bound.** The likely range is the usual 95% range (Wilson's, an
+  approximation); the claim uses the exact bound at this look's share, which is stricter at small
+  counts and grows tighter to reach with every look. So a likely range wholly under the target can
+  still come with "not yet shown". At a first look, 0 of 10 records has a likely range reaching
+  27.8%, under a 28% target, while the exact bound at 2.5% reaches 30.8%: "not yet shown", and the
+  report says why on the next line.
+- **Too few records**: even no silent error at all among these held-out records could not show it,
+  even at a first look: more records are needed. **Used up**: a first look could have, but this
+  look's share is too small (if the rate itself is above the target, the report says that too): add
+  fresh records to the golden set; they have had no look, and appear as **NEWEST RECORDS** with a
+  claim of their own.
+- **listed at look N**: a report with `--show-held-out` listed some of the held-out records then
+  (`suspects` lists only the suspects it shows); a claim on the half spends nothing since, while
+  records it never listed keep their own claim.
+- A line names any trap type or group the held-out half has no record of: it cannot speak for it.
+- **Its answer key has not been checked by suspects**: said once. `suspects` leaves the held-out
+  half out, so a key mistake there reads as a silent error, or hides one; [CONFIG.md](CONFIG.md#the-held-out-halfs-answer-key)
+  says how to check it before the first look, without looking.
+
+**`compare --held-out`** adds the held-out half's PAIRED table (fixed, broke, verdict) without ids;
+**`variance --held-out`** each run's held-out silent error rate and its worst run, the one to quote
+for the held-out half. Both are looks, and make no claim. **`whatif --target`** computes everything
+on the tuning half and names the gate or policy it certified; with `--held-out` it tries it on the
+held-out half once. "The held-out half disagrees" means its rate there is at or above the target.
+"Not confirmed: ... the tuning half flattered it" means the rate it was certified at on the tuning
+half sits below the held-out half's whole likely range. "Too few records" means even no silent error
+could not show it. "Not confirmed at this look" means it could not be shown yet, which is not
+evidence against it.
+
+Build gates: `--fail-on` and `--fail-if-worse` read the held-out half only with `--held-out`; without
+it, a note on the error stream says the gate was the tuning half's.
+
+Warnings to act on: **O5** (a kind of record fell mostly into one half, beyond what chance gives:
+before anyone looks, draw another split with a new `split.salt`), **O3** (retellings of one story on
+both sides), **O10** (a record changed half since an earlier look), **O26** (`compare --after-key`:
+the two keys put a record in different halves).
+
 ## Live samples over time (`wfeval monitor`)
 
 After launch, a person checks a sample of the records out without review every week or month.
@@ -305,6 +472,61 @@ After launch, a person checks a sample of the records out without review every w
   under the alarming one is flagged too, only later) and the records to an alarm at 90% of the
   target. Set with
   `--false-alarm-every` (2,000 by default): fewer false alarms mean slower flags.
+
+**Wrongly left out** (`--watch silent-omissions`): the same report for the records the workflow
+blocked or suppressed. The header says "rate: wrongly left out: of the blocked or suppressed records
+a person checked, the share that should have gone out or to a person"; the columns are **left out** (the
+records blocked or suppressed that were checked) and **wrongly** (those the answer key says should
+have gone out or to a person). This share is **not score's silent omission rate**: score divides by
+the records that should have been seen, this report by the records left out (the segments fixture's
+W40: score 1 of 6, monitor 1 of 3). Every number below the table is about this share, with the
+settings given for it; when the report suggests where to measure the acceptable rate, it points to
+monitor itself on the golden-set run file, not to score (with the key in a file of its own, add
+`--keys`; with a split in the config, the report warns that the file shows both halves, and the
+figure comes from score's tuning half instead: [CONFIG.md](CONFIG.md#live-samples-over-time-wfeval-monitor)).
+"One test of a size fixed in advance" is then `rate --target`, which takes any count; `score
+--target` tests the silent error rate only. A workflow can look perfect on the records it sends out
+and still lose good records unseen: this is the report that shows it.
+
+**Segments** (`--segment-by channel`; for a counts file, `--segment-by` and the column's name): after
+the whole's report, **SEGMENTS** gives one row per segment, each with its own alarm and bound, from
+all its periods: records, the rate with its likely range, how far its alarm has climbed, its status,
+and its upper bound. Small segments have wide ranges: compare the ranges, not the percentages. Then:
+
+- **HAS ANY SEGMENT GONE UP?** An alarm in a segment says that segment's rate has likely risen,
+  with the period the rise likely started, even when the whole shows nothing: a rise confined to
+  one channel is diluted by the others. The alarms share `--false-alarm-every`, so the report in all
+  (the whole and every segment) keeps about one false alarm per that many records checked. The
+  whole's alarm is then set for fewer false alarms than it would be alone, so it flags a rise later:
+  its alarm level and its TUNED TO line give both figures ("Alarm level 200 steps (152 without
+  --segment-by)", "flagged after about 281 records on average (219 without segments)"), and if the
+  whole alone would have alarmed, the report says so. With one segment, and no record in two, the
+  segment is the whole and nothing is shared. `--fail-on-alarm` counts every segment's alarm.
+- **SHOWN UNDER 5% in** a segment, and the whole's **SHOWN UNDER 5%** above: because the whole and
+  the segments are checked at once, each needs more evidence (a higher **bar**) before it is called
+  shown; that keeps the chance of any wrong "shown" in the report at 5%, however often you look. The
+  whole's bar is 20 to 40 (the report gives it: "a bar of 34.2 here, against 20 alone"). The exact
+  rule follows in the report: the whole's bar is 20 plus the segments' average shortfall below 20; a
+  segment's is 20 plus each other segment's shortfall plus the number of segments times the whole's.
+  Picking the best-looking of many segments is how luck gets mistaken for a result; the bars are what
+  pay for the picking.
+- **Shown before, not now**: a segment that was shown under the target in earlier periods and is not
+  any more is named, with the last period it was shown, as the whole's is.
+- **Provisional** (`shown*`): without `--segments`, the family is the segments in the periods given.
+  A segment that first appears later joins it and changes the bars, so a "shown" printed today can be
+  taken back next week: every such mark is starred, in the table and in the JSON (`"provisional":
+  true`). Name the segments with `--segments chat,email,phone`, chosen before the first period
+  counted, and the family is fixed (those, "(other)" and "(none)"): what is printed stays. Naming
+  them after seeing the numbers is choosing them by the numbers.
+- **Upper bounds**: each segment's holds for that segment on its own (the JSON gives one for every
+  period it is shown). Only "shown" is counted across segments: the lowest of several upper bounds
+  is not a result.
+- **too few: N needed**: the segment has fewer records than its bar needs even with no silent error
+  at all, so it cannot be shown under the target yet, and no bound is printed: it would be noise.
+- A segment with no record in the series watched is named on its own line, as are the values pooled
+  into "(other)"; records with several segment values count in each, and the report says how many,
+  and what each segment's alarm is then set for so that the report still keeps its false-alarm
+  budget.
 
 The inputs are described in [CONFIG.md](CONFIG.md#live-samples-over-time-wfeval-monitor).
 

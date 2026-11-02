@@ -1,0 +1,18 @@
+{
+  "id_field": "id",
+  "outputs": {
+    "TOPIC": { "type": "set" }
+  },
+  "routing": {
+    "field": "route",
+    "map": {
+      "AUTO_PUBLISH": "auto",
+      "EDITOR_REVIEW": "review"
+    }
+  },
+  "thresholds": {
+    "auto_publish": { "TOPIC": 0.80 },
+    "gate_uses": "lead"
+  },
+  "split": { "salt": "b" }
+}

@@ -12,6 +12,7 @@
 //      After that, load.js treats the records exactly like records from JSON, so every
 //      other check (confidence ranges, labels, duplicates) applies to CSV unchanged.
 
+const { markId } = require('./problems.js');
 const has = (obj, k) => Object.prototype.hasOwnProperty.call(obj, k);
 
 // Splits CSV text into rows of cells, following the usual CSV rules: a cell in double
@@ -161,7 +162,7 @@ function decodeCsvRecords(rows, config, which, s, source, p) {
   return rows.map((row, i) => {
     const rec = { ...row };
     const id = has(row, config.id_field) ? row[config.id_field].trim() : '';
-    const where = source + ' ' + (id || 'row #' + (i + 1));
+    const where = source + ' ' + (id ? markId(id) : 'row #' + (i + 1));   // marked: see problems.js
     const decode = (col, fn, o, set = s) => { if (has(row, col)) rec[col] = fn(row[col], o, set, where + ' ' + col, p); };
 
     // Group labels (config.groups) read from this side: several in one cell are split like trap

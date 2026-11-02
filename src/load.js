@@ -22,7 +22,7 @@
 // (duplicate ids, records missing from one side, unknown routes) are in align.js.
 const fs = require('fs');
 const nodePath = require('path');
-const { problems } = require('./problems.js');
+const { problems, markId } = require('./problems.js');
 const { csvToRecords, decodeCsvRecords } = require('./csv.js');
 const { align } = require('./align.js');
 const { DECLINED, equivalentOf } = require('./config.js');
@@ -161,7 +161,7 @@ function readId(raw, idField, where, p) {
   if (typeof v !== 'string' && typeof v !== 'number') { p.stop('B1', where, 'has no "' + idField + '"'); return null; }
   const id = String(v).trim();   // 7 and "7" become the same id
   if (id === '') { p.stop('B1', where, 'has an empty "' + idField + '"'); return null; }
-  if (typeof v === 'string' && id !== v) p.fix('B8', where, 'trimmed spaces from id ' + JSON.stringify(v));
+  if (typeof v === 'string' && id !== v) p.fix('B8', where, 'trimmed spaces from id "' + markId(id, JSON.stringify(v).slice(1, -1)) + '"');
   return id;
 }
 
@@ -533,7 +533,7 @@ function readFields(raw, config, where, p, ctx) {
 
 // The lines readFields saves for after the file (trap E18): one for each kind, naming the records.
 function reportFields(ctx, config, source, p) {
-  const ids = list => list.slice(0, 20).join(', ') + (list.length > 20 ? ' ...' : '');
+  const ids = list => list.slice(0, 20).map(id => markId(id)).join(', ') + (list.length > 20 ? ' ...' : '');
   if (ctx.text.length) p.fix('E18', source, ctx.text.length + ' record(s) give their own gate threshold as text; read as the number: ' + ids(ctx.text));
   if (ctx.below.length) {
     p.warn('E18', source, ctx.below.length + ' record(s) have their own gate threshold below thresholds.floor (' + config.thresholds.floor +
@@ -626,7 +626,7 @@ function normalizePredictions(raws, config, source, p, opts = {}) {
     if (!isObj(raw)) { p.stop('B1', source + ' record #' + (i + 1), 'is ' + describe(raw) + ', not a record'); return; }
     const id = readId(raw, config.id_field, source + ' record #' + (i + 1), p);
     if (id === null) return;
-    const where = source + ' ' + id;
+    const where = source + ' ' + markId(id);   // marked: a report may count a record instead of naming it (problems.js)
 
     // H4: a trap label next to the workflow's output suggests the workflow could see it.
     // Not checked for a combined format, where the key sits in each record by design.
@@ -665,7 +665,7 @@ function normalizeKey(raws, config, source, p) {
     if (!isObj(raw)) { p.stop('B1', source + ' record #' + (i + 1), 'is ' + describe(raw) + ', not a record'); return; }
     const id = readId(raw, config.id_field, source + ' record #' + (i + 1), p);
     if (id === null) return;
-    const where = source + ' ' + id;
+    const where = source + ' ' + markId(id);   // marked: a report may count a record instead of naming it (problems.js)
 
     let traps = [];
     if (config.trap_field) {

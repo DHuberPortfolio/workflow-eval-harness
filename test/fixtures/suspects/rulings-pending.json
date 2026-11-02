@@ -1,0 +1,5 @@
+{ "rulings": [
+  { "id": "T10", "output": "tags", "value": "fraud", "ruling": "pending", "proposed": "remove", "by": "DH", "on": "2026-11-01" },
+  { "id": "T8", "output": "category", "value": "billing", "ruling": "pending", "with": "shipping", "by": "DH", "on": "2026-11-01" },
+  { "id": "T6", "output": "tags", "value": "late", "ruling": "pending", "proposed": "remove", "by": "DH", "on": "2026-11-01", "note": "is a week late really late?" }
+] }

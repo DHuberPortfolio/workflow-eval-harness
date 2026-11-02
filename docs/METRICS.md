@@ -951,6 +951,17 @@ another run, say) becomes, once added, a value the run should have given and did
 which can create a silent error. Then "all added" is not the low end, and the line says how
 many such values there are and that the two figures are not a bracket.
 
+The bracket is checked, not assumed. `score` tries every way the pending rulings could be ruled,
+record by record (a set value kept as the key has it or changed as proposed; a label pending with
+`wfeval suspects`' verbs, any of the output's labels, not only the one proposed), and compares the
+lowest and highest silent error rate with the two figures. When they differ, the line gives them:
+"Ruled other ways, it could be anywhere from 42.9% (3 of 7) to 71.4% (5 of 7)" in the rulings
+fixture with `rulings-unstated.json`. Only records that went out without review count: a pending
+ruling on a record sent to a person, blocked or suppressed cannot move the rate, so it never makes
+the two figures less of a bracket. With pending removes or label replaces the line reads "made as
+proposed" instead of "added" ([below](#answer-key-suspects)); a label pending on "billing, replace
+with shipping" whose run said "account" is no bracket, as ruling it "account" clears the record.
+
 The bracket is about decisions; each figure's likely range is about chance. Both matter: in
 the fixture, the open decisions move the count by one record, and chance alone allows each
 rate a range more than 50 points wide (`test/fixtures/rulings/`).
@@ -965,6 +976,264 @@ how to say how much of an apparent improvement was the key, as the compliance re
 review did by hand ([KEY_GAPS.md](../examples/compliance-reviewer/KEY_GAPS.md)). The two keys
 must cover the same records, or it stops. Given two different runs, each change mixes the
 workflow's and the key's, and a warning says so.
+
+## Answer-key suspects
+
+Every rate here assumes the answer key is right, and a key is written by people. A run shows a key
+entry may be wrong wherever it disagrees with it, in three ways: a set value the run states that
+the key does not list (a possible key gap, as above), a set value the key lists that the run does
+not apply (the key may hold it wrongly), and a label the run gives in place of the key's. Each is a
+mistake by the workflow or by the key; only a person reading the record can tell which.
+`wfeval suspects` lists them all, ranked, so that a person with an hour rules on the likeliest key
+errors first ([CONFIG.md](CONFIG.md#rulings-on-possible-key-gaps---rulings) for the rulings,
+[READING_A_REPORT.md](READING_A_REPORT.md#in-the-terminal-answer-key-suspects-wfeval-suspects) for
+the report).
+
+**The plain rule.** A suspect ranks high when the workflow's answer would be surprising if the key
+entry were right, judged by how the workflow does on the key's other records. In the metadata
+tagger's run 70, the key lacks IND-SEMI on article B318 and the run states it at 0.85; on the 17
+other articles where the run states IND-SEMI at 0.80-0.89, the key lists it all 17 times: a strong
+suspect. In the compliance reviewer's runs 56-59, the key lacks IMPLIED_GUARANTEE on E20 and the
+runs state it at 0.55-0.65 without applying it; of codes stated about that weakly, the key listed
+0 of 3 at 0.50-0.59 and 1 of 6 at 0.70-0.79, which the tool reads, between the two, as about 15%:
+a weak one. It works with one run; with several, agreement between them counts too.
+
+**How it is worked out.** Think of two witnesses to the same event, the answer key and the
+workflow, who disagree. Who to believe depends on how often each is right in the same kind of
+situation; the key is right far more often overall, so the question is how unusual this
+particular disagreement is for the workflow.
+
+1. **The workflow's side, x.** For each disagreement, the workflow's confidence in its own side,
+   averaged over the runs that give evidence for the record: a run that does not state the value,
+   or gives another label, counts 0, so runs that agree count for more (self-consistency; Wang et
+   al. 2023). A value stated with no confidence (a rule's output, such as the compliance reviewer's
+   regex layer) counts 1. Then x falls in a bin: never, below 0.50, 0.50-0.59, ..., 0.90 or more.
+2. **The output's calibration curve.** In each bin, how often the key sides with the workflow,
+   pooled over the output's values (or labels): half a record added each way, made non-decreasing
+   by pooling adjacent bins that dip (pool adjacent violators, as in isotonic calibration; Ayer et
+   al. 1955, Zadrozny and Elkan 2002), read in a straight line between the bins' middles. A set
+   output's curve starts at the never bin, so a confidence lower than any other record's is read
+   toward "the key lists a value the workflow never states", not as the lowest bin above it. A value
+   read off the curve is an estimate, mostly between two levels, so the report gives the levels and
+   counts first, then the reading, and says why the two differ: "it listed 9 of 11 at 0.80 or more;
+   with so few records, the tool reads that as about 77%" (fewer than 20 records in the counts read,
+   where the half record each way shows), or "reading between them" when it lies between two levels.
+3. **The weight.** Every suspect's weight is the odds that its key entry is wrong, up to one factor
+   shared by all of them, if the key leaves out a share e of the values that belong and wrongly
+   lists the same share e of the values it lists (Bayes' rule: posterior odds are prior odds times
+   the likelihood ratio, how much more often the workflow answers this way when the entry is wrong
+   than when it is right). The two kinds of set entry start from different priors, so their weights
+   have different forms:
+   - *The key lacks a value*: the odds q / (1 - q), where q is how often the key lists this value on
+     the other records where the workflow states it in the same bin, shrunk toward the curve at x by
+     5 records' worth (an empirical-Bayes prior: a value seen on 2 records does not swing to 0 or
+     100%). q / (1 - q) is the likelihood ratio times the value's base-rate odds (how often the key
+     lists it, against not): an unlisted value belongs with a prior chance of its base rate times
+     e, so a common value's absence is likelier to be a gap than a rare one's.
+   - *The key lists a value*: the likelihood ratio alone, f0 / f1: how much more common the
+     workflow's answer (never stating it, or stating it in that bin) is on records whose key lacks
+     the value than on the other records whose key lists it, each share shrunk 5 records' worth
+     toward the output's share. A listed value is wrong with a prior chance of e whatever its base
+     rate, so no base-rate factor. Confidence says nothing about a value the workflow never states;
+     how rarely it misses this value does. In run 70 the key lists GEO-US on article A18 and the run
+     does not state it, where on the 156 other articles whose key lists GEO-US it stated it every
+     time: the first suspect of that run.
+   - *A label*: the odds C / (1 - C), with C the label curve at x.
+
+   The equal share e for the two kinds is an assumption nothing in the files can check, and it
+   decides how the kinds interleave. Putting both kinds on the likelihood ratio alone ("ratio alone"
+   below) was compared and kept out: it does better on one dataset and far worse on the other.
+4. **Leave-one-out.** Every count and every curve leaves the suspect's own entry out: otherwise the
+   key's own entry would vouch for itself (a label the key gives would count as agreeing). With
+   `duplicate_of_field` or `clusters` in the config, the rest of the suspect's duplicate group or
+   cluster is left out altogether too: a retelling whose key entry was copied would otherwise vouch
+   for its original (in the suspects fixture, a copy of T7 drops T7's weight from 6.66 to 3.22).
+
+Ties go to the stronger answer from the runs, then the key's record order. The report gives each
+suspect's numbers in plain words (the why line); `--json` gives them all, with the weight.
+
+<details>
+<summary>The comparison that chose the ranking, and its tables</summary>
+
+**The candidates.** `node scripts/suspects-eval.js` (seeded; about half a minute) ranks the same
+suspects nine ways. x is as above. Every ranking that reads the key's other records leaves the
+same records out as the shipped one.
+
+- **runs**: how many runs disagree with the key; ties in the records' order. The order `variance`
+  lists possible key gaps in today (trap I7).
+- **confidence**: the model's confidence on its side: its mean where it states the value or label;
+  for a value the key lists, 1 - x.
+- **CL self** and **CL margin**: confident learning (Northcutt, Jiang and Chuang 2021, "Confident
+  Learning: Estimating Uncertainty in Dataset Labels", JAIR 70:1373), each value a class of its own:
+  a disagreement counts when x reaches the value's per-class threshold, the average x on the records
+  where the key agrees; counted ones first, each group ranked by self-confidence (the model's
+  probability for the key's side, lowest first) or by the normalized margin (the key's side minus
+  the best other).
+- **average**: x alone: agreement across runs and confidence in one number.
+- **per cell**: the key's agreement measured leave-one-out, per value and bin, shrunk 5 records'
+  worth toward the output's bin: for a gap and a label q, for a listed value 1 - q.
+- **per entry**: the same evidence on the odds scale above.
+- **ratio alone**: per entry, with a gap weighed by its likelihood ratio f1 / f0 alone, as a listed
+  value is: without the value's base-rate odds.
+- **shipped**: per entry, with a gap's estimate shrunk toward the output's curve and a label read
+  from the curve alone.
+
+**Scored by** average precision (AP: 1 when every key error is above every other suspect; a random
+order scores about the share of key errors) and precision at the top 10 (the share of key errors
+among the first ten suspects a person reads). Ties are scored as their average over every order
+within the tie (McSherry and Najork 2008), so no ranking gains from the order the records happen
+to be in.
+
+**(i) Real ground truth: the compliance reviewer's 25 rulings.** On the v1 key that its run files
+carry, a person ruled on 25 possible key gaps (`examples/compliance-reviewer/rulings.json`): 9 adds
+(the key was missing them) and 16 rejects (the model's mistakes). Only those 25 are ranked; AP, then
+precision at 5 and 10:
+
+| ranking | prompt v2, one run (56-59, each) | prompt v2, runs 56-59 | prompt v1, one run (50-52, each) | prompt v1, runs 50-52 |
+|---|---|---|---|---|
+| runs | 0.44, 0.36, 0.36 | 0.44, 0.36, 0.36 | 0.46, 0.38, 0.38 | 0.51, 0.44, 0.44 |
+| confidence | 0.40, 0.20, 0.42 | 0.41, 0.20, 0.40 | 0.41, 0.18, 0.44 | 0.40, 0.20, 0.45 |
+| CL self | 0.38, 0.20, 0.38 | 0.40, 0.20, 0.40 | 0.39, 0.20, 0.41 | 0.40, 0.20, 0.40 |
+| CL margin | 0.38, 0.20, 0.38 | 0.40, 0.20, 0.40 | 0.39, 0.20, 0.41 | 0.40, 0.20, 0.40 |
+| average | 0.40, 0.20, 0.42 | 0.41, 0.20, 0.40 | 0.41, 0.18, 0.44 | 0.42, 0.20, 0.50 |
+| per cell | 0.48, 0.44, 0.45 | 0.52, 0.40, 0.50 | 0.39, 0.20, 0.44 | 0.38, 0.00, 0.40 |
+| per entry | 0.48, 0.44, 0.45 | 0.52, 0.40, 0.50 | 0.39, 0.20, 0.44 | 0.38, 0.00, 0.40 |
+| ratio alone | 0.45, 0.45, 0.37 | 0.42, 0.40, 0.20 | 0.38, 0.40, 0.27 | 0.40, 0.20, 0.40 |
+| **shipped** | **0.42, 0.18, 0.45** | **0.43, 0.20, 0.50** | **0.40, 0.20, 0.43** | **0.39, 0.20, 0.40** |
+
+A random order of 9 adds among 25 scores AP 0.44 on average, and 95% of random orders fall between
+0.28 and 0.67 (10,000 seeded orders). **No ranking does better than chance here.** Today's order
+beats the shipped ranking in all four columns (0.44-0.51 against 0.39-0.43) and scores highest of
+all in the two prompt v1 columns, within chance; the per-cell and per-entry rankings score highest
+in the prompt v2 columns (0.48 and 0.52), within chance too; the shipped ranking is below the chance
+average of 0.44 in all four. The prompt v1 runs state 21-23 of the 25
+(on average 8.3 adds in 21.7, one run at a time).
+
+**(ii) Errors put into the real 500-record keys.** In each repetition, errors are put into the
+answer key of a real 500-record golden set, at 1% or 3% of its values, and every real disagreement
+of the real runs stays as a distractor. The kinds: a value **dropped** from the key; a wrong value
+**added**, either one the model **confuses** with a value the record has (one it states wrongly on
+records whose key lists that value: the mistake a person makes too) or **any** allowed value; a value
+**swapped** for one the model confuses with it. Nobody knows the mix of a real key's errors, so three
+mixes of the four (dropped / added, confusable / added, any / swapped): a quarter each; **drop-heavy**,
+60/10/10/20, since the one real key review here found missing values only (its 9 adds); and
+**add-heavy**, 10/50/30/10. 20 seeded repetitions per cell. AP, 1% / 3%:
+
+| ranking | metadata, one run: quarters | drop-heavy | add-heavy | metadata, three runs: quarters | drop-heavy | add-heavy | compliance, one run: quarters | drop-heavy | add-heavy |
+|---|---|---|---|---|---|---|---|---|---|
+| runs | 0.14 / 0.30 | 0.13 / 0.29 | 0.14 / 0.29 | 0.21 / 0.42 | 0.20 / 0.41 | 0.21 / 0.41 | 0.03 / 0.05 | 0.02 / 0.04 | 0.02 / 0.04 |
+| confidence | 0.26 / 0.50 | 0.21 / 0.42 | 0.31 / 0.54 | 0.42 / 0.66 | 0.33 / 0.58 | 0.48 / 0.71 | 0.06 / 0.11 | 0.05 / 0.08 | 0.07 / 0.12 |
+| CL self | 0.26 / 0.50 | 0.21 / 0.42 | 0.31 / 0.54 | 0.42 / 0.67 | 0.35 / 0.59 | 0.49 / **0.72** | 0.06 / 0.11 | 0.05 / 0.08 | 0.07 / 0.12 |
+| CL margin | 0.26 / 0.50 | 0.21 / 0.42 | 0.31 / 0.54 | 0.42 / 0.67 | 0.35 / 0.59 | 0.49 / **0.72** | 0.06 / 0.11 | 0.05 / 0.08 | 0.07 / 0.12 |
+| average | 0.26 / 0.50 | 0.21 / 0.42 | 0.31 / 0.54 | 0.41 / 0.66 | 0.33 / 0.57 | 0.48 / 0.71 | 0.06 / 0.11 | 0.05 / 0.08 | 0.07 / 0.12 |
+| per cell | 0.38 / 0.57 | 0.35 / 0.49 | **0.39 / 0.57** | 0.55 / 0.73 | 0.52 / 0.68 | **0.55** / 0.71 | 0.31 / 0.42 | 0.15 / 0.24 | 0.52 / **0.60** |
+| per entry | 0.37 / 0.57 | 0.45 / 0.58 | 0.32 / 0.50 | 0.53 / 0.71 | 0.57 / 0.74 | 0.49 / 0.64 | **0.36 / 0.48** | **0.23 / 0.30** | **0.53 / 0.60** |
+| ratio alone | 0.36 / 0.52 | **0.51 / 0.64** | 0.28 / 0.42 | 0.43 / 0.58 | 0.54 / 0.69 | 0.33 / 0.48 | 0.11 / 0.17 | 0.15 / 0.21 | 0.04 / 0.11 |
+| **shipped** | **0.41 / 0.60** | 0.46 / 0.59 | 0.37 / 0.53 | **0.59 / 0.74** | **0.61 / 0.75** | **0.55** / 0.68 | 0.35 / **0.48** | **0.23 / 0.30** | **0.53 / 0.60** |
+
+Over those 18 cells, the shipped ranking is the best in 12 (ties included) and never more than 0.05
+below the best; per entry is best in 6 and at most 0.08 below; per cell is best in 4 and up to 0.16
+below (metadata, one run, drop-heavy 1%); ratio alone is best in 2 and up to 0.49 below (compliance,
+add-heavy 1%); the confidence-based rankings and today's order are best in at most 1 and up to 0.56
+below. Precision at 10, one run, quarters, 1% / 3%: runs 0.12 / 0.29, confidence 0.23 / 0.48, per
+cell 0.31 / 0.48, per entry 0.48 / 0.74, ratio alone 0.54 / 0.86, shipped 0.45 / 0.77 (metadata);
+0.01 / 0.03, 0.03 / 0.10, 0.20 / 0.53, 0.21 / 0.60, 0.11 / 0.21, 0.21 / 0.60 (compliance).
+"One run" is each of the metadata tagger's runs 70, 71 and 72 alone (one prompt version), averaged;
+"three runs" is the three together; the compliance reviewer has one run, 67. Its run states 294
+values the key lacks and misses 78 it lists, so 5 errors at 1% sit among 375 suspects. AP for each
+kind alone, metadata one run, 3%:
+
+| ranking | dropped | added, confusable | added, any | swapped |
+|---|---|---|---|---|
+| runs | 0.24 | 0.28 | 0.28 | 0.40 |
+| confidence | 0.30 | **0.56** | 0.57 | **0.59** |
+| CL self, CL margin, average | 0.30 | 0.56 | 0.57 | 0.59 |
+| per cell | 0.33 | 0.40 | **0.68** | 0.53 |
+| per entry | 0.47 | 0.32 | 0.47 | 0.55 |
+| ratio alone | **0.74** | 0.27 | 0.34 | 0.56 |
+| shipped | 0.46 | 0.33 | 0.51 | 0.56 |
+
+How many errors can be seen at all: a key error the runs agree with makes no disagreement, so no
+ranking can list it. At 1%, 86% of the errors were suspects with the quarters mix (metadata, one
+run), 80% drop-heavy and 90% add-heavy; 89% with three runs; 89% on the compliance key; a dropped
+value alone 75-80% on the metadata key (the rest the model left out too) and 90-93% on the
+compliance key; a value added at random 93-98%.
+
+**(iii) Labels, simulated.** Neither real example has a label output, so a simulated workflow
+stands in: 500 records, six labels in three pairs the model confuses, a quarter of the records hard
+(wrong 45% of the time, else 6%), a wrong answer the record's habitual one 80% of the time (so runs
+repeat their mistakes), confidences in steps of 0.05, right answers more confident than wrong ones
+with overlap; key labels changed at 1, 3 and 5%, to the confusable label or to any. 100 seeded
+worlds per cell. AP:
+
+| ranking | one run: confusable 1% / 3% / 5% | one run: any 1% / 3% / 5% | three runs: confusable | three runs: any |
+|---|---|---|---|---|
+| runs | 0.10 / 0.19 / 0.26 | 0.10 / 0.20 / 0.28 | 0.32 / 0.51 / 0.61 | 0.40 / 0.60 / 0.70 |
+| confidence | 0.38 / 0.49 / 0.57 | 0.37 / 0.46 / 0.57 | 0.21 / 0.33 / 0.41 | 0.18 / 0.32 / 0.40 |
+| CL self | 0.38 / 0.49 / 0.57 | 0.37 / 0.46 / 0.57 | 0.68 / 0.78 / 0.83 | **0.76 / 0.84 / 0.89** |
+| CL margin | 0.38 / 0.49 / 0.57 | 0.37 / 0.46 / 0.57 | 0.68 / 0.79 / 0.83 | 0.74 / 0.83 / 0.88 |
+| average | 0.38 / 0.49 / 0.57 | 0.37 / 0.46 / 0.57 | 0.68 / 0.78 / 0.83 | 0.71 / 0.78 / 0.84 |
+| per cell, per entry | 0.27 / 0.40 / 0.48 | 0.27 / 0.38 / 0.48 | 0.57 / 0.67 / 0.72 | 0.59 / 0.66 / 0.73 |
+| **shipped** (and ratio alone) | **0.38 / 0.49 / 0.57** | **0.37 / 0.46 / 0.57** | **0.68 / 0.77 / 0.82** | **0.71 / 0.78 / 0.84** |
+
+</details>
+
+What it shows:
+
+- **On the real rulings, nothing beat chance.** Today's order scored above the shipped ranking in
+  every column, and highest of all in two, within chance; the shipped ranking scored below the
+  chance average in every column. The errors in that key
+  were systematic (below), and 25 rulings cannot tell the rankings apart.
+- **On the injected errors, no ranking wins everywhere; the shipped one comes closest.** It is best
+  in 12 of the 18 mixed cells and never more than 0.05 below the best, where every other ranking
+  falls further behind somewhere. Where it is not best, it says so in the table:
+  - **Errors mostly missing values** (drop-heavy, the kind the one real review found): the shipped
+    ranking is best with three runs (0.61 / 0.75) and on the compliance key (level with per entry),
+    but on single metadata runs the likelihood ratio alone does better (0.51 against 0.46 at 1%),
+    a ranking that falls to 0.15 on the compliance key.
+  - **Errors mostly wrong values added** (add-heavy): the per-cell agreement does slightly better on
+    the metadata tagger (0.39 against 0.37 at 1%, one run; confident learning 0.72 against 0.68 at
+    3% with three runs), and level on the compliance key.
+  - **One kind alone**: a wrong value added that the model confuses (0.56 for plain confidence
+    against 0.33) or any value added (0.68 for per cell against 0.51) is ranked better by others;
+    a dropped value by the likelihood ratio alone (0.74 against 0.46).
+- **The model's confidence ranks each kind well on its own and merges them badly.** A value the key
+  lists that the workflow never states gets 1 - x = 1, so every such miss sits above every gap; on
+  the compliance reviewer, its rule layer's statements (no confidence, counted 1) fill the top.
+- **Confident learning's thresholds add nothing with one run.** The workflows state one confidence
+  per value, so for each value the question is binary, and CL's rankings come out as plain
+  confidence. With three runs on labels its self-confidence is the best ranking of all on labels
+  changed at random (0.84 against 0.78 at 3%).
+- **On labels, the curve keeps the model's own order.** Estimated label by label, the key's agreement
+  was noisier than the confidence it estimates (0.27-0.48 against 0.37-0.57 with one run), so labels
+  are read from the output's curve alone, which ranks exactly as the averaged confidence does and puts
+  labels on the same scale as values. Plain confidence (the mean only where a run gives the label)
+  falls below today's order with three runs (0.18-0.41 against 0.32-0.70).
+
+**Where it loses, and why it is kept.** The shipped ranking is not the best for every kind of key
+error, and the real mix of a key's errors is unknown. It is kept because it is never far from the
+best across both datasets, one run or three, and every mix tried, where each alternative that beats
+it somewhere falls well behind elsewhere. With several runs on labels, confident learning's
+self-confidence (how much of the runs' confidence is left for the key's label) ranked labels changed
+at random higher (0.84 against 0.78 at 3%); it is not on the common scale, so it is not shipped, and
+the gap is stated here.
+
+**What a synthetic test cannot show.** The injected errors are spread at random, one record at a
+time. Real key errors can be systematic: the compliance reviewer's v1 key left out the codes the
+model stated on its LLM-judged documents, document after document, and the model's 16 real mistakes
+were systematic too (re-coding a rule layer's code under its "implied" twin). Measured against the
+key itself, a value the key systematically leaves out looks like a value the workflow systematically
+over-states, and no ranking built from the key can tell them apart: on the real rulings above, no
+ranking beat chance. The suspects list finds the errors a run disagrees with; a person decides
+every one, and a pattern a person finds (the same code missing on every document of a kind) is a
+reason to read the rest of that kind, whatever their rank.
+
+**Routes are out of scope.** The route (`routing.field`, and a label output that is the route) is not
+a suspect: a route is decided by the workflow's rules and thresholds as much as by the model, so a
+disagreement with the key's route says more about the routing than about the key, and the routing
+types already list every such record. A wrong correct-route in the key is found by reading the
+silent errors and unnecessary reviews, and changed in the key file itself, compared with
+`compare --after-key`.
 
 ## What-if
 
@@ -1147,6 +1416,395 @@ both an unapplied finding at 0.85 or more and an applied one under 0.90, and no 
 went out without review has an applied finding. Under 2%, no policy is certified: one would need
 at least 228 records out without review, none a silent error.
 
+## A tuning half and a held-out half (`split`)
+
+A golden set that a workflow is tuned on flatters whatever was tuned on it. The compliance what-if
+table above chose and measured its policies on the same 500 documents, and its own notes say a
+fresh run should confirm them; the gate and policy certifications above warn that "policies chosen
+on the same records flatter themselves". Think of a teacher who writes the exam from the homework:
+a pupil who practised the homework scores well on it, and the mark says little about the next
+test. The fix is a sealed exam: some records set aside before tuning, used only to check.
+
+With `split` in the config ([CONFIG.md](CONFIG.md#a-tuning-half-and-a-held-out-half-split)),
+`score`, `compare` and `variance` report the **tuning half** in full, exactly as they report a run
+without a split, and nothing of the **held-out half** unless asked: `--held-out` adds its summary,
+its rates with their likely ranges, never which of its records were wrong. `whatif` chooses on the
+tuning half, and with `--held-out` checks its choice once on the held-out half. A **look** is asked
+for (`--held-out`, or `--show-held-out`, which lists the records too): ordinary tuning reads the
+tuning half and spends nothing (trap O25). Each look is counted in `split.log`, and a claim made on
+the held-out half ("shown under the target") may spend only that look's share of the 5% allowed
+for being wrong; without a log, no claim is made. `suspects` leaves the held-out records out, both
+as suspects and as evidence (traps O21-O24). The split applies to those five commands only, never
+to `monitor`, `estimate` or `agree` (trap O1).
+
+Why a look is asked for, not taken by every report: when every report with a split was a look, a
+newcomer's ordinary session (score, a what-if, a compare, a variance, a second score) used the
+first five looks. The next version had 10 silent errors in 105 held-out records: at the fifth look's
+0.156% the exact bound is 20.9%, at a first look's 2.5% it is 16.8%, so under a 20% target it would
+have been shown at a first look and was not at the fifth. Compare and variance had spent a share
+while making no claim. A look is still a look, so the arithmetic of the
+claim is unchanged; what changed is that nothing spends it by accident.
+
+### Which half a record is in
+
+A hash of one name, the record's **unit**: its cluster's value (`clusters`, read from the answer
+key), or for a duplicate its primary's unit, or else its own id. Held out when the hash, read as a
+number from 0 to 1, is under `held_out` (default 0.5). Three properties matter, and a hash has all
+three where a shuffle or a sort has none:
+
+- **The same on every machine**, every time.
+- **Stable as the golden set grows**: a record's half depends on its own name only, never on the
+  other records. Records added later never move one already there, which would put a record that
+  was tuned on into the held-out half.
+- **A salt draws a different split**, for a new golden set, or before anyone has looked at either
+  half.
+
+**SHA-256, not CRC-32.** The metadata example's hand split used CRC-32 (even tuning, odd held out),
+and `"hash": "crc32"` reproduces it exactly (`examples/metadata-enrichment/golden500/config-split.json`;
+`test/examples.test.js` pins its halves: tuning 8 of 107, 6 of 100 and 10 of 105 in runs 70-72, held
+out 5 of 92, 7 of 106 and 8 of 105). But a CRC is a linear code (Peterson and Brown 1961): for names
+of one length, a salt put in front adds the same bits to every checksum, so it can only swap the
+two halves or change nothing, never draw a new split; and names that differ by a fixed pattern
+land by that pattern. `node scripts/split-sim.js balance` (no randomness; under half a minute):
+
+<details><summary>CRC-32 against SHA-256</summary>
+
+A salt in front of the metadata set's ids, under CRC-32: records that changed half, by id length.
+
+| salt | 3-character ids (24) | 4-character ids (476) |
+|---|---|---|
+| "x" | 24 | 476 |
+| "salt1" | 24 | 476 |
+| "golden-2026" | 0 | 0 |
+| "abc:" | 0 | 476 |
+| "zz" | 24 | 0 |
+| "v2" | 0 | 476 |
+
+Duplicates split by their own id: the share of pairs whose two records land in different halves.
+Chance alone gives half.
+
+| primaries and duplicates (500 pairs) | SHA-256, 200 salts: average (least-most) | CRC-32 |
+|---|---|---|
+| duplicate of R0001 is R0501, and so on | 49.8% (43.0-55.4%) | **99.8%** |
+| duplicate of R0001 is R0001-dup | 50.2% (43.6-56.6%) | 50.4% |
+| duplicate of R0001 is R0001b | 50.0% (44.6-56.2%) | 49.8% |
+| duplicate of R0001 is R0002, R0003 of R0004, ... | 50.2% (44.6-55.8%) | 58.2% |
+
+Patterned ids, 1,000 records each: the spread of each kind's z (its held-out count against a fair
+split's, in standard deviations; 1 for a fair split). CRC-32 splits patterned kinds by its own
+pattern, mostly far more evenly than chance (0.00 to 0.20) and once less (1.12): never like chance.
+
+| ids and kinds | SHA-256 (200 salts) | CRC-32 |
+|---|---|---|
+| R0001-R1000, a kind per block of 50 | 0.97 | 0.19 |
+| R0001-R1000, kind = number mod 10 | 0.99 | 0.06 |
+| R0001-R1000, kind = number mod 16 | 0.99 | 1.12 |
+| case-1 to case-1000, kind = number mod 10 | 0.95 | 0.19 |
+| 5 clients x 200 (acme-001 ...), kind = client | 0.94 | 0.00 |
+| TKT-2026-00001 ..., a kind per block of 25 | 1.00 | 0.20 |
+
+</details>
+
+So SHA-256 is the default, and `"crc32"` is kept only to reproduce a split made that way: with a
+salt, or a share other than half, the config stops (trap O2).
+
+### Retellings stay together
+
+Two retellings of one story on both sides leak: what tuning fixed on one copy carries over to the
+other, and the held-out half looks better than it is. If tuning fixed every story it saw fail and
+nothing else, a split by record would hide 1 - h^(c-1) of the held-out errors of stories of c
+records (h the share held out): half for pairs, three quarters for stories of three, at h = 0.5
+(simulated: 50.5% and 74.8%; split by story: none). So a duplicate goes with its primary and a
+cluster stays whole. On the metadata golden set, the hand split by id put **13 of its 34
+duplicates** in the other half from their primary; in runs 68-72 none of them went out without
+review (every duplicate was suppressed or sent to a person), and 3 or 4 held-out records per run
+had a retelling in the tuning half, none a silent error, so no figure the notes report moved. A
+split by id still says how many straddle (trap O3). Each half is judged on its own records, so no
+judgment in one half reads a record of the other: split by id, a tuning primary whose duplicate is
+held out is "a real record suppressed as a duplicate" (SO-FALSE-DUPLICATE) whether or not that
+duplicate went out, where judged across the halves its type would have said which.
+
+What decides the halves is the split's settings and what makes a record's unit (`id_field`,
+`clusters`, `duplicate_of_field`): a log written for other settings stops (trap O9), and `score
+--cluster-by` is refused when the split follows clusters the config does not name (trap O4): one
+such run moved a held-out record into the tuning half and named it there.
+
+### Balance between the halves
+
+A held-out half with none of a trap type cannot speak for it, and a broken hash could put whole
+kinds of record on one side. But chance alone splits small kinds unevenly (a kind with 3 records
+falls wholly in one half a quarter of the time), so a warning must fire only on what chance alone
+would rarely produce. Each label's held-out count is compared with its exact distribution under a
+fair split, every unit held out with chance `held_out` and carrying all its records of that label;
+two-sided p, twice the smaller tail. The 5% is shared among the labels by **Tarone's modified
+Bonferroni** (Tarone 1990): a label whose smallest possible p-value cannot reach the bar is not
+counted, so tiny kinds do not dull the warning for the others. How often each rule fired on fair
+splits (SHA-256, 1,000 salts) of the owner's two golden sets, trap types and groups together:
+
+| golden set, share held out | "more than two thirds on one side" | each label at 5% | Bonferroni | **Tarone** |
+|---|---|---|---|---|
+| compliance, 50% | 4.6% | 22.8% | 2.9% | **2.9%** |
+| compliance, 30% | 99.9% | 23.3% | 2.5% | **2.5%** |
+| metadata, 50% | 63.0% | 36.8% | 2.7% | **2.7%** |
+| metadata, 30% | 100.0% | 35.0% | 4.1% | **4.1%** |
+
+Tarone's rule stays under 5% everywhere, as it must; on these sets every kind is big enough to
+count, so it equals Bonferroni, and `test/split.test.js` pins a case where it does not. A label
+with no record at all in one half is stated in the report, as a fact, whatever chance says.
+`check` prints the balance before any look, when drawing another split with a new salt is still
+free; re-drawing a split for balance before anything is looked at is sound (rerandomization;
+Morgan and Rubin 2012), changing it after is not (trap O9).
+
+### What a report shows of the held-out half
+
+Its rates (silent error rate, straight-through, silent omissions, review precision, block
+precision) with likely ranges, its safeguard failures and its silent errors' count by severity;
+never an id, in the terminal, the HTML or the JSON. Listing which held-out records failed is
+exactly what lets someone fix those records and fit the held-out half instead of the workflow; the
+reusable holdout (Dwork, Feldman, Hardt, Pitassi, Reingold and Roth 2015, *Science* 349:636) rests
+on limiting what each look reveals. So a warning or a stop about a held-out record (a stray space
+trimmed, a field missing in a policy check) counts it instead of naming it, and rulings on held-out
+records are counted, not listed (trap O6). Which words of a warning are record ids is known from
+where each was written (the code marks an id as it writes it into a problem), never found by
+searching the text, so a number in a sentence ("12 records", "rulings[7]") is never taken for a
+record whatever the ids look like; when the answer key cannot be read, the halves are unknown and
+no record is named at all. `--show-held-out` lists them anyway, for when it is worth it, and the log
+records which records it listed (below). With `--held-out` the build gates read both halves: `score
+--fail-on` counts the held-out silent errors and safeguard failures, and `compare --fail-if-worse`
+the held-out paired verdicts, by number only; without it they read the tuning half, and say so
+(trap O19).
+
+Each held-out section also says, once, that its answer key has not been checked by `suspects`,
+which leaves the held-out half out. A wrong key entry there reads as a silent error, or hides one: in
+a generated test of 300 records with 10 key mistakes planted, 6 fell in the held-out half, and a
+run's held-out silent error rate read 16.5% (18 of 109) against 12.8% (14 of 109) on the true key.
+Listing the held-out records to clean their key would spend the half. The clean way is a second
+person's labels for the held-out records, made on their own and before the first look, settled
+with `wfeval agree` ([CONFIG.md](CONFIG.md#the-held-out-halfs-answer-key)): no model output is
+involved, so nothing about how the workflow does there leaks.
+
+### Counting the looks
+
+**The plain rule.** Each look at the held-out half gets half of what the looks before it left of
+the 5% allowed for being wrong: a claim at the first look may use 2.5%, at the second 1.25%, the
+third 0.625%, and so on, so all the looks together never use more than 5%. The report says it in
+plain words: "each look at the held-out half must pass a stricter test than the one before; this
+is look 2, which may use 1.25% of the 5% allowed for being wrong". The claim is the exact
+binomial test `whatif` certifies gates with: shown when, for k silent errors among n held-out
+records out without review, P(Bin(n, target) <= k) is at most this look's share. The report shows
+that as the **exact bound** the claim rests on: the highest rate these records do not rule out at
+this look's share (Clopper and Pearson's one-sided bound); shown when it is at or under the target.
+
+**What is proven, and what is not.**
+
+- *Proven.* If no version tested was chosen using the held-out numbers (only the tuning half, and the
+  yes or no of earlier claims), the chance of any false "shown", over every look, is at most 5%: each
+  look's chance of a false "shown" is at most its share, and the shares add up to less than 5% (a
+  union bound). Up to the first "shown" the answers are all "no", so even an analyst who adapts to
+  them has nothing to adapt to.
+- *Not proven.* The reports show more than a yes or no: each look shows the held-out count, and an
+  analyst who keeps what the counts liked breaks the argument above. For that, there is only the
+  simulation below: halving held a false "shown" under 5% against every adaptive attack tried, at
+  targets of 1% to 30%, where declared budgets of 10 and 20 looks and the 1 / k^2 sequences did not.
+  That is evidence, not proof, and the reports say so.
+
+**Two different numbers.** The likely range is the usual 95% range (Wilson's), an approximation;
+the claim uses the exact bound at the look's share, which is stricter at small counts, and stricter
+again at every later look. So a likely range wholly under the target can come with "not shown": at
+a first look, 0 of 10 records has a likely range reaching 27.8%, under a 28% target, while the
+exact bound at 2.5% reaches 30.8%. The report says so on the line after, when it happens.
+
+**Too few records, or used up.** When even no silent error at all among the held-out records could
+not show the target at a first look, there are **too few records**, whatever the looks. When a
+first look could have but this look's share cannot be reached even with no silent error, the
+held-out half is **used up** for that target. Either way the report says how many records out
+without review, none a silent error, would show it at this look.
+
+**No log, no claim.** Looks that are not counted could be repeated without end: probing the
+held-out counts run after run recovered the fixture's one held-out silent error in 11 runs. So
+without `split.log` the held-out rates and ranges are shown, and no claim is made (trap O12).
+
+<details><summary>The simulation that chose the rule, and its tables</summary>
+
+`node scripts/split-sim.js looks` (seeded, about three minutes at the default 4,000 analysts per
+row). An analyst tries version after version and looks at the held-out half after each, stopping at
+the first "shown under the target". "False" is the share of analysts who ever got "shown" for a
+version whose true rate is at or above the target: the promise is at most 5%. The analysts:
+
+- **blind** (they never use the held-out numbers): versions at exactly 5%, every one looked at; or
+  drawn between 5% and 7% and looked at only when the tuning half is under 5%; 100 or 250 records
+  out in each half; versions that agree on which records are hard a little (0.3) or a lot (0.8);
+  and gates chosen by eye on the tuning half, then tried on the held-out half;
+- **adaptive** (they use the held-out counts):
+  - *hill-climb*: each look tries one change on top of the version kept so far and keeps it when the
+    held-out count fell; the changes fix and break records in balance, so the true rate never moves
+    (20 looks of larger changes, or 40 of small ones);
+  - *boosting*, Blum and Hardt's attack on a leaderboard (2015, "The Ladder: A Reliable Leaderboard
+    for Machine Learning Competitions", ICML), adapted to records: versions that each hold a random
+    half of the held-out records, kept when the held-out rate beat the first look's, then one
+    version holding the records most kept versions held;
+  - *group testing*: each look holds every held-out error found so far plus one block of records;
+    the count says how many errors the block holds, and blocks with errors are halved again, so it
+    finds the held-out errors one by one and holds them (200 looks, targets of 1% to 30%).
+  Holding records by name says nothing about the next records, so in every attack the true rate
+  stays at the target and every "shown" is false.
+- for power: versions at 6% until look L, then at 2.5% (L from 1 to 12); versions improving from
+  7.5% to 2.5%, looked at when the tuning half is under 5%; gates certified on the tuning half.
+
+The rules compared: 5% every look; a declared budget of 5, 10 or 20 looks, 5% shared equally
+(Bonferroni), nothing after the budget; the alpha-spending sequences 5% x 6 / (pi^2 k^2) and
+5% / (k (k + 1)) for look k (Lan and DeMets 1983 for spending in general); and a fixed share of what
+is left each look (two thirds, half, a third). A rule that could not show anything at all with a
+row's records (a budget of 10 looks gives 0.5% a look, below 0.95^100 = 0.59%, the chance of no
+silent error in 100 records at 5%) is not counted as holding there: those rows are counted apart.
+
+| rule | worst false "shown": blind | worst: adaptive | rows over 5% | rows where it cannot show anything | first truly-under version at look 1 | look 2 | look 3 | look 5 | look 8 | look 12 | improving, looked at when the tuning half is under | gates certified on the tuning half |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 5% every look | 48.6% | 100.0% | 23 of 26 | 0 | 100.0% | 99.2% | 98.6% | 97.4% | 95.9% | 93.0% | 83.3% | 93.9% |
+| budget of 5 looks | 2.5% | 4.0% | 0 of 26 | 0 | 71.0% | 62.1% | 54.4% | 24.4% | 0.0% | 0.0% | 7.8% | 72.9% |
+| budget of 10 looks | 4.3% | 12.5% | 4 of 21 | 5 | 87.0% | 84.2% | 82.0% | 73.1% | 53.9% | 0.0% | 34.8% | 67.3% |
+| budget of 20 looks | 2.2% | 26.9% | 5 of 21 | 5 | 82.0% | 82.2% | 78.8% | 77.6% | 71.3% | 62.0% | 27.2% | 53.9% |
+| spending 6 / (pi^2 k^2) | 2.4% | 100.0% | 9 of 26 | 0 | 70.5% | 55.9% | 44.5% | 32.5% | 22.9% | 10.7% | 9.4% | 71.5% |
+| spending 1 / (k (k + 1)) | 2.5% | 100.0% | 10 of 26 | 0 | 73.3% | 60.8% | 51.5% | 41.4% | 29.7% | 16.8% | 12.7% | 71.4% |
+| two thirds of what is left | 3.9% | 4.4% | 0 of 26 | 0 | 71.6% | 39.5% | 22.2% | 7.7% | 0.4% | 0.0% | 3.3% | 71.6% |
+| **half of what is left (shipped)** | **2.6%** | **3.6%** | **0 of 26** | **0** | **72.0%** | **57.0%** | **46.3%** | **24.0%** | **4.4%** | **0.4%** | **7.4%** | **73.7%** |
+| a third of what is left | 3.1% | 5.3% | 1 of 26 | 0 | 79.2% | 68.9% | 63.1% | 44.5% | 21.7% | 5.6% | 15.7% | 74.4% |
+
+Where each rule broke, adaptive analysts (false "shown"; "cannot" where it could show nothing):
+
+| attack | 5% every look | budget of 10 | budget of 20 | 6 / (pi^2 k^2) | 1 / (k (k + 1)) | a third | **half** |
+|---|---|---|---|---|---|---|---|
+| hill-climb, 20 looks, n 250 | 82.6% | 12.5% | 21.5% | 4.2% | 5.3% | 5.3% | **3.2%** |
+| hill-climb, small changes, 40 looks, n 1,000 | 99.4% | 6.9% | 26.9% | 24.0% | 29.4% | 4.9% | **2.7%** |
+| boosting, 16 versions then their majority, n 1,000 | 36.7% | 2.5% | 4.5% | 2.3% | 2.5% | 2.5% | **2.8%** |
+| group testing, 200 looks, target 5%, n 1,000 | 100.0% | 1.4% | 1.4% | 98.6% | 98.8% | 2.8% | **3.5%** |
+| group testing, 200 looks, target 10%, n 250 | 100.0% | 1.1% | 2.1% | 100.0% | 100.0% | 1.3% | **2.0%** |
+| group testing, 200 looks, target 30%, n 1,000 | 99.8% | 1.5% | 0.9% | 36.2% | 40.3% | 2.8% | **3.6%** |
+
+**Showing less each look.** The same adaptive attacks, with each look showing the held-out rate
+only when it beats the best shown so far by a step (one standard error; Blum and Hardt's Ladder), or
+only whether the claim was shown (yes or no, where the union bound holds against any analyst):
+
+| attack | what each look shows | looks that show a rate | 5% every look | budget of 20 | 6 / (pi^2 k^2) | **half** |
+|---|---|---|---|---|---|---|
+| hill-climb, small changes, n 1,000 | the count | 100.0% | 99.4% | 26.9% | 24.0% | **2.7%** |
+| | a new best only (Ladder) | 4.0% | 33.8% | 2.5% | 2.5% | **2.5%** |
+| | yes or no | 0.0% | 20.5% | 1.1% | 2.0% | **2.1%** |
+| boosting, n 1,000 | the count | 100.0% | 36.7% | 4.5% | 2.3% | **2.8%** |
+| | a new best only (Ladder) | 11.3% | 27.8% | 2.5% | 2.7% | **3.2%** |
+| | yes or no | 0.0% | 27.6% | 2.3% | 2.3% | **2.5%** |
+| group testing, target 5%, n 1,000 | the count | 100.0% | 100.0% | 1.4% | 98.6% | **3.5%** |
+| | a new best only (Ladder) | 9.5% | 10.9% | 0.8% | 2.5% | **3.0%** |
+| | yes or no | 0.0% | 10.1% | 0.6% | 2.1% | **2.5%** |
+
+**Thresholdout** (Dwork et al. 2015) answers with the tuning half's rate unless the held-out half's
+differs by more than a noisy threshold. Its answers are accurate to about 4 / sqrt(n) (the paper's
+threshold, 4 sigma with sigma = 1 / sqrt(n)): 40.0% at 100 records out, 25.3% at 250, 12.6% at 1,000,
+wider than a 5% target until about 6,400 records. A claim that allowed for that accuracy could never
+show a rate under 5% at the sizes a golden set has, so it was not simulated as a claim.
+
+</details>
+
+What the tables show, and why halving:
+
+- **A claim at 5% every look is not a claim.** Looking after every version, up to 48.6% of analysts
+  whose versions were all at 5% got "shown under 5%"; adapting to the counts, up to 100%.
+- **Adding up to 5% is only proof when the looks reveal nothing to adapt to.** Every rule held
+  against blind analysts. Against adaptive ones, declared budgets of 10 and 20 looks broke under
+  hill-climbing (12.5% and 26.9%), and the 1 / k^2 spending sequences broke under group testing
+  (up to 100%): their late looks still allow enough to show a version fitted to the held-out records.
+  Halving held everywhere (at most 3.6%), because each look's share falls faster than any attack
+  tried could fit the half; two thirds of what is left and a budget of 5 looks held too.
+- **Of the rules that held, halving shows a truly-under version about as often as any,** without a
+  budget declared up front or a dead stop after it: 72.0% when it comes at look 1 (a budget of 5:
+  71.0%; two thirds: 71.6%), 57.0% at look 2 (62.1%; 39.5%), 46.3% at look 3 (54.4%; 22.2%), and
+  still a little at look 8 (4.4%, where a budget of 5 can show nothing). Its price is late looks:
+  a climb of 20 changes that each truly help a little was shown 19.7% of the time (a budget of 20
+  looks: 91.5%, but that rule broke under hill-climbing).
+- **Showing less each look buys little here.** A Ladder release or a yes-or-no-only release brought
+  the uncorrected rule down (to 10.1-33.8%) and gave the corrected ones the proof, but halving was
+  already under 5% in every attack, and the held-out rates would show on only 4-11% of looks (Ladder)
+  or none (yes or no). For someone who wants to see the held-out half's rates, showing them every
+  look with halving is the better trade; the proof covers analysts who choose versions without them,
+  and the simulation, not a proof, covers the rest.
+
+**The same look again.** A look is the command, the fingerprints of its files (predictions, answer
+key, rulings, policies), the fingerprint of the loaded config (every setting, after `--group-by` and
+`--cluster-by`), the mode (strict or `--lenient`) and, for `whatif`, its options. Shown again
+unchanged, it reveals nothing new, so it is "look N again" and spends nothing (trap O8). Any other
+look (`--held-out` or `--show-held-out`) is a new look, whether or not it makes a claim: an edited
+config that turned a held-out silent error right was a new look, not "look 1 again".
+
+**Looks count per record.** Each look keeps the held-out records it was at. A claim's look number
+is the number of looks that were at any of its records: a look on an older version of the key,
+before records were added, is no look at the records added since. In the newcomer's test, records
+added later were charged a look made on the old key that never had them; now they are not.
+
+**Records listed.** A look with `--show-held-out` lists held-out records, and the log keeps which:
+`score`, `compare`, `variance` and `whatif` list the whole half, `suspects` the held-out suspects it
+shows (`--top`'s, or all with `--json`). From then on, a claim on any record it listed spends
+nothing, anything fixed since could be fitted to exactly them; a claim on records it never showed
+is untouched (trap O13). In the newcomer's test, a `suspects --show-held-out` on the old 300-record
+key had voided the claim on the 37 held-out records added after it, which it never listed.
+
+**Fresh records.** Records added to the golden set later have had no look. The log keeps each
+held-out record's first look, so when the held-out half holds records first shown at a later look
+than its oldest, the newest batch gets a claim of its own, counted over the looks that were at
+them: its own 5% (trap O14). That is what "add fresh records" means when a held-out half is used up. Each batch is a
+new claim; adding a few records at every look to get a fresh 2.5% each time is the peeking this
+section exists to stop, in another form.
+
+**Records that change half.** The log keeps the look at which each record was first seen in each
+half. A record in the other half now, either way, stops a strict run: one tuned on would flatter the
+held-out half, and one held out, now shown in the tuning half, would reveal what it held. With
+`--lenient` it is set aside, in neither half, listed under `moved` in the log, never written as held
+out and never counted as fresh (trap O10). Runs at the same time take turns through a lock file
+beside the log (trap O17): ten runs at once had recorded only 6 to 9 looks before it.
+
+### `whatif`: chosen on the tuning half, checked on the held-out half
+
+With a split, the gate sweep, the policies and their certification are the tuning half's alone.
+With `--target`, the loosest gate or policy certified there is the choice. Without `--held-out` the
+report names it and says how to check it (the next look's number and share); with `--held-out` it is
+tried once on the held-out half: one look, one claim at that look's share (when looks are counted).
+When it is not shown there, the report says which of these it is:
+
+- **the held-out half disagrees**: the held-out rate is at or above the target (or its whole likely
+  range is);
+- **not confirmed: the tuning half flattered it**: the rate it was certified at on the tuning half
+  sits below the held-out half's whole likely range. In the newcomer's test a policy certified at
+  4.3% (2 of 46) ran at 17.9% (10 of 56) on the held-out half, under a 20% target; the report had
+  called that "too few held-out records", which it was not;
+- **too few records**: even no silent error at all among them could not show it, at a first look;
+- otherwise **not confirmed at this look**, which is not evidence against the choice.
+
+Without `--target` nothing is chosen, and nothing of the held-out half is shown (trap O16).
+
+On the compliance golden set split in halves (`examples/compliance-reviewer/config-split.json`, 230
+documents tuning, 270 held out; `test/examples.test.js` pins it), as a demonstration of the
+mechanics, not evidence:
+
+```
+node bin/wfeval.js whatif --config examples/compliance-reviewer/config-split.json \
+  --pred examples/compliance-reviewer/golden500/exec-67.harness.json \
+  --key examples/compliance-reviewer/golden500/exec-67.harness.json \
+  --policies examples/compliance-reviewer/policies.json --target 5 --held-out
+```
+
+On the tuning half, "Both" gives 2 silent errors in 108 and is not certified under 5% (on all 500
+it gave 3 in 234 and was); only "Every note goes to a person" is, 0 in 95. Its held-out numbers are
+0 in 116. No claim is made on them: the policies were chosen on all 500 documents before the split
+existed, so the held-out half has been looked at already, and the example keeps no log rather than
+count a first look that is not one. Confirming a policy needs records that played no part in
+choosing it: a fresh run, or records added to the golden set later.
+
+**What it does not cover.** The held-out half is a golden set's too: a stress-test rate, for
+records like these. Its claim is as strong as the record of looks, and the tool only sees the looks
+it is shown (a held-out number copied by hand from an old report is a look the log never saw).
+`compare`'s held-out verdicts and `variance`'s worst held-out run are looks and are counted, but
+are not adjusted for looks themselves: only "shown under the target" is. The evidence for adaptive
+analysts covers the attacks simulated, not every analyst.
+
 ## Live samples over time (`wfeval monitor`)
 
 After launch, a person checks a sample of the records that went out without review every week
@@ -1154,7 +1812,10 @@ or month. Each period's rate alone is noisy: 3 silent errors in 30 records is 10
 3.5-25.6%: one period alone cannot tell a bad week from a worse workflow. `wfeval monitor` reads the periods in time
 order and answers two questions, each with its own method, chosen by simulation
 (`node scripts/monitor-sim.js`, seeded: it prints the same tables every time, in under a
-minute; every figure below comes from it). Rates in this section are of records out without review.
+minute; every figure below comes from it). Rates in this section are of records out without review
+(and, under [Silent omissions over time](#silent-omissions-over-time---watch-silent-omissions), of
+records blocked or suppressed; its figures, and those of [Each segment](#each-segment---segment-by),
+come from `node scripts/monitor-segments-sim.js`).
 
 ### Has the silent error rate gone up? (the alarm)
 
@@ -1394,3 +2055,356 @@ review in that period, checked by a person against the answer the workflow shoul
 scorecard of real traffic, not a golden set built from traps), scored the same way every period
 (trap L6). Every record checked counts the same: a period in which a bigger share of the records
 was checked counts for more than its share of the traffic (trap L7).
+
+### Silent omissions over time (`--watch silent-omissions`)
+
+The alarm and the bound above read only the records that went out without review. A workflow that
+wrongly blocks or suppresses records looks perfect to them, and a record wrongly left out reaches
+nobody, so nobody complains. `--watch silent-omissions` runs the same two methods on the records
+the workflow blocked or suppressed that a person checked: the base is those records, and the rate
+the share of them **wrongly left out**, each judged as `score` judges a silent omission (the answer
+key says the record should have gone out or to a person;
+[SILENT_ERRORS.md](SILENT_ERRORS.md#family-2-silent-omissions)). In the segments fixture's run
+files, 4 of the 9 records blocked or suppressed should have gone out or to a person; the silent
+error rate shows none of them.
+
+**Not score's silent omission rate.** Both count the same records as wrong; they divide by
+different ones. Score's silent omission rate is "of the records that should have gone out or to a
+person, the share left out unseen": its base is the records that should have been seen, which a
+golden set knows and a sample of live traffic does not. Monitor's is "of the records left out, the
+share that should not have been": its base is the records blocked or suppressed, which is what a
+person checking a sample of them can count. In the segments fixture's W40, score gives 1 of 6
+(16.7%) and monitor 1 of 3 (33.3%). So the report names it differently ("wrongly left out"), and
+when it suggests where to measure the acceptable rate before launch, it points to monitor itself:
+`--watch silent-omissions` on the golden-set run file, as a single period, gives the matching
+share. (On a golden set built from traps, that is a stress-test share, as with the silent error
+rate.) With the key in a file of its own, that run needs `--keys`: a folder holding the key under
+the run file's name (trap L35). And with a split in the config, the golden-set file holds both
+halves: monitor ignores the split and says so, and reading the share there would be an uncounted
+look at the held-out half (trap L34). The tuning half's figures come from `score` instead, which
+keeps the halves apart: its silent omissions over the records it blocked or suppressed (CONFIG.md
+says where). For the same reason, the single test of fixed size the omission report compares with
+is `rate --target` (any count), not `score --target` (the silent error rate only).
+
+**One series a report.** The two rates sit on different scales (the share of the left-out records
+left out wrongly need not be anywhere near the silent error rate), so each needs its own target,
+acceptable and alarming rate. Both in one report would need a second copy of every setting, and a
+label on every number saying which rate it belongs to; a reader who mixed them up would read one
+rate's alarm as the other's. So a report watches one series, the settings on the command line are
+that series', and `--fail-on-alarm` is that series' alarm. A scheduled job runs two commands.
+
+**Do the methods hold for this series?** Two things differ from the records out without review
+(`node scripts/monitor-segments-sim.js omissions`):
+
+- **Few records a period, wrong more often.** A person may check only 1 to 10 blocked records a
+  week, and their rate can be 5% to 20%. The CUSUM's chain is exact for any period size, and the
+  bound is built record by record, so neither assumes many records. Checked: the chain against
+  20,000 simulated runs of the detector, at 1, 3, 5 and 10 records a period and acceptable rates of
+  5%, 10% and 20% (alarming double), was off by 1.1% at most in all 24 cells. The bound's chance of
+  ever showing "under the target" when the true rate is exactly the target, over 104 periods (4,000
+  runs): 1.1% to 3.4% at targets of 5%, 10% and 20%, under its 5% in every cell.
+- **The false-alarm unit is this series' records.** `--false-alarm-every` counts the records
+  blocked or suppressed that were checked, so at a few a week the default 2,000 is years: from the
+  chain, at 10% to 20% and 5 records a week, one false alarm per 401 weeks, and a rise to double
+  flagged after 15.6 weeks. Set it for this series' size: 500 gives one false alarm per 101 weeks
+  and flags a doubling in 10.1; 250, one per 51 weeks and 7.7. The report's TUNED TO line gives both
+  in periods.
+
+<details><summary>Periods to flag a rise from 10% to 20%, by records a period and setting</summary>
+
+| records a period | --false-alarm-every | periods per false alarm | periods to flag 20% |
+|---|---|---|---|
+| 3 | 250 | 88 | 12.8 |
+| 3 | 2,000 | 690 | 26.0 |
+| 5 | 250 | 51 | 7.7 |
+| 5 | 500 | 101 | 10.1 |
+| 5 | 2,000 | 401 | 15.6 |
+| 10 | 500 | 59 | 5.4 |
+| 10 | 2,000 | 223 | 8.1 |
+
+</details>
+
+**What it rests on**, besides the above: the records checked are a random sample of the period's
+records left out, and the answer key gives each one's correct route (`routing.gold_field`). Without
+a correct route, nothing says a suppressed record was not a duplicate; only a blocked record whose
+label was declined can still be judged (SO-DECLINED), and the base is then those records (trap L20).
+
+### Each segment (`--segment-by`)
+
+One monitor over all traffic can hide a rise confined to one channel or one customer. In the
+segments fixture, chat's silent error rate rises from W39 while email's stays at 0: the whole's
+CUSUM ends at 62% of its alarm level, chat's at 124%. `--segment-by` gives each segment its own
+CUSUM and bound, beside the whole's. Three questions follow, each answered by a seeded simulation
+(`node scripts/monitor-segments-sim.js alarms`, `bounds`, `whole`, `late` and `overlap`; the whole
+script takes about 22 minutes): what does the false-alarm setting promise once there are several
+alarms, what does "shown under the target" promise for the whole and several segments at once, and
+what happens when a segment first appears in a later period?
+
+**The alarms.** Each segment's alarm level is set as the whole's is: per records checked, for the
+median size of its own periods. False alarms then come per record checked, so the segments together
+should false-alarm about as often per record as the whole alone. Simulated with every segment's
+size drawn at random each period around its share (2.5% to 5%, 300 runs of 600 periods, each
+detector restarted after its alarm):
+
+<details><summary>Records checked per false alarm, at 2.5% everywhere</summary>
+
+| segments | each detector set for | segments together | the whole alone | the whole and the segments | first false alarm anywhere |
+|---|---|---|---|---|---|
+| 5 equal, 50 a period | 2,000 | 2,041 | 2,266 | 1,074 | 1,543 |
+| 5 equal, 50 a period | 4,000 | 4,414 | 4,169 | 2,144 | 2,979 |
+| uneven: 50/25/12.5/12.5%, 40 a period | 2,000 | 2,074 | 2,142 | 1,054 | 1,391 |
+| uneven: 50/25/12.5/12.5%, 40 a period | 4,000 | 4,380 | 4,358 | 2,184 | 2,759 |
+| 10 segments, 2 to 10 a period | 2,000 | 2,081 | 2,247 | 1,080 | 1,617 |
+| 10 segments, 2 to 10 a period | 4,000 | 4,371 | 4,111 | 2,119 | 2,970 |
+| small: 30 a period, one of 88% and three of 4% | 2,000 | 2,133 | 2,074 | 1,051 | 1,821 |
+| small: 30 a period, one of 88% and three of 4% | 4,000 | 4,222 | 4,110 | 2,083 | 3,361 |
+
+</details>
+
+So per record checked, the segments together keep the promise (2,041 to 2,133 records per false
+alarm, set for 2,000), uneven and small segments included. But a person reading the report every
+week sees the whole's alarm and every segment's, and `--fail-on-alarm` stops on any of them: set
+that way, the report false-alarmed about twice as often as asked (once per 1,051 to 1,080 records
+checked), its first false alarm after 1,391 to 1,821 records. That is the wrong promise for a weekly
+reader, so `--false-alarm-every` covers the report as one: the whole and every segment are each set
+for twice the records asked (half the budget for the whole, half for the segments, whose false
+alarms add up). The report in all then false-alarmed once per 2,083 to 2,184 records checked, its
+first after 2,759 to 3,361 (trap L28). This is how schemes that watch many streams at once are
+usually set: by the false alarms of the scheme as a whole, not each stream's (Mei 2010, Biometrika
+97(2), 419-433). With one segment with records, and no record in two, the segment is the whole:
+there is nothing to share, and the alarms keep the budget asked. The report gives the whole's alarm
+level and time to flag both ways ("Alarm level 200 steps (152 without --segment-by)", "about 281
+records (219 without segments)" in the segments fixture), and says so when the whole alone would
+have alarmed and, sharing the budget, has not.
+
+The price is time to flag: each alarm is set for fewer false alarms. A rise to 5% in one segment
+only (the smallest, from period 10; 2,000 runs) was flagged after 644 to 1,481 records checked in
+all with every detector set for 2,000, against 924 to 2,602 when set for 4,000; a rise in every
+segment after 187 to 198, against 243 to 253. Lower `--false-alarm-every` for quicker flags,
+knowing what it then means.
+
+**The bounds.** Each segment's bound alone keeps its 5%, but with several the chance that some
+segment at or above the target is ever shown under it grows: at a true 5% in every segment of 20
+records a period, 5.9% with 2 segments, 14.9% with 5 and 25.5% with 10 (trap L24). Picking the
+best-looking of many segments ("customer X is under 5%") is where luck passes for a result. Every
+method below uses the bound's own evidence E for each segment, an e-value (with the rate at the
+target, its average is at most 1, at any time), and was checked after every period for 104 periods
+(2,000 runs; `node scripts/monitor-segments-sim.js bounds`):
+
+- **per segment**, each at 5%: no correction;
+- **Bonferroni** at 5% / S for S segments, which on this bound is the same rule as
+  **e-Bonferroni**, E >= S / 5% (Vovk & Wang 2021);
+- **Holm's** step-down (Holm 1979) on the anytime p-values 1 / E;
+- **closed testing** (Marcus, Peritz & Gabriel 1976) on the arithmetic mean of the e-values (Vovk &
+  Wang 2021, Annals of Statistics 49(3), 1736-1754; section 5, Algorithm 1): a segment is shown
+  when every set of segments that includes it averages E of 20 or more. The average of e-values is
+  an e-value whatever their dependence, so if several segments were at or above the target, their
+  average would have to reach 20, which happens at most 5% of the time, however often it is looked
+  at (Ville 1939). The hardest sets add the segments whose E is under 20, so a segment's bar comes
+  to 20 plus each other segment's shortfall below 20;
+- **e-BH** (Wang & Ramdas 2022), which keeps the share of wrong "shown" among those shown (the
+  false discovery rate) under 5%, a weaker promise than "none wrong".
+
+<details><summary>The bounds compared (20 records a period in each segment)</summary>
+
+| segments | true rates | method | any wrong "shown" | segments under 5% shown by week 52 | median records to "shown" |
+|---|---|---|---|---|---|
+| 5 | all at 5% | per segment | 14.9% | | |
+| 5 | all at 5% | Bonferroni, Holm, closed testing, e-BH | 3.3% | | |
+| 5 | half at 5%, half at 2.5% | per segment | 8.4% | 94.8% | 420 |
+| 5 | half at 5%, half at 2.5% | Bonferroni | 2.0% | 84.0% | 620 |
+| 5 | half at 5%, half at 2.5% | Holm | 2.3% | 85.9% | 620 |
+| 5 | half at 5%, half at 2.5% | closed testing (shipped) | 2.6% | 86.7% | 600 |
+| 5 | half at 5%, half at 2.5% | e-BH | 4.0% | 88.5% | 560 |
+| 5 | all at 2.5% | Bonferroni | | 83.5% | 620 |
+| 5 | all at 2.5% | Holm | | 91.7% | 560 |
+| 5 | all at 2.5% | closed testing (shipped) | | 93.2% | 520 |
+| 5 | all at 2.5% | e-BH | | 93.7% | 500 |
+| 10 | all at 5% | per segment | 25.5% | | |
+| 10 | all at 5% | Bonferroni, Holm, e-BH | 2.0% | | |
+| 10 | all at 5% | closed testing (shipped) | 2.1% | | |
+| 10 | one at 5%, the rest at 2.5% | Bonferroni | 0.1% | 77.3% | 740 |
+| 10 | one at 5%, the rest at 2.5% | Holm | 0.6% | 86.0% | 680 |
+| 10 | one at 5%, the rest at 2.5% | closed testing (shipped) | 1.2% | 89.0% | 600 |
+| 10 | one at 5%, the rest at 2.5% | e-BH | 1.6% | 92.9% | 540 |
+| 10 | all at 2.5% | Bonferroni | | 77.1% | 740 |
+| 10 | all at 2.5% | Holm | | 88.2% | 660 |
+| 10 | all at 2.5% | closed testing (shipped) | | 91.7% | 580 |
+| 10 | all at 2.5% | e-BH | | 93.3% | 520 |
+
+</details>
+
+Every method but "per segment" kept the chance of any wrong "shown" under 5% in every setting of
+the script (equal and uneven segments, 2, 5 and 10 of them, five mixes of rates). Of the ones that
+promise none wrong, closed testing showed the segments truly under the target as soon as
+Bonferroni and Holm or sooner in every setting: with 10 segments at 2.5%, 91.7% of them by week
+52, against 77.1% for Bonferroni and 88.2% for Holm (a median of 580 records, against 740 and 660).
+e-BH was quicker still, but promises only the share among those shown, and its chance of any wrong
+"shown" was the highest of the corrected methods (4.0% with half the segments at the target). So
+the segments are counted by closed testing.
+
+**The whole joins the family.** The whole's "shown" is a claim in the same report, so it is counted
+with the segments' rather than given a 5% of its own (which would let the report's claims together
+be wrong up to 10% of the time, trap L32). Four ways were compared on the same evidence, the whole
+being the segments added up (`node scripts/monitor-segments-sim.js whole`; 2,000 runs, 104 periods,
+5 or 10 segments of 20 records a period, or one of 40 and the rest of 10):
+
+- **apart**: the whole at 5% on its own, the segments' closed test at 5% (up to 10% in all);
+- **equal weight**: the whole as one more member of the segments' closed test;
+- **split**: the whole at 2.5% (a bar of 40), the segments' closed test at 2.5%;
+- **weighted** (shipped): closed testing on a weighted average of the evidence, the whole weighted
+  1/2 and the segments sharing the other 1/2 equally. A weighted average of e-values, with weights
+  fixed in advance, is an e-value too (Vovk & Wang 2021), so the same argument holds: one 5% for
+  every "shown" in the report.
+
+<details><summary>Where the whole goes</summary>
+
+| segments | true rates (the whole) | way | any wrong "shown" | the whole: median records to "shown" | segments under 5% shown by week 52 | their median records |
+|---|---|---|---|---|---|---|
+| 10 of 20 a period | all at 5% (5%) | apart | 4.8% | | | |
+| | | equal weight | 3.1% | | | |
+| | | split | 2.8% | | | |
+| | | weighted (shipped) | 2.8% | | | |
+| 10 of 20 a period | half at 5%, half at 2.5% (3.75%) | apart | 2.0% | 2,200 | 82.3% | 660 |
+| | | equal weight | 2.0% | 3,600 | 82.3% | 660 |
+| | | split | 1.1% | 2,600 | 75.2% | 760 |
+| | | weighted (shipped) | 2.0% | 2,600 | 82.3% | 680 |
+| 10 of 20 a period | all at 2.5% | apart | | 600 | 91.4% | 580 |
+| | | equal weight | | 800 | 91.4% | 580 |
+| | | split | | 600 | 85.6% | 680 |
+| | | weighted (shipped) | | 600 | 91.4% | 580 |
+| 10 of 20 a period | all at 4% | apart | | 3,400 | | |
+| | | equal weight | | 5,800 | | |
+| | | split | | 4,400 | | |
+| | | weighted (shipped) | | 4,200 | | |
+| 40, then 4 of 10 | one at 8%, the rest at 2.5% (5.25%) | apart | 0.6% | | 47.4% | 540 |
+| | | equal weight | 0.2% | | 43.6% | 580 |
+| | | split | 0.5% | | 35.3% | 650 |
+| | | weighted (shipped) | 0.5% | | 33.5% | 680 |
+
+</details>
+
+The whole apart is the quickest, but its promise is two 5%s: the chance of any wrong "shown"
+reached 4.8% with 10 segments at the target, and nothing holds it under 5%. The three that keep
+one 5% stayed at 3.1% (equal weight), 2.8% (split) and 2.8% (weighted) at most, in all 24 settings.
+Of those, the weighted test showed the whole as soon as the split or sooner in every setting, and
+far sooner than equal weight (2,600 records against 3,600 with half the segments at the target;
+4,200 against 5,800 with all at 4%). Against the whole kept apart, it needed 0% to 25% more records
+before the whole was shown: none more when every segment's evidence was strong (600 either way with
+all at 2.5%), 25% at most (1,000 against 800 with one of ten segments at 8%; 650 against 520 with
+uneven segments all at 2.5%). The segments were shown as soon as with the whole apart when the
+whole's evidence was strong, and later when it was weak: with one segment of five at 8% and the
+whole above the target, 33.5% of the others by week 52 against 47.4% (a median of 680 records
+against 540). Against the split, the weighted test showed segments as soon or sooner in all but two
+of the 24 settings (8.3% against 8.4%, and 33.5% against 35.3%, by week 52). So the whole joins the
+segments in one weighted closed test (trap L32). Its price, then: the whole's bar is 20 to 40
+rather than 20, and a segment's rises by the number of segments times the whole's shortfall.
+
+In plain words, with a member's **shortfall** the amount its evidence falls short of 20 (0 when it
+is 20 or more):
+
+- the **whole's bar** is 20 plus the segments' average shortfall: 20 when every segment's evidence
+  is strong, 40 at most;
+- a **segment's bar** is 20, plus each other segment's shortfall, plus the number of segments times
+  the whole's shortfall: 20 when the others' evidence is strong, up to 40 for each segment when none
+  has any.
+
+Each member's **upper bound** is the rate its bar rules out (the lowest rate at which its E reaches
+the bar), so "shown" and "upper bound under the target" always agree. `test/monitor.test.js` checks
+both bars against every set of members that includes them, for 2,000 random families, and checks
+that with the whole left out and equal weights the bar is 20 plus the others' shortfalls.
+
+**An upper bound holds for its own segment.** In the same simulation (the weighted test), a given segment's upper bound was ever
+below its true rate in at most 2.0% of runs (the worst segment of each of the 24 settings), under 5%
+as for one series. But the chance that SOME segment's bound was ever below its own true rate reached
+13.5% (ten segments, all at 2.5%): the bounds do not hold together, and the lowest of several is the
+one most likely to be luck. So the report says, beside the
+bounds, that each holds for that segment on its own, and that only "shown" is counted across
+segments: the lowest of several upper bounds is not a result (trap L33).
+
+**Small segments.** The bar needs records. With no silent error at all, the records needed before a
+member can be shown (`node scripts/monitor-segments-sim.js small`):
+
+| target | bar 20 (one series, or any member when the others' evidence is strong) | the whole at most (bar 40) | a segment at most, 2 segments (80) | 5 (200) | 10 (400) | 20 (800) |
+|---|---|---|---|---|---|---|
+| 2% | 224 | 266 | 307 | 361 | 400 | 439 |
+| 5% | 88 | 105 | 121 | 142 | 158 | 173 |
+| 10% | 43 | 51 | 59 | 69 | 77 | 84 |
+
+A segment with fewer records than its own bar needs, even with none wrong, shows "too few: N needed"
+instead of an upper bound, which would be noise (trap L25). Its rate and likely range are still
+shown, and its alarm still runs: set per its own records, a small segment's alarm is as calibrated
+as a big one's, it only needs more periods.
+
+**Segments that first appear later: name them in advance.** Closed testing keeps its 5% for a family
+fixed in advance. A segment with no records yet adds E = 1 (no evidence), so when one first appears
+in a later period, the bars of every earlier period change (a segment's always rise, the whole's
+usually do), and a "shown" printed then can be taken back (in the tests: the whole's W42, shown with email alone, is taken back once phone arrives in
+W43). Leaving a segment out until it appears does not fix it: an average over a set that grows is
+no longer one bet. In the simulation (`node scripts/monitor-segments-sim.js late`: every segment at 5% or
+under, 20 records a week each, a report run every week on the weeks so far, 2,000 runs), the reports
+using the family seen so far printed a wrong "shown" somewhere in 1.8% to 3.85% of runs, against
+0.95% to 1.9% with the family named in advance: about twice as often, still under 5% here, but only
+thanks to the bound's slack, not by any proof. And in up to 2.85% of runs a "shown" printed one
+week was taken back once the later segments came. So `--segments chat,email,phone` names the family before the first
+period: those segments, "(other)" for every value not named (pooled, and listed in the report), and
+"(none)", all from the start, whatever comes. Then what is printed is valid and never changes.
+Without `--segments`, the family is the segments in the periods given, and the report marks every
+"shown" as provisional (trap L31). Decide the list before the first period: a list changed after
+seeing the numbers is chosen by them.
+
+<details><summary>Segments that first appear later</summary>
+
+| segments | wrong "shown" ever printed, family seen so far | named in advance | a printed "shown" taken back |
+|---|---|---|---|
+| 2 at 5%: A from week 1, B from week 27 | 3.7% | 1.75% | 2.35% |
+| 2 at 5%: A from week 1, B from week 9 | 3.05% | 1.8% | 0.95% |
+| 5 at 5%: A from week 1, 4 from week 53 | 3.85% | 1.9% | 2.85% |
+| 10 at 5%, one more every 5 weeks | 3.05% | 1.85% | 1.7% |
+| 10 at 5%, one more every week | 1.8% | 1.7% | 0.05% |
+| A at 5% from week 1, 4 at 2.5% from week 13 | 2.4% | 0.95% | 1.3% |
+
+</details>
+
+**Segments that overlap.** A record in several segments counts in each (trap L22); the average of
+e-values holds whatever their dependence, so overlap does not break the bound. The alarms are another
+matter: each is set per record checked, so the segments together false-alarm as often as their
+memberships, and with overlap those are more than the records. So each segment's alarm is set for
+the shared budget times the memberships per record so far (rounded up to a twentieth), and the
+segments together keep their half of `--false-alarm-every` (trap L36). With no record in two segments
+the ratio is 1, and nothing changes. Simulated (`node scripts/monitor-segments-sim.js overlap`: 2.5%
+to 5%, the whole set for 4,000; a share of the records also in a second segment at random; 300 runs
+of 600 periods for the false alarms, 2,000 runs for a rise to 5% in one segment's own records from
+period 10):
+
+<details><summary>Segments that overlap</summary>
+
+| segments | in two segments | each segment set for | records per false alarm in all | records to flag the rise |
+|---|---|---|---|---|
+| 5 equal, 50 a period | none | 4,000 | 2,094 | 900 |
+| 5 equal, 50 a period | 10% | 4,000 | 1,879 | 922 |
+| 5 equal, 50 a period | 10% | 4,000 x memberships per record | 2,051 | 949 |
+| 5 equal, 50 a period | 30% | 4,000 | 1,709 | 920 |
+| 5 equal, 50 a period | 30% | 4,000 x memberships per record | 2,012 | 976 |
+| 5 equal, 50 a period | 60% | 4,000 | 1,562 | 993 |
+| 5 equal, 50 a period | 60% | 4,000 x memberships per record | 2,069 | 1,090 |
+| uneven: 50/25/12.5/12.5%, 40 a period | none | 4,000 | 2,161 | 1,293 |
+| uneven | 10% | 4,000 | 1,975 | 1,337 |
+| uneven | 10% | 4,000 x memberships per record | 2,143 | 1,367 |
+| uneven | 30% | 4,000 | 1,787 | 1,360 |
+| uneven | 30% | 4,000 x memberships per record | 2,036 | 1,432 |
+| uneven | 60% | 4,000 | 1,669 | 1,479 |
+| uneven | 60% | 4,000 x memberships per record | 2,002 | 1,648 |
+
+</details>
+
+Without the correction, the report false-alarmed more often than asked as the overlap grew (once per
+1,562 to 1,975 records checked, against 2,000); with it, within the budget in every setting (2,002
+to 2,143). The price is a little time: a rise in one segment was flagged after 2% to 11% more records
+(1,090 against 993 with 60% of the records in two segments; 1,648 against 1,479 with uneven ones).
+Each row's level uses the memberships of the periods up to it, so a status once printed does not
+change (trap L14). The report says what each segment's alarm is set for when it applies.
+
+**What it rests on**, besides the above: within each segment, the records checked are a random
+sample of that segment's records in the period. A segment checked more heavily than its share
+counts for more than its share in the whole (trap L7).

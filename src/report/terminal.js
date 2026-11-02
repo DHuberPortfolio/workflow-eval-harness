@@ -6,11 +6,25 @@ const {
   groupSource, GROUP_RANGES, severalLabels, rulingsWords, pendingLine, rulingStatus, clusterLine, CLUSTER_GROUP_NOTE, CLUSTER_TARGET_NOTE, mixLines, thousands,
 } = require('./format.js');
 const { withKeyLabels } = require('./format.js');
+// The tuning half and the held-out half (config.split): its own module, hooked in below.
+const SPLIT = require('./split.js');
 
-// "RULINGS  1 value added to the answer key by rulings in ...", and the rest indented (trap I11).
+// Words wrapped to 100 columns, every line indented; a word longer than that (a long path) stays whole.
+function wrapWords(text, indent) {
+  const lines = [];
+  let line = '';
+  for (const word of text.split(' ')) {
+    if (line && (indent + line + ' ' + word).length > 100) { lines.push(indent + line); line = word; } else line = line ? line + ' ' + word : word;
+  }
+  if (line) lines.push(indent + line);
+  return lines.join('\n');
+}
+
+// "RULINGS  1 value added to the answer key by rulings in ...", and the rest indented (trap I11),
+// wrapped to 100 columns.
 function rulingsSection(r, against = '') {
   const [first, ...rest] = rulingsWords(r, against);
-  return ['RULINGS  ' + first, ...rest.map(l => '  ' + l)].join('\n');
+  return [wrapWords('RULINGS  ' + first, '  ').slice(2), ...rest.map(l => wrapWords(l, '  '))].join('\n');
 }
 
 // Possible key gaps from this one run (results.key_gaps; trap I16). At most 12 rows, like the
@@ -224,9 +238,14 @@ function renderTerminal(results) {
   const parts = [];
   parts.push('SCORE  ' + results.inputs.predictions + '  vs  ' + results.inputs.key);
   parts.push(r.total + ' records · ' + results.inputs.mode + ' mode · a record needed a person if ' + WRONG_WHEN[results.inputs.wrong_when]);
+  if (results.split) parts.push(SPLIT.splitLine(results.split));   // config.split only
   if (results.rulings) parts.push(rulingsSection(results.rulings));
   parts.push(headline(results));
-  if (results.target) parts.push(targetSection(results.target, TARGET_WORDS.run, results.clusters ? [CLUSTER_TARGET_NOTE] : []));
+  if (results.target) {
+    const ts = targetSection(results.target, TARGET_WORDS.run, results.clusters ? [CLUSTER_TARGET_NOTE] : []);
+    parts.push(results.split ? ts.replace(/^TARGET {2}/, 'TARGET (tuning half)  ') : ts);   // config.split: the tuning half's
+  }
+  if (results.split) parts.push(SPLIT.heldOutSection(results));   // config.split only
   parts.push(silentSection('SILENT ERRORS', 'went out without review, but needed a person', r.silent_errors, true, withKeyLabels(results)));
   if (r.silent_omissions) parts.push(silentSection('SILENT OMISSIONS', omissionWhat(results), r.silent_omissions, false));
   parts.push(r.safeguard_failures.records === 0 ? 'SAFEGUARD FAILURES  none'
@@ -251,6 +270,11 @@ function renderTerminal(results) {
   if (r.not_measured.length) parts.push('NOT MEASURED\n' + r.not_measured.map(n => '  ' + n.what + ': ' + n.why).join('\n'));
   const notes = results.problems.filter(i => i.level !== 'stop');
   if (notes.length) parts.push('WARNINGS AND CLEAN-UPS\n' + notes.map(i => '  ' + i.level + ' [' + i.trap + '] ' + i.where + ': ' + i.message).join('\n'));
+  // config.split with --show-held-out: the held-out half in full, after everything else.
+  if (results.split && results.split.held_out_report) {
+    parts.push('HELD-OUT HALF IN FULL  (--show-held-out: this look is recorded as listing the held-out records)\n\n' +
+      renderTerminal({ inputs: results.inputs, ...results.split.held_out_report, problems: [] }).trimEnd());
+  }
   return parts.join('\n\n') + '\n';
 }
 
@@ -263,6 +287,7 @@ const fmtSpread = (v, unit) => (v === null ? 'n/a' : unit === 'points' ? v.toFix
 function renderVariance(v) {
   const parts = ['VARIANCE  ' + v.runs.length + ' runs against ' + v.inputs.key];
   parts.push(v.runs.map((r, i) => '  run ' + (i + 1) + '  ' + r).join('\n'));
+  if (v.split) parts.push(SPLIT.splitLine(v.split));   // config.split only
   if (v.rulings) parts.push(rulingsSection(v.rulings));
   const rows = [['metric', ...v.runs.map((_, i) => 'run ' + (i + 1)), 'mean', 'spread (sd)', 'min', 'max', 'range']];
   for (const m of v.metrics) {
@@ -316,7 +341,12 @@ function renderVariance(v) {
   if (some) lines.push('  ' + some + ' more stated in some runs only (listed in --json)');
   if (rejected) lines.push('  ' + rejected + ' ruled not a gap in ' + v.rulings.file + ', not listed');
   parts.push(lines.join('\n'));
+  if (v.split) parts.push(SPLIT.heldOutVarianceSection(v));   // config.split only
   if (v.problems.length) parts.push('WARNINGS\n' + v.problems.map(i => '  [' + i.trap + '] ' + i.where + ': ' + i.message).join('\n'));
+  if (v.split && v.split.held_out_report) {
+    parts.push('HELD-OUT HALF IN FULL  (--show-held-out: this look is recorded as listing the held-out records)\n\n' +
+      renderVariance({ inputs: v.inputs, ...v.split.held_out_report, problems: [] }).trimEnd());
+  }
   return parts.join('\n\n') + '\n';
 }
 
@@ -337,6 +367,7 @@ function renderCompare(c) {
   const i = c.inputs;
   const twoKeys = i.after_key !== undefined;
   const parts = ['COMPARE  ' + (twoKeys ? i.before + ' against ' + i.key + '  ->  ' + i.after + ' against ' + i.after_key : i.before + '  ->  ' + i.after)];
+  if (c.split) parts.push(SPLIT.splitLine(c.split));   // config.split only
   if (c.rulings) {
     // Rulings apply to each key; when the two keys take them alike, say it once.
     const same = JSON.stringify(c.rulings.before) === JSON.stringify(c.rulings.after);
@@ -352,6 +383,7 @@ function renderCompare(c) {
   for (const m of c.metrics) rows.push([m.name, fmt(m.before, m.unit), fmt(m.after, m.unit), fmtDelta(m.delta, m.unit), m.noise_range === null ? '' : fmtSpread(m.noise_range, m.unit), m.verdict]);
   parts.push(table(rows, [1, 2, 3, 4]));
   parts.push(pairedSection(c.paired));
+  if (c.split) parts.push(SPLIT.heldOutCompareSection(c));   // config.split only
   const r = c.records;
   const lines = ['RECORDS THAT CHANGED  routes fixed ' + c.summary.routes_fixed + ' · routes broken ' + c.summary.routes_broken];
   for (const x of r.route_changed) lines.push('  ' + x.id.padEnd(8) + x.before + ' -> ' + x.after + (x.should ? '   should: ' + x.should + (x.outcome ? '   ' + x.outcome : '') : ''));
@@ -363,6 +395,10 @@ function renderCompare(c) {
   if (lines.length === 1) lines.push('  none');
   parts.push(lines.join('\n'));
   if (c.problems.length) parts.push('WARNINGS\n' + c.problems.map(i => '  [' + i.trap + '] ' + i.where + ': ' + i.message).join('\n'));
+  if (c.split && c.split.held_out_report) {
+    parts.push('HELD-OUT HALF IN FULL  (--show-held-out: this look is recorded as listing the held-out records)\n\n' +
+      renderCompare({ inputs: c.inputs, ...c.split.held_out_report, problems: [] }).trimEnd());
+  }
   return parts.join('\n\n') + '\n';
 }
 
@@ -471,6 +507,7 @@ function worseNote(w) {
 function renderPolicies(w) {
   const c = w.certification;
   const parts = ['WHAT-IF: POLICIES  ' + rowsTested(w.rows.length)];
+  if (w.split) parts.push(SPLIT.whatifSplitLine(w));   // config.split only
   parts.push('Assumption: ' + w.assumption + '.');
   const rows = [['policy', 'silent error rate', 'went out', 'unnecessary reviews', ...(c ? ['certified'] : [])]];
   for (const r of w.rows) {
@@ -498,6 +535,7 @@ function renderPolicies(w) {
     'the change in records, and its likely range in points of all ' + (w.rows[1] ? w.rows[1].paired.records : 0) + ' records\n\n' + blocks.join('\n\n'));
   for (const name of w.changes_nothing || []) parts.push('"' + name + '" holds and moves no record: it is the run as it was. Check its conditions.');
   if (c) parts.push(certificationSection(c, { ...POLICY_WORDS, bestNote: worseNote(w) }));
+  if (w.split && c) parts.push(SPLIT.heldOutWhatifSection(w));   // config.split only
   parts.push('Read the silent error COUNT beside the rate: a rate can fall because correct records joined the denominator, with no error prevented. ' +
     'A policy that holds more always looks safer: read the unnecessary reviews it adds beside the silent errors it fixes.');
   parts.push(...whatifNotes(w));
@@ -510,6 +548,7 @@ function renderWhatif(w) {
   if (w.kind === 'gate') {
     const c = w.certification;
     parts.push('WHAT-IF: CONFIDENCE GATE  sweeping ' + w.outputs.join(', '));
+    if (w.split) parts.push(SPLIT.whatifSplitLine(w));   // config.split only
     parts.push('Assumption: ' + w.assumption + '.');
     const rows = [['gate', 'went out', 'straight-through', 'silent errors', 'silent error rate', ...(c ? ['certified'] : []), 'moved in', 'moved out', 'unnecessary reviews', '']];
     for (const r of w.rows) {
@@ -519,9 +558,11 @@ function renderWhatif(w) {
     parts.push(table(rows, [1, 2]));
     if (w.check) parts.push(checkLines(w.check));
     if (c) parts.push(certificationSection(c));
+    if (w.split && c) parts.push(SPLIT.heldOutWhatifSection(w));   // config.split only
     parts.push('Read the silent error COUNT beside the rate: a rate can fall because correct records joined the denominator, with no error prevented.');
   } else {
     parts.push('WHAT-IF: CONFIDENCE FLOOR');
+    if (w.split) parts.push(SPLIT.whatifSplitLine(w));   // config.split only
     parts.push('Assumption: ' + w.assumption);
     const rows = [['floor', 'precision', 'recall', 'F1', 'TP/FP/FN', 're-admitted', 'evicted', 'routes moved', 'silent errors', 'needs replay', '']];
     for (const r of w.rows) {

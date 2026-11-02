@@ -1,0 +1,8 @@
+[
+  { "id": "W41-1", "channel": "chat",  "decision": "SEND",      "expected_decision": "SEND", "output": { "TOPIC": "billing" },  "expected": { "TOPIC": "billing" } },
+  { "id": "W41-2", "channel": "email", "decision": "SEND",      "expected_decision": "SEND", "output": { "TOPIC": "refund" },   "expected": { "TOPIC": "refund" } },
+  { "id": "W41-3", "channel": "email", "decision": "FILE",      "expected_decision": "FILE", "output": { "TOPIC": "billing" },  "expected": { "TOPIC": "billing" } },
+  { "id": "W41-4", "channel": "chat",  "decision": "DUPLICATE", "expected_decision": "SEND", "output": { "TOPIC": "shipping" }, "expected": { "TOPIC": "shipping" } },
+  { "id": "W41-5", "channel": "chat",  "decision": "ASK",       "expected_decision": "SEND", "output": { "TOPIC": "billing" },  "expected": { "TOPIC": "billing" } },
+  { "id": "W41-6",                     "decision": "FILE",      "expected_decision": "ASK",  "output": { "TOPIC": "refund" },   "expected": { "TOPIC": "refund" } }
+]

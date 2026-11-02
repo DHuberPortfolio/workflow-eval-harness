@@ -143,26 +143,30 @@ by number.
 
 | Command | Question it answers |
 |---|---|
-| `wfeval score` | How did this run do? Silent errors by type and severity, routing, output quality, per-trap results, calibration. `--fail-on critical` exits non-zero, to stop a build. `--target 5` says whether the silent error rate is shown to be under 5%, and if not, how many records would show it. `--group-by split` (or `groups` in the config) gives the rates again for each value of a field, each with its count and likely range: the tuning half against the held-out half, one kind of record against another. `--mix real.json` weights each value of one of those fields by its share of real traffic and gives the silent error rate that mix would see, beside the golden set's stress-test rate: a reweighting, not a measurement. Lists possible key gaps from this one run: applied values the answer key does not list, marking those that sit on a silent error. `--rulings` applies a person's recorded rulings on them (add, reject, pending), says which values it added to the key (the key file is never changed), and with pending rulings gives the silent error rate both ways. |
+| `wfeval score` | How did this run do? Silent errors by type and severity, routing, output quality, per-trap results, calibration. `--fail-on critical` exits non-zero, to stop a build. `--target 5` says whether the silent error rate is shown to be under 5%, and if not, how many records would show it. `--group-by split` (or `groups` in the config) gives the rates again for each value of a field, each with its count and likely range: the tuning half against the held-out half of a split made by hand (a hidden held-out half is `split`, below), one kind of record against another. `--mix real.json` weights each value of one of those fields by its share of real traffic and gives the silent error rate that mix would see, beside the golden set's stress-test rate: a reweighting, not a measurement. Lists possible key gaps from this one run: applied values the answer key does not list, marking those that sit on a silent error. `--rulings` applies a person's recorded rulings on them (add, reject or pending; and remove, keep or replace for what `suspects` lists), says what they changed in the key (the key file is never changed), and with pending rulings gives the silent error rate both ways, and how far it could go however they are ruled. |
 | `wfeval variance` | How much do the numbers move between runs of identical code? Mean, spread and range per metric; the worst run's silent error rate, the one to quote (runs are never added together); how many different records were a silent error in at least one run, given with the number of runs (the count only grows as runs are added); the records that behave differently run to run; and possible key gaps: values stated in every run that the answer key does not list, for a person to rule on. With `--rulings`, each shows its ruling, and the ones ruled not a gap are counted, not listed again. |
 | `wfeval compare` | Did a change help? On the same records, how many silent errors, unnecessary reviews and misroutes it fixed and how many it broke, judged better, worse or unclear with no repeated runs needed; every metric's change against the spread of repeated runs, when you have them; and every record that was fixed or broken. `--after-key` scores the same run against an old and a new answer key, to show what the new key changes. `--fail-if-worse silent-errors,misroutes` stops a build (exit code 3) when a change makes any of those outcomes worse; "unclear" never stops it, since most small changes are unclear. |
 | `wfeval rate` | What is the likely range for any count (2 of 15), and how many records would show a rate is under a target? |
 | `wfeval estimate` | In production, with no answer key: what is the silent error rate, when an AI judge wrote an answer key for every record and a person checked some of them? Each judge verdict group's rate comes from the person's checks, so a wrong judge widens the range but does not bias the estimate. Also the judge alone and the person alone for contrast, how often they agree, the records where they disagree (to fix the judge), and with `--target`, roughly how many more checks would show the rate is under it. `--pick 60` says beforehand which records to check: split between the judge's verdicts the way that gives the narrowest range (when the judge flags a small share, the usual case when errors are rare, most checks go to the records it passes), chosen at random with a seed. The harness never calls the judge: it reads its answer key. |
 | `wfeval whatif` | What would the numbers be at another threshold? Sweeps the confidence gate or the confidence floor. `--gate --target 5` marks the gates certified to keep silent errors under 5%, counting every gate tried (a gate picked from many because it looks good proves less than it seems), and names the loosest. `--policies <file>` compares routing policies side by side with the run as it was: rules that send a record to a person (`--hold-if 'violations=AWARD_CLAIM_REVIEW'`, exact) and threshold changes, each client's own included, with the silent errors each fixes and the unnecessary reviews it adds. |
-| `wfeval monitor` | After launch, from a weekly or monthly sample of live records checked by a person: has the silent error rate gone up (an alarm, and the period the rise likely started), and is it shown under a target, in a way that stays valid however often you look? Reads one run file per period, scored with the config, or `--counts` scored elsewhere. `--since` restarts the alarm after a fix (the bound keeps counting); `--fail-on-alarm` exits with code 3, for a scheduled job. |
+| `wfeval monitor` | After launch, from a weekly or monthly sample of live records checked by a person: has the silent error rate gone up (an alarm, and the period the rise likely started), and is it shown under a target, in a way that stays valid however often you look? Reads one run file per period, scored with the config, or `--counts` scored elsewhere. `--since` restarts the alarm after a fix (the bound keeps counting); `--fail-on-alarm` exits with code 3, for a scheduled job. `--watch silent-omissions` asks the same of the records the workflow blocked or suppressed, which a watch on the records sent out never sees: the share of them wrongly left out (not score's silent omission rate, which has another base). `--segment-by channel` gives each channel (or customer) its own alarm and bound beside the whole's, so a rise in one cannot hide in the rest; the alarms share the false-alarm budget, and the whole and the segments are shown under the target as one family, one 5% for every "shown". `--segments chat,email,phone` names them in advance, so nothing printed changes later. |
+| `split` in the config | Are the numbers I quote the ones I tuned on? Holds a share of the golden set out from tuning, by a hash of each record's id (retellings of one story kept together), so it is the same on every machine and stable as the set grows. `score`, `compare`, `variance` and `whatif` report the tuning half, and look at the held-out half only when asked (`--held-out`): its rates with likely ranges, never which of its records failed; `whatif --target` certifies a gate or policy on the tuning half and, with `--held-out`, tries it once on the held-out half, saying when the held-out half disagrees or the tuning half flattered it. Every look at the held-out half is counted (`split.log`; without it, no claim is made), and each gets half of what the looks before it left of the 5% a "shown under the target" claim may be wrong: proven when no version was chosen by its held-out numbers; against analysts who keep whatever the held-out numbers liked (including Blum and Hardt's boosting attack and a group-testing attack that finds the held-out errors), it held in every simulation, where declared budgets and slower-shrinking shares did not. Records added later get a claim of their own. |
 | `wfeval check` | Is this config, and this pair of files, readable? Prints what it understood. |
 | `wfeval grade` | For free text: writes one HTML page in which a person grades each field against its source. |
 | `wfeval score --grades` | How often does the free text say something the source never said? Invented and missing rates from a person's grades, and two reviewers' agreement. |
 | `wfeval agree` | Is the answer key itself solid? Two or more people's answer keys (or free-text grades) for the same records, compared with Krippendorff's alpha per output, any number of graders, records not everyone labelled allowed: each with its likely range, the chance it is below 0.800 and 0.667, each pair of graders, and the records they labelled differently, for a person to settle. |
+| `wfeval suspects` | Which answer-key entries are most likely wrong? From one run or several: the values the key may be missing, the values it may list wrongly and the labels it may have wrong, the likeliest key errors first, each with why in numbers measured on the key's other records ("on the 17 other articles where the run states IND-SEMI at 0.80-0.89, the key lists it 17 times"). `--rulings` reads a person's decision on each (add or reject, remove or keep, replace or keep): a decided one is not listed again, and a pending one stays listed with who and when. `--write-rulings` starts that file with the listed suspects. With a `split` in the config, the held-out records are left out, as suspects and as evidence (`--show-held-out` lists them, and the split's log records it). |
 
 **Which command, when.** It depends on what you have:
 
 | You have | Use |
 |---|---|
 | A golden set: a run and a full answer key | `score` for one run, `variance` for repeated runs, `compare` for a change, `whatif` for another threshold or routing policy |
+| A golden set you tune the workflow on | the same commands, with `split` in the config: tune on one half, quote the other ([CONFIG.md](docs/CONFIG.md#a-tuning-half-and-a-held-out-half-split)) |
 | A run after launch, an AI judge's answer key, and a person's checks of some records | `estimate` (and before checking, `estimate --pick` to choose which records) |
 | A person's checks of live records, week after week | `monitor` |
 | Two or more people's answer keys or grades for the same records | `agree`, to see whether the key itself is solid |
+| One answer key, and runs that disagree with it in places | `suspects`, to find the key's own mistakes: rule on the top of the list first |
 | Only a count, such as 2 wrong of 15 | `rate` |
 
 **Free text is graded by a person, not a model.** A form filled from a transcript has no answer
@@ -215,12 +219,12 @@ Every config option: [docs/CONFIG.md](docs/CONFIG.md). The two real workflows in
 ## Built not to miscount
 
 An evaluation tool that quietly miscounts is worse than none. Every way the harness itself
-could compute a wrong number is listed in [`test/TRAPS.md`](test/TRAPS.md) (200 of them),
+could compute a wrong number is listed in [`test/TRAPS.md`](test/TRAPS.md) (265 of them),
 with what it does about each: stop and name the offending record, fix and report it, or
 follow a stated rule. On a golden set it stops on anything suspicious; `--lenient` turns
 those stops into warnings for samples of production output.
 
-590 tests check the numbers against answers worked out by hand before the code existed.
+723 tests check the numbers against answers worked out by hand before the code existed.
 GitHub Actions runs them on Linux and Windows with Node 18, 22 and 24 on every push, along
 with the commands this README shows, and checks that the sample reports match what the tool
 produces today. Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -249,12 +253,38 @@ produces today. Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
   silent error rate, not the other rates.
 - `monitor` assumes each period's checks are a random sample of that period's records out
   without review. Its "shown under the target" is proven for a rate that holds steady; for a
-  drifting rate it held in simulation, which is evidence, not proof.
+  drifting rate it held in simulation, which is evidence, not proof. Watching silent omissions,
+  the same holds for the records blocked or suppressed (the share wrongly left out, not score's
+  silent omission rate), and needs an answer key that gives each record's correct route (without
+  one, only blocked records whose label was declined can be judged). With segments, every "shown"
+  in the report, the whole's and the segments', keeps one 5% together, proven by closed testing for
+  a family fixed in advance: the segments named with `--segments`, chosen before the first period
+  counted. Without it, the family is the segments in the periods given, and "shown" is provisional
+  (`shown*`): a segment that first appears later can take one back. Each segment's upper bound holds
+  for that segment alone. The alarms' shared budget, overlapping segments included, rests on a
+  simulation, and a segment with few records can only flag a rise, not show anything under the
+  target. With a split in the config, monitor ignores it and says so.
 - A routing policy that only sends more records to a person (`--hold-if`) is replayed exactly; a
   threshold change rests on the same assumption as the gate what-if about which records the gate
   can move.
 - `agree`'s likely range is unreliable when few values differ from the most common one; the
   report says so when it happens.
+- `suspects` can only list a key entry a run disagrees with, and it measures the key against
+  itself: a code the key leaves out of every document of a kind looks just like one the workflow
+  over-states. On errors put into the two 500-record keys, no ranking compared was best for every
+  mix of errors; the one used was best in 12 of 18 settings and never more than 0.05 (in average
+  precision) below the best, while others did a little better where the key's errors were mostly
+  values added, or (on single runs of one workflow) mostly values left out. On the compliance
+  reviewer's 25 real rulings, whose errors were of that systematic kind, no ranking did better than
+  chance, and today's order of possible key gaps scored above the one used. It does not question
+  routes.
+- A held-out half (`split`) is only as honest as its record of looks: the tool counts the looks it
+  is shown, not a number copied from an old report, and makes no claim without a log. Its rule is
+  proven only for versions chosen without the held-out numbers; against analysts who use them, it
+  held in every attack simulated, which is evidence, not proof. A held-out half is good for a
+  handful of looks, and half a golden set certifies less than all of it: the price of an honest check.
+  Its answer key is not checked by `suspects`, which leaves it out: a second person's labels,
+  settled with `wfeval agree` before the first look, are the way to check it without looking.
 
 ## Docs
 

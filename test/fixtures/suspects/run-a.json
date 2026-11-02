@@ -1,0 +1,20 @@
+[
+  { "id": "T1",  "route": "SEND", "tags": [{ "value": "refund", "confidence": 0.95 }], "category": "billing", "category_confidence": 0.95 },
+  { "id": "T2",  "route": "SEND", "tags": [{ "value": "refund", "confidence": 0.95 }], "category": "billing", "category_confidence": 0.95 },
+  { "id": "T3",  "route": "SEND", "tags": [{ "value": "refund", "confidence": 0.95 }, { "value": "late", "confidence": 0.55, "applied": false }],
+    "category": "billing", "category_confidence": 0.85 },
+  { "id": "T4",  "route": "SEND", "tags": [{ "value": "late", "confidence": 0.95 }, { "value": "damaged", "confidence": 0.95, "applied": false, "inherited_from": "late" }],
+    "category": "shipping", "category_confidence": 0.95 },
+  { "id": "T5",  "route": "SEND", "tags": [{ "value": "late", "confidence": 0.95 }, { "value": "damaged", "confidence": null }],
+    "category": "shipping", "category_confidence": 0.85 },
+  { "id": "T6",  "route": "SEND", "tags": [{ "value": "late", "confidence": 0.95 }, { "value": "damaged", "confidence": 0.85 }],
+    "category": "shipping", "category_confidence": 0.95 },
+  { "id": "T7",  "route": "SEND", "tags": [{ "value": "damaged", "confidence": 0.85 }, { "value": "refund", "confidence": 0.95 }],
+    "category": "shipping", "category_confidence": 0.95 },
+  { "id": "T8",  "route": "SEND", "tags": [{ "value": "refund", "confidence": 0.95 }], "category": "shipping", "category_confidence": 0.95 },
+  { "id": "T9",  "route": "HOLD", "tags": [{ "value": "misc", "confidence": 0.95 }], "category": "billing", "category_confidence": 0.75 },
+  { "id": "T10", "route": "HOLD", "tags": [], "category": "account", "category_confidence": 0.95 },
+  { "id": "T11", "route": "SEND", "tags": [{ "value": "wrong-item", "confidence": 0.85 }], "category": "unsure", "category_confidence": 0.6 },
+  { "id": "T12", "route": "DUP",  "tags": [{ "value": "late", "confidence": 0.95 }, { "value": "refund", "confidence": 0.95 }], "category": "billing", "category_confidence": 0.95 },
+  { "id": "T13", "route": "HOLD", "scored": false, "tags": [], "category": "billing" }
+]

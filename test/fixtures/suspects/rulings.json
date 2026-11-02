@@ -1,0 +1,8 @@
+{ "rulings": [
+  { "id": "T7", "output": "tags", "value": "refund", "ruling": "add", "by": "DH", "on": "2026-11-01", "note": "the customer asks for their money back" },
+  { "id": "T10", "output": "tags", "value": "fraud", "ruling": "remove", "by": "DH", "on": "2026-11-01", "note": "nothing in the ticket suggests fraud" },
+  { "id": "T8", "output": "category", "value": "billing", "ruling": "replace", "with": "shipping", "by": "DH", "on": "2026-11-01", "note": "the parcel never arrived" },
+  { "id": "T8", "output": "tags", "value": "late", "ruling": "keep", "by": "DH", "on": "2026-11-01", "note": "it arrived a week late" },
+  { "id": "T3", "output": "tags", "value": "late", "ruling": "reject", "by": "DH", "on": "2026-11-01" },
+  { "id": "T5", "output": "tags", "value": "damaged", "ruling": "pending", "by": "DH", "on": "2026-11-01", "note": "ask the support lead" }
+] }

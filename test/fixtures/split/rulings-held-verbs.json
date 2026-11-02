@@ -1,0 +1,7 @@
+{ "rulings": [
+  { "id": "T1", "output": "tags", "value": "refund", "ruling": "remove", "by": "DH", "on": "2026-11-01" },
+  { "id": "T2", "output": "category", "value": "billing", "ruling": "replace", "with": "shipping", "by": "DH", "on": "2026-11-01" },
+  { "id": "T4", "output": "tags", "value": "late", "ruling": "keep", "by": "DH", "on": "2026-11-01" },
+  { "id": "T5", "output": "tags", "value": "late", "ruling": "pending", "proposed": "remove", "by": "DH", "on": "2026-11-01" },
+  { "id": "T7", "output": "tags", "value": "refund", "ruling": "add", "by": "DH", "on": "2026-11-01" }
+] }

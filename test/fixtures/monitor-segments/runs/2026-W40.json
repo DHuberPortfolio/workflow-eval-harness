@@ -1,0 +1,10 @@
+[
+  { "id": "W40-1", "channel": "chat",  "decision": "SEND",      "expected_decision": "SEND",      "output": { "TOPIC": "billing" },  "expected": { "TOPIC": "billing" } },
+  { "id": "W40-2", "channel": "chat",  "decision": "SEND",      "expected_decision": "SEND",      "output": { "TOPIC": "refund" },   "expected": { "TOPIC": "billing" } },
+  { "id": "W40-3", "channel": "email", "decision": "SEND",      "expected_decision": "SEND",      "output": { "TOPIC": "shipping" }, "expected": { "TOPIC": "shipping" } },
+  { "id": "W40-4", "channel": "email", "decision": "FILE",      "expected_decision": "FILE",      "output": { "TOPIC": "billing" },  "expected": { "TOPIC": "billing" } },
+  { "id": "W40-5", "channel": "email", "decision": "FILE",      "expected_decision": "SEND",      "output": { "TOPIC": "refund" },   "expected": { "TOPIC": "refund" } },
+  { "id": "W40-6",                     "decision": "SEND",      "expected_decision": "SEND",      "output": { "TOPIC": "billing" },  "expected": { "TOPIC": "billing" } },
+  { "id": "W40-7", "channel": "chat",  "decision": "ASK",       "expected_decision": "ASK",       "output": { "TOPIC": "refund" },   "expected": { "TOPIC": "refund" } },
+  { "id": "W40-8", "channel": "chat",  "decision": "DUPLICATE", "expected_decision": "DUPLICATE", "output": { "TOPIC": "shipping" }, "expected": { "TOPIC": "shipping" } }
+]

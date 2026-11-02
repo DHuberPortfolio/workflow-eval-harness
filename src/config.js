@@ -15,6 +15,8 @@ const FORMATS = ['json', 'jsonl', 'csv'];
 const DELIMITERS = [',', ';', '\t', '|'];
 const TOP_LEVEL_KEYS = ['id_field', 'input', 'outputs', 'routing', 'wrong_when', 'thresholds', 'trap_field',
   'duplicate_of_field', 'allowed_values', 'severity', 'min_per_trap', 'calibration', 'whatif', 'groups', 'clusters', 'equivalents'];
+// The tuning half and the held-out half (split; src/split.js), its own key so the list above stays as it was.
+TOP_LEVEL_KEYS.push('split');
 const GROUP_FROM = ['key', 'predictions'];
 const SEVERITIES = ['critical', 'high', 'medium', 'low'];
 // What a declined label is read as on both sides (see outputs.<name>.decline below). In
@@ -104,6 +106,46 @@ function validateClusters(raw, errors) {
   return validateFieldFrom(raw, 'clusters', errors);
 }
 
+// ---------- split: a tuning half and a held-out half (src/split.js; traps O2, O4) ----------
+// { "held_out": 0.5, "salt": "", "hash": "sha256", "by": "cluster", "log": "split-log.json" }
+//   held_out - the share of records held out from tuning, above 0 and below 1 (default 0.5)
+//   salt     - text that draws a different split (default ""): for a new golden set, or before
+//              anyone has looked at either half
+//   hash     - "sha256" (default) or "crc32": CRC-32 of the name, odd held out, to reproduce a
+//              split made by hand that way. CRC-32 takes no salt and no share but a half: for
+//              names of one length a salt only swaps the halves (it is linear), never draws a new one
+//   by       - "cluster" (default): a record goes with its cluster (config.clusters, read from the
+//              answer key) or, as a duplicate, with its primary; "id": by its own id alone
+//   log      - a JSON file, relative to the config, where every look at the held-out half is
+//              counted (split-log.js). Without it looks are not counted, and the reports say so
+const SPLIT_KEYS = ['held_out', 'salt', 'hash', 'by', 'log'];
+function validateSplit(raw, rawClusters, errors) {
+  if (raw === undefined) return null;
+  if (!isObj(raw)) { errors.push('split must be an object: { "held_out": 0.5 }'); return null; }
+  for (const k of Object.keys(raw)) if (!SPLIT_KEYS.includes(k)) errors.push('unknown key "split.' + k + '" (allowed: ' + SPLIT_KEYS.join(', ') + ')');
+  const heldOut = raw.held_out === undefined ? 0.5 : raw.held_out;
+  if (!(typeof heldOut === 'number' && heldOut > 0 && heldOut < 1)) errors.push('split.held_out must be a share above 0 and below 1, such as 0.5, got ' + JSON.stringify(raw.held_out));
+  const salt = raw.salt === undefined ? '' : raw.salt;
+  if (typeof salt !== 'string') errors.push('split.salt must be text, got ' + JSON.stringify(raw.salt));
+  const hash = raw.hash === undefined ? 'sha256' : raw.hash;
+  if (!['sha256', 'crc32'].includes(hash)) errors.push('split.hash must be "sha256" or "crc32", got ' + JSON.stringify(raw.hash));
+  if (hash === 'crc32') {
+    // O2: CRC-32 is linear. For names of one length a salt adds the same bits to every checksum,
+    // so it swaps the halves or does nothing; it can never draw a new split.
+    if (raw.salt !== undefined) errors.push('split.salt does not go with "crc32": for ids of one length a salt can only swap the two halves, never draw a new split. Use "sha256" for a salted split');
+    if (raw.held_out !== undefined && raw.held_out !== 0.5) errors.push('split.hash "crc32" holds out the odd checksums, half the records: split.held_out must be 0.5 or left out');
+  }
+  const by = raw.by === undefined ? 'cluster' : raw.by;
+  if (!['cluster', 'id'].includes(by)) errors.push('split.by must be "cluster" or "id", got ' + JSON.stringify(raw.by));
+  // O4: clusters read from the predictions can change from run to run, and a record's half with them.
+  if (by === 'cluster' && isObj(rawClusters) && rawClusters.from === 'predictions') {
+    errors.push('split follows clusters, and clusters.from is "predictions": a run could then move a record from one half to the other. ' +
+      'Read clusters from the answer key, or set split.by to "id"');
+  }
+  if (raw.log !== undefined && !isName(raw.log)) errors.push('split.log must be a file name, such as "split-log.json"');
+  return { held_out: heldOut, salt, hash, by, log: raw.log === undefined ? null : raw.log };
+}
+
 // equivalents: values that are one thing under several names (an episode re-released under a new
 // id). { "<output>": [["a", "a-alias"], ["x", "y", "z"]] }. load.js reads every value of a group,
 // on both sides, as the group's first, so every metric, the calibration, the key gaps and the
@@ -177,6 +219,12 @@ function addClusterBy(config, p) {
   const had = config.clusters;
   if (had && (had.field !== p || had.from !== 'key')) {
     throw new Error('--cluster-by ' + p + ': the config already has clusters, read from the ' + (had.from === 'key' ? 'answer key' : 'predictions') + ' field "' + had.field + '"');
+  }
+  // split (trap O4): a split that follows clusters would move records between its halves. The
+  // clusters belong in the config, before the split is drawn.
+  if (!had && config.split && config.split.by === 'cluster') {
+    throw new Error('--cluster-by ' + p + ': the split follows clusters, so clusters added here would move records between the tuning and the held-out half. ' +
+      'Put "clusters": { "field": "' + p + '" } in the config before the split is first used, or set split.by to "id"');
   }
   return { ...config, clusters: { field: p, from: 'key' } };
 }
@@ -507,10 +555,14 @@ function validateConfig(raw) {
   }
   for (const [name, v] of Object.entries(allowed)) if (Array.isArray(v)) allowed[name] = allowedAsRead(v, equivalents, name);
 
+  const split = validateSplit(raw.split, raw.clusters, errors);
+
   const config = errors.length ? null : {
     id_field: idField, input, outputs, routing, wrong_when: wrongWhen, thresholds, trap_field: trapField,
     min_per_trap: minPerTrap, duplicate_of_field: duplicateOf, allowed_values: allowed, severity, calibration, whatif, groups, clusters, equivalents,
   };
+  // Only with a split, so a config without one is the same object as before.
+  if (config && split) config.split = split;
   return { config, errors };
 }
 
@@ -539,6 +591,8 @@ function loadConfig(configPath) {
   try { raw = JSON.parse(text.replace(/^﻿/, '')); } catch (e) { throw new Error('config ' + configPath + ' is not valid JSON: ' + e.message); }
   const { config, errors } = validateConfig(raw);
   if (errors.length) throw new Error('config ' + configPath + ' has ' + errors.length + ' problem(s):\n  - ' + errors.join('\n  - '));
+  // split.log is relative to the config's folder, as allowed_values files are.
+  if (config.split && config.split.log) config.split.log_path = path.resolve(path.dirname(configPath), config.split.log);
   return resolveAllowedValues(config, configPath);
 }
 

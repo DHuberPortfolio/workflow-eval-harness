@@ -1,0 +1,13 @@
+{
+  "policies": [
+    {
+      "name": "hold sports",
+      "hold_if": [
+        {
+          "field": "desk",
+          "equals": "sports"
+        }
+      ]
+    }
+  ]
+}

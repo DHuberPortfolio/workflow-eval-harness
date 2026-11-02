@@ -22,6 +22,8 @@ after launch, with no full answer key:
   periods of checked records, in order ─────> monitor.js ───> metrics/monitor.js    (wfeval monitor)
 people who made the answer keys or grades:
   two or more keys or grades files ─────────> agree.js ─────> metrics/agreement.js  (wfeval agree)
+the answer key's own mistakes:
+  one key, one or more runs (+ rulings) ────> suspects.js ──> metrics/suspects.js   (wfeval suspects)
 ```
 
 - **Messy input is handled in one place.** `load.js` (and `csv.js` for spreadsheets) is
@@ -40,6 +42,18 @@ people who made the answer keys or grades:
   file is never written, and every report names the values added.
 - **One results object, three renderings.** Terminal, JSON and HTML all draw from it, and
   share their wording (`src/report/format.js`), so the same idea has the same name everywhere.
+- **A held-out half kept honest.** With `split` in the config, `split.js` puts each record in the
+  tuning or the held-out half by a hash of its unit (its cluster, a duplicate's primary, or its id),
+  so the halves never depend on the other records. `score`, `compare` and `variance` judge each half
+  on its own records only (`scoreHalf`), report the tuning half in full, and only when asked
+  (`--held-out`) the held-out half as rates only (what would name its records is kept off the
+  results' enumerable fields, so no renderer and no `--json` can print it); `split-whatif.js` checks
+  on the held-out half the gate or policy chosen on the tuning half; `split-log.js` counts each look
+  in `split.log`, per record, and gives each claim its share of the 5%. Problems mark the record ids
+  they write (`problems.js` `markId`), so `split.js` takes held-out ids out of warnings and stops by
+  where they were written, never by searching the text. `suspects.js` reads the same halves from
+  `score.js` and leaves the held-out records out, as suspects and as evidence, unless
+  `--show-held-out` lists them (a look the log records, with the records it listed).
 - **The core knows no workflow.** Anything specific to one workflow lives in
   `examples/<workflow>/`: its config and, when its export needs restructuring rather
   than locating, a small adapter.
@@ -51,13 +65,18 @@ people who made the answer keys or grades:
   says the range is probably too narrow. Each script prints the tables quoted in
   [METRICS.md](METRICS.md), the same every run: `estimate-simulation.js` and
   `estimate-designs.js` (a judge's key checked by a person), `monitor-sim.js` (live samples),
+  `monitor-segments-sim.js` (live samples of what nobody sees, and of each segment),
   `agree-coverage.js`, `agree-flags.js`, `agree-set-distance.js` and `agree-crosscheck.js`
-  (agreement; the last against an independent implementation).
+  (agreement; the last against an independent implementation), `split-sim.js` (a held-out half:
+  the hash, the balance warning and the rule for counting looks). `suspects-eval.js` ranks answer-key
+  suspects every way compared, on a person's real rulings and on errors put into the real keys;
+  none won everywhere. The one used is never more than 0.05 below the best on injected errors (the
+  three mixes of error kinds); on the real rulings, no ranking does better than chance.
 
 ## It refuses to guess
 
 An evaluation tool that quietly miscounts is worse than none. Every way the harness itself
-could compute a wrong number is listed in [`test/TRAPS.md`](../test/TRAPS.md) (200 of them),
+could compute a wrong number is listed in [`test/TRAPS.md`](../test/TRAPS.md) (265 of them),
 with what the tool does about each:
 
 - **Stop**, and name every offending record: a record in the answer key that never came out
@@ -106,8 +125,19 @@ The metric tests are checked against answers worked out by hand before the code 
 - `test/fixtures/monitor/`: seven weeks of checked records as counts, and three small weeks as
   run files: the CUSUM week by week, when it alarms, and the bound that holds however often you
   look.
+- `test/fixtures/monitor-segments/`: the same, split by channel, with records blocked and
+  suppressed: a rise in one channel the whole hides, the whole's bound and each channel's counted
+  as one family, and the share of the records left out that were left out wrongly.
 - `test/fixtures/agree/`: three people's answer keys and a third reviewer's grades for the same
   records: Krippendorff's alpha for a label, an ordinal level, a set and the route, by hand.
+- `test/fixtures/suspects/`: thirteen support tickets with tags and a category, two runs and two
+  rulings files: every answer-key suspect's weight in exact fractions, the rulings that close each
+  one, and the bracket with pending removes and replaces; with a split (`config-split.json`), the
+  weights again with the held-out records left out.
+- `test/fixtures/split/`: twenty-four records split into a tuning and a held-out half, with versions
+  and answer keys for every look: which half each record is in (SHA-256 places, checked with
+  Python's hashlib), what each report shows of each half, and what each look may claim; with the
+  gate fixture, a gate and a policy chosen on the tuning half and checked on the held-out half.
 - `examples/`: real runs of two real workflows (see each example's NOTES.md).
 
 The tests were checked for teeth by breaking the code on purpose (swapping precision and
