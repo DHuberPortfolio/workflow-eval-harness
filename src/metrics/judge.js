@@ -4,6 +4,7 @@
 
 const { SEVERITIES, DECLINED } = require('../config.js');
 const { resolveSet, unfilledLabel } = require('./slots.js');
+const { toolFindings } = require('./tooluse.js');
 
 const nonEmpty = obj => Object.keys(obj).length > 0;
 const unique = list => [...new Set(list)];
@@ -170,7 +171,11 @@ function judgeRecord(r, config, ctx) {
   // Which evidence decides that a record needed a person (config: wrong_when).
   const useGold = gold !== null && config.wrong_when !== 'any_mismatch';
   const useValues = config.wrong_when !== 'gold_route';
-  const needsHuman = (useGold && gold !== 'auto') || (useValues && mismatch);
+  // A wrong action needed a person whatever wrong_when says: it decides about values and routes, and
+  // an action is neither (trap R5). Read only with `tools` in the config, on a record with a list.
+  const tool = r.tool_calls ? toolFindings(r, config) : null;
+  const toolTypes = tool ? unique(tool.map(f => f.type)) : [];
+  const needsHuman = (useGold && gold !== 'auto') || (useValues && mismatch) || toolTypes.length > 0;
   // A record the answer key blocks or suppresses must not go out (letting it out is a silent
   // error), but it needs no person either: the workflow should leave it out on its own. Sent to
   // a person, it is an unnecessary review, whatever its values (trap G12).
@@ -201,9 +206,9 @@ function judgeRecord(r, config, ctx) {
     // A silent error if the deciding evidence says so; all types found are listed,
     // because the others explain it (D7: "should have been reviewed" because "the floor
     // dropped the violation").
-    const counted = [...(useGold ? routeTypes : []), ...(useValues ? valueTypes : [])];
+    const counted = [...(useGold ? routeTypes : []), ...(useValues ? valueTypes : []), ...toolTypes];
     if (counted.length) {
-      const types = ordered([...routeTypes, ...valueTypes], config);
+      const types = ordered([...routeTypes, ...valueTypes, ...toolTypes], config);
       silent = { types, severity: worst(types, config) };
     }
     // Safeguards that should have held the record, whether or not the content was right.
@@ -251,6 +256,7 @@ function judgeRecord(r, config, ctx) {
     omission,
     key_leaves_out: keyLeavesOut,
     wasted_review: r.route_class === 'review' && (!needsHuman || keyLeavesOut),
+    ...(tool ? { tool, tool_expected: Boolean(r.tool_expect) } : {}),
   };
 }
 

@@ -24,6 +24,7 @@ function recordSummary(j) {
     traps: j.traps, needs_human: j.needs_human,
     silent: j.silent, omission: j.omission, safeguards: j.safeguards, wasted_review: j.wasted_review, key_leaves_out: j.key_leaves_out,
     differences: j.values,
+    ...(j.tool ? { tool: j.tool } : {}),
   };
 }
 

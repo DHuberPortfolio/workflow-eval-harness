@@ -487,6 +487,25 @@ Tests: `test/judges.test.js`, each named after its row.
 | Q14 | Judges started on a login that bills per token | Spends someone's money unasked | RULE: `route.js` allows only a login shown to be a plan, or an account a person confirmed. Keys, cloud routes and API logins stop, and outrank anything remembered. Anything else asks |
 | Q15 | Judges creeping into scoring | The harness's promise is that it calls no model | RULE: nothing under `src` or `bin` starts a program or reaches the network |
 
+## R. How an agent used its tools (`tools` in the config)
+
+Tests: `test/tool-use.test.js`, each named after its row, against `test/fixtures/tools/EXPECTED.md`.
+
+| # | Trap | Why it's dangerous | Action |
+|---|---|---|---|
+| R1 | Settings that cannot work: no field, a misspelt key, a list that is not one | The check would run on nothing | STOP when the config is read |
+| R2 | A record with no list of calls, or a field no record has | Read as no calls, an unwatched agent passes | STOP (R2, P1); `--lenient` counts it under not measured, never as clean |
+| R3 | A list that is not a list, a call with no name | Nothing to compare | STOP (R3) |
+| R4 | An expectation that cannot be read | A misspelt `reqired` would check nothing | STOP (R4); a record the key says nothing about is reported as not measured |
+| R5 | A wrong action on a record out without review | `wrong_when` is about values and routes, so an action could slip past it | RULE: it is a silent error under every `wrong_when` |
+| R6 | Acting while held | The route says a person will look, so every other number reads as safe, and it has already happened | RULE: its own rate; `--fail-on` stops on it; such a review is not unnecessary |
+| R7 | A held record whose key requires the tool | Read as acting out of turn | RULE: what the key requires is not TU-ACTED |
+| R8 | A config with no `tools` | New fields would change every old report | RULE: nothing appears |
+| R9 | A failed model call | Nothing it left behind is an action | RULE: not judged, and counted under not measured |
+| R10 | A finding in one report only | JSON alone is not read | RULE: terminal, page and JSON all show it |
+| R11 | A misspelt `side_effects` name | It switches a safety check off without a sound | WARN (R5): a name no record called |
+| R12 | A severity that does not fit the workflow | The default may be wrong for it | RULE: `severity` overrides it like any other type |
+
 ## Note on duplicates
 
 "Duplicate" means a record that repeats one already kept, not necessarily an identical

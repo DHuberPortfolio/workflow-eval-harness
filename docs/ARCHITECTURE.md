@@ -48,6 +48,9 @@ the answer key's own mistakes:
   file is never written, and every report names the values added.
 - **One results object, three renderings.** Terminal, JSON and HTML all draw from it, and
   share their wording (`src/report/format.js`), so the same idea has the same name everywhere.
+- **What an agent did, beside what it said.** `metrics/tooluse.js` compares the tool calls a record made with what the
+  key expects. It judges the calls, not the route: an agent can be held for a person and act anyway. Only with `tools` in
+  the config; left out, no report changes.
 - **A held-out half kept honest.** With `split` in the config, `split.js` puts each record in the
   tuning or the held-out half by a hash of its unit (its cluster, a duplicate's primary, or its id),
   so the halves never depend on the other records. `score`, `compare` and `variance` judge each half

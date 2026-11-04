@@ -717,6 +717,55 @@ or a decline) was made on another version of the key: a warning, and it is set a
 ruling in its place, with a note saying what it replaces. A file with none of these verbs reads and
 reports exactly as before.
 
+## How an agent used its tools (`tools`)
+
+For a workflow whose agent calls tools. Left out of the config, nothing about tools is read and no report
+changes. No model is called: a call is compared with a list.
+
+```json
+"tools": {
+  "field": "tool_calls",
+  "key_field": "expected_tools",
+  "side_effects": ["send_email", "book_meeting"],
+  "never": ["delete_mailbox"],
+  "max_calls": 4
+}
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `field` | required | The prediction field holding the record's calls, by name or dotted path. A list of tool names, or of objects. `[]` means no calls. |
+| `key_field` | `expected_tools` | The answer key's field saying what the record should do (below). |
+| `name_key`, `args_key` | `tool`, `args` | Where a call's name and arguments sit inside it, by name or dotted path. Arguments written as JSON text are read as JSON. |
+| `side_effects` | `[]` | The tools that change something outside: send, book, write, delete. Run on a record held for a person or blocked, they are TU-ACTED. Run twice with the same arguments, TU-REPEAT. A name no record called is warned about, since a misspelt one watches nothing. |
+| `never` | `[]` | Tools that must not run on any record. |
+| `max_calls` | - | The most calls one record may make. |
+
+In the answer key, a list is what must run: `"expected_tools": ["lookup_contact", "send_email"]`. An object says
+more, each part optional:
+
+```json
+"expected_tools": {
+  "required": ["lookup_contact", "send_email"],
+  "forbidden": ["book_meeting"],
+  "order": ["lookup_contact", "send_email"],
+  "args": { "send_email": { "to": "a@example.com" } },
+  "max_calls": 3
+}
+```
+
+`order` is checked among the tools that ran; one that did not run is TU-MISSING if it was required. `args` lists the
+fields that matter: every call of that tool must have them, exactly, and other fields are not compared. A record the
+key says nothing about is still checked against `never`, `side_effects` and `max_calls`, and is counted under not
+measured for the rest.
+
+A record with no list is not a record with no calls: a strict run stops (R2), and with `--lenient` it is counted under
+not measured, never as clean. A failed model call is not judged. What each finding means: [SILENT_ERRORS.md](SILENT_ERRORS.md#tool-use).
+
+An n8n AI Agent with **Return Intermediate Steps** on should list its calls in `intermediateSteps`, which would be
+`"name_key": "action.tool"` and `"args_key": "action.toolInput"`. This has not been tried on a real export: check the
+field names against your own. A workflow without agent nodes can list the action nodes that ran, as plain names.
+
 ## AI judges (`wfeval judges`)
 
 A reviewer is a person or an AI judge. `wfeval judges` turns the questions a rulings file leaves open

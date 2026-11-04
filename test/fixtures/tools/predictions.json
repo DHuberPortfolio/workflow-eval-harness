@@ -1,0 +1,14 @@
+[
+  { "id": "A1", "route": "send", "category": "question", "tool_calls": [{ "tool": "lookup_contact" }, { "tool": "send_email", "args": { "to": "a@example.com" } }] },
+  { "id": "A2", "route": "send", "category": "question", "tool_calls": [{ "tool": "send_email", "args": { "to": "a@example.com" } }] },
+  { "id": "A3", "route": "send", "category": "question", "tool_calls": [{ "tool": "send_email", "args": { "to": "a@example.com" } }, { "tool": "lookup_contact" }] },
+  { "id": "A4", "route": "send", "category": "question", "tool_calls": [{ "tool": "lookup_contact" }, { "tool": "send_email", "args": { "to": "wrong@example.com" } }] },
+  { "id": "A5", "route": "send", "category": "booking", "tool_calls": [{ "tool": "book_meeting", "args": { "day": "friday" } }] },
+  { "id": "A6", "route": "hold", "category": "question", "tool_calls": [{ "tool": "lookup_contact" }, { "tool": "send_email", "args": { "to": "a@example.com" } }] },
+  { "id": "A7", "route": "hold", "category": "question", "tool_calls": [{ "tool": "lookup_contact" }, { "tool": "draft_reply" }] },
+  { "id": "A8", "route": "drop", "category": "spam", "tool_calls": [{ "tool": "delete_mailbox" }] },
+  { "id": "A9", "route": "send", "category": "question", "tool_calls": ["lookup_contact", "lookup_contact", "lookup_contact", "lookup_contact", "lookup_contact"] },
+  { "id": "A10", "route": "send", "category": "question", "tool_calls": [{ "tool": "send_email", "args": { "to": "a@example.com" } }, { "tool": "send_email", "args": { "to": "a@example.com" } }] },
+  { "id": "A11", "route": "send", "category": "question", "tool_calls": [{ "tool": "lookup_contact" }] },
+  { "id": "A12", "route": "send", "category": "question", "tool_calls": [] }
+]

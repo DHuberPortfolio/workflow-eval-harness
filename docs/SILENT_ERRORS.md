@@ -213,3 +213,25 @@ nothing was evaluated, and a build gate says so (see [Config](CONFIG.md#build-ga
 ```
 
 All optional. A type whose data is missing is reported as "not measured", never as zero.
+
+## Tool use
+
+With `tools` in the config ([CONFIG.md](CONFIG.md#how-an-agent-used-its-tools-tools)), the harness compares the calls an agent
+made with what the answer key expects.
+
+| Code | Type | How the tool detects it | Default severity |
+|---|---|---|---|
+| TU-ACTED | **Acted while held**: a tool changed something on a record held for a person or blocked | A `side_effects` tool ran, route class is not auto, and the key does not require that tool | critical |
+| TU-FORBIDDEN | **A tool ran that must not** | In `never`, or the record's `forbidden` | critical |
+| TU-ARGS | **Wrong details**: right tool, wrong recipient or amount | A call's field differs from the record's `args` | high |
+| TU-REPEAT | **Too many calls, or the same action twice** | Over `max_calls`, or a `side_effects` tool ran twice with the same arguments | high |
+| TU-MISSING | **A tool that had to run did not** | In the record's `required`, never called | medium |
+| TU-ORDER | **Wrong order** | Tools in the record's `order` first ran out of sequence | medium |
+
+On a record that went out without review, any of these makes it a silent error, whatever `wrong_when` says: it decides
+about values and routes, and a wrong action is neither.
+
+**Acted while held** has its own rate, because no other number sees it. The route says a person will look, so the
+record is not in the silent error rate and reads as safe, but by then the email has gone. The route describes what
+should have happened; the calls describe what did. `--fail-on` stops a build on it (TU-ACTED, or TU-FORBIDDEN on a held
+record) even when nothing else is wrong.

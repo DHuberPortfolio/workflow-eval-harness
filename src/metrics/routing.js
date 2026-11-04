@@ -16,7 +16,7 @@
 
 const { rate, pct } = require('./stats.js');
 const { SEVERITIES, DECLINED } = require('../config.js');
-const { declineOutputs, contentOutputs } = require('./judge.js');
+const { declineOutputs, contentOutputs, worst } = require('./judge.js');
 
 const ids = list => list.map(j => j.id);
 
@@ -94,6 +94,32 @@ function nothingEvaluated(records, config, where = '') {
   return 'every record was blocked or suppressed (' + (records.length - failed) + ' of ' + records.length + where + '), with no correct route to judge them';
 }
 
+// How an agent used its tools (`tools` in the config). Acting while held is counted apart: the route
+// says a person will look, so no other number here sees it, and by then it has happened.
+const ACTED = ['TU-ACTED', 'TU-FORBIDDEN'];
+function toolUse(judgments, config) {
+  const checked = judgments.filter(j => j.tool);
+  const bad = checked.filter(j => j.tool.length);
+  const held = checked.filter(j => j.route_class !== 'auto');
+  const acted = j => j.route_class !== 'auto' && j.tool.some(f => ACTED.includes(f.type));
+  const typesOf = j => [...new Set(j.tool.map(f => f.type))];
+  return {
+    records: rate(bad.length, checked.length),
+    acted_while_held: rate(held.filter(acted).length, held.length),
+    by_type: countTypes(bad, typesOf, config),
+    problems: bad.map(j => ({ id: j.id, route: j.route, route_class: j.route_class, acted: acted(j), severity: worst(typesOf(j), config), findings: j.tool })),
+    not_recorded: ids(judgments.filter(j => !j.tool)),
+    no_expectation: checked.filter(j => !j.tool_expected).length,
+  };
+}
+function toolsNotMeasured(t) {
+  const out = [];
+  const n = k => k + ' record' + (k === 1 ? '' : 's');
+  if (t.not_recorded.length) out.push({ what: 'tool use on ' + n(t.not_recorded.length), why: 'no list of tool calls: not read as no calls' });
+  if (t.no_expectation) out.push({ what: 'TU-MISSING, TU-ORDER, TU-ARGS on ' + n(t.no_expectation), why: 'the answer key says nothing about tools for them' });
+  return out;
+}
+
 // records: the paired records, needed only to read the answer key without a correct route.
 function scoreRouting(judgments, config, records = []) {
   const gold = config.routing.gold_field !== null;
@@ -111,6 +137,7 @@ function scoreRouting(judgments, config, records = []) {
   const blocked = judgments.filter(j => j.route_class === 'block');
   const shouldBeSeen = omissionsMeasured ? judgments.filter(shouldBeSeenFn(config, records)) : [];
   const omitted = judgments.filter(j => j.omission);
+  const tools = config.tools ? toolUse(judgments, config) : null;
 
   return {
     total,
@@ -156,7 +183,8 @@ function scoreRouting(judgments, config, records = []) {
       precision: rate(blocked.filter(j => j.gold_class === 'block').length, blocked.length),
       wrongly_blocked: ids(blocked.filter(j => j.gold_class !== 'block')),
     } : null,
-    not_measured: notMeasured(config, auto),
+    ...(tools ? { tool_use: tools } : {}),
+    not_measured: [...notMeasured(config, auto), ...(tools ? toolsNotMeasured(tools) : [])],
   };
 }
 

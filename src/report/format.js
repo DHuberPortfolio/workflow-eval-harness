@@ -47,6 +47,12 @@ const TYPE_LABELS = {
   'SO-DECLINED': 'declined and left out, but the answer key has an answer',
   'SG-GATE': 'went out below the confidence gate',
   'SG-FLOOR': 'a value below the confidence floor was kept',
+  'TU-ACTED': 'a tool acted on a record held for a person',
+  'TU-FORBIDDEN': 'a tool ran that must not run here',
+  'TU-ARGS': 'a tool ran with the wrong details',
+  'TU-REPEAT': 'too many calls, or the same action twice',
+  'TU-MISSING': 'a tool that had to run did not',
+  'TU-ORDER': 'tools ran in the wrong order',
 };
 
 // What the silent omission rate counts. Without a correct route, only declines can show that

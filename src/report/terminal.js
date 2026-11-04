@@ -93,6 +93,7 @@ function headline(results) {
   row('Review precision', r.review_queue.precision, 'sent to a person, and needed one');
   if (r.block) row('Block precision', r.block.precision, 'blocked, and the answer key agrees');
   rows.push(['Safeguard failures', '', r.safeguard_failures.records + ' record(s)', '', "went out past the workflow's own confidence gate or floor"]);
+  if (r.tool_use) rows.push(['Acted while held', pct(r.tool_use.acted_while_held), count(r.tool_use.acted_while_held), range(r.tool_use.acted_while_held), 'held for a person or blocked, but a tool acted anyway']);
   const lines = ['HEADLINE', table(rows, [1, 2])];
   const se = r.silent_errors;
   // Trap I15: the rate with pending rulings counted wrong (above), and counted as added.
@@ -259,6 +260,7 @@ function renderTerminal(results) {
       '\n  Critical, and a workflow bug even when the content is right: find the branch that routed these records\n' +
       '  and why it did not apply the check (SG-GATE: lead confidence below the gate; SG-FLOOR: a value below the floor was applied).\n' +
       '  If the answer key agrees with the record, the fix is a model that clears the threshold, not a lower threshold.');
+  if (r.tool_use) parts.push(toolSection(r.tool_use));
   parts.push(unnecessaryReviews(r.review_queue) +
     (r.block && r.block.wrongly_blocked.length ? '\nWRONGLY BLOCKED  ' + list(r.block.wrongly_blocked) : ''));
   const CLASSES = ['auto', 'review', 'block', 'exclude'];
@@ -583,6 +585,13 @@ function renderWhatif(w) {
   }
   parts.push(...whatifNotes(w));
   return parts.join('\n\n') + '\n';
+}
+
+// How an agent used its tools (`tools` in the config).
+function toolSection(t) {
+  const lines = ['TOOL USE  ' + pct(t.records) + ' of the records checked had a tool problem (' + count(t.records) + ', likely ' + range(t.records) + ')'];
+  for (const p of t.problems) for (const f of p.findings) lines.push('  ' + idCell(p.id) + f.type.padEnd(14) + f.detail);
+  return lines.join('\n');
 }
 
 // ---------- Free text, graded by a reviewer ----------

@@ -144,6 +144,9 @@ function align(predictions, key, config, p, opts = {}) {
     // prediction only: in a combined format both sides are the same records, read twice.
     if (groups.length) rec.groups = Object.fromEntries(groups.map(([name, g]) => [name, ((g.from === 'key' ? k : pr).groups || {})[name] || []]));
     if (config.clusters) rec.cluster = (config.clusters.from === 'key' ? k : pr).cluster ?? null;
+    // How an agent used its tools: only with `tools` in the config.
+    if (pr.tool_calls) rec.tool_calls = pr.tool_calls;
+    if (k.tool_expect) rec.tool_expect = k.tool_expect;
     // Prediction fields kept for a record's own gate threshold or a policy what-if (load.js readFields).
     if (pr.fields) rec.fields = pr.fields;
     records.push(rec);

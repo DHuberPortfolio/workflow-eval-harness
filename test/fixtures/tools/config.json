@@ -1,0 +1,12 @@
+{
+  "id_field": "id",
+  "outputs": { "category": { "type": "label", "labels": ["booking", "question", "spam"] } },
+  "routing": { "field": "route", "gold_field": "gold_route", "map": { "send": "auto", "hold": "review", "drop": "block" } },
+  "tools": {
+    "field": "tool_calls",
+    "key_field": "expected_tools",
+    "side_effects": ["send_email", "book_meeting"],
+    "never": ["delete_mailbox"],
+    "max_calls": 4
+  }
+}

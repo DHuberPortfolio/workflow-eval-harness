@@ -170,6 +170,12 @@ by number.
 | One answer key, and runs that disagree with it in places | `suspects`, to find the key's own mistakes: rule on the top of the list first |
 | Only a count, such as 2 wrong of 15 | `rate` |
 
+**What an agent did, not only what it said.** With `tools` in the config, the harness compares the tools an agent called
+with what the answer key expects: which had to run, which must not, in what order, with what details, and how many
+times. The one no other number catches is **acted while held**: a record held for a person looks safe, because its
+route says so, but if a tool that sends or books ran first, it has already happened. That has its own rate and stops
+a build (`--fail-on`). No model is called. See [docs/CONFIG.md](docs/CONFIG.md#how-an-agent-used-its-tools-tools).
+
 **The harness never grades free text itself.** A form filled from a transcript has no answer
 key; its failure is a field that reads plausibly and says something nobody said. `wfeval grade`
 writes one self-contained page (it works offline, from the file) that shows each field beside
@@ -225,7 +231,7 @@ with what it does about each: stop and name the offending record, fix and report
 follow a stated rule. On a golden set it stops on anything suspicious; `--lenient` turns
 those stops into warnings for samples of production output.
 
-974 tests check the numbers against answers worked out by hand before the code existed.
+996 tests check the numbers against answers worked out by hand before the code existed.
 GitHub Actions runs them on Linux and Windows with Node 18, 22 and 24 on every push, along
 with the commands this README shows, and checks that the sample reports match what the tool
 produces today. Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

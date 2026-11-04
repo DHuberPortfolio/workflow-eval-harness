@@ -4,7 +4,7 @@
 // and data must never be able to run as code in the report.
 
 const {
-  WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines, groupSource, GROUP_RANGES, severalLabels, rulingsWords, pendingLine, judgesLine,
+  count, range, WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines, groupSource, GROUP_RANGES, severalLabels, rulingsWords, pendingLine, judgesLine,
   clusterLine, CLUSTER_GROUP_NOTE, CLUSTER_TARGET_NOTE, mixLines,
 } = require('./format.js');
 const { withKeyLabels, num, shownPct } = require('./format.js');
@@ -267,6 +267,14 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
     : '<p>Went out without review although one of the safeguards built into the workflow should have held them. Not counted in the silent error rate, but critical: each is a workflow bug to find, even when the content is right. ' +
       'Find the branch that routed these records and why it skipped the check. If the answer key agrees with the record, the fix is a model that clears the threshold, not a lower threshold.</p>' +
       table(['Record', 'Severity', 'Type'], r.safeguard_failures.detail.map(d => ['<code>' + esc(d.id) + '</code>', severity('critical'), d.types.map(typeTag).join(', ')])));
+  if (r.tool_use) {
+    const t = r.tool_use;
+    s.push('<h3>Tool use</h3>');
+    s.push('<p>' + pct(t.records) + ' of the records checked had a tool problem (' + count(t.records) + ', likely ' + range(t.records) + '). ' +
+      'Acted while held: ' + pct(t.acted_while_held) + ' (' + count(t.acted_while_held) + '): held for a person or blocked, but a tool acted anyway.</p>');
+    if (t.problems.length) s.push(table(['Record', 'Severity', 'Type', 'What happened'], t.problems.flatMap(p => p.findings.map(f =>
+      ['<code>' + esc(p.id) + '</code>', severity(p.severity), f.type, esc(f.detail)]))));
+  }
   const leftOut = new Set(r.review_queue.key_leaves_out);
   s.push('<p>Unnecessary reviews (sent to a person, but could have gone out): ' + ids(r.review_queue.wasted.filter(id => !leftOut.has(id))) +
     (leftOut.size ? ' · Sent to a person, but the answer key blocks or suppresses them, so no person was needed: ' + ids(r.review_queue.key_leaves_out) : '') +

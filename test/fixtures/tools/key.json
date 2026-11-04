@@ -1,0 +1,14 @@
+[
+  { "id": "A1", "gold_route": "send", "category": "question", "expected_tools": { "required": ["lookup_contact", "send_email"], "order": ["lookup_contact", "send_email"], "args": { "send_email": { "to": "a@example.com" } } } },
+  { "id": "A2", "gold_route": "send", "category": "question", "expected_tools": ["lookup_contact", "send_email"] },
+  { "id": "A3", "gold_route": "send", "category": "question", "expected_tools": { "required": ["lookup_contact", "send_email"], "order": ["lookup_contact", "send_email"] } },
+  { "id": "A4", "gold_route": "send", "category": "question", "expected_tools": { "required": ["lookup_contact", "send_email"], "args": { "send_email": { "to": "a@example.com" } } } },
+  { "id": "A5", "gold_route": "send", "category": "booking", "expected_tools": { "forbidden": ["book_meeting"] } },
+  { "id": "A6", "gold_route": "hold", "category": "question", "expected_tools": ["lookup_contact"] },
+  { "id": "A7", "gold_route": "hold", "category": "question", "expected_tools": ["lookup_contact", "draft_reply"] },
+  { "id": "A8", "gold_route": "drop", "category": "spam", "expected_tools": [] },
+  { "id": "A9", "gold_route": "send", "category": "question", "expected_tools": ["lookup_contact"] },
+  { "id": "A10", "gold_route": "send", "category": "question", "expected_tools": ["send_email"] },
+  { "id": "A11", "gold_route": "send", "category": "question" },
+  { "id": "A12", "gold_route": "send", "category": "question", "expected_tools": [] }
+]

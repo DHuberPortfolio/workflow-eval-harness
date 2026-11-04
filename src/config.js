@@ -19,6 +19,8 @@ const TOP_LEVEL_KEYS = ['id_field', 'input', 'outputs', 'routing', 'wrong_when',
   'duplicate_of_field', 'allowed_values', 'severity', 'min_per_trap', 'calibration', 'whatif', 'groups', 'clusters', 'equivalents'];
 // The tuning half and the held-out half (split; src/split.js), its own key so the list above stays as it was.
 TOP_LEVEL_KEYS.push('split');
+// How an agent used its tools (section R of test/TRAPS.md): left out, nothing about tools is read.
+TOP_LEVEL_KEYS.push('tools');
 const GROUP_FROM = ['key', 'predictions'];
 const SEVERITIES = ['critical', 'high', 'medium', 'low'];
 // What a declined label is read as on both sides (see outputs.<name>.decline below). In
@@ -30,6 +32,8 @@ const ERROR_TYPES = {
   'SP-MISSING-REJECTED': 'medium', 'SP-MISSING': 'medium', 'SP-DECLINED': 'medium', 'SP-WRONG-PRIMARY': 'medium', 'SP-DUPLICATE': 'low',
   'SO-FALSE-DUPLICATE': 'high', 'SO-PRIMARY-SUPPRESSED': 'medium', 'SO-FALSE-BLOCK': 'medium', 'SO-DECLINED': 'medium',
   'SG-GATE': 'critical', 'SG-FLOOR': 'critical', 'SP-NEAR-MISS': 'low',
+  // How an agent used its tools (`tools` in the config; src/metrics/tooluse.js).
+  'TU-ACTED': 'critical', 'TU-FORBIDDEN': 'critical', 'TU-ARGS': 'high', 'TU-REPEAT': 'high', 'TU-MISSING': 'medium', 'TU-ORDER': 'medium',
 };
 const OUTPUT_KEYS = ['type', 'field', 'key_field', 'labels', 'value_key', 'confidence_key', 'rejected_field', 'confidence_field', 'near_miss_steps', 'decline'];
 const ROUTING_KEYS = ['field', 'gold_field', 'map'];
@@ -105,6 +109,21 @@ function validateClusters(raw, errors) {
   if (raw === undefined) return null;
   if (isObj(raw) && isReserved(raw.field)) errors.push('clusters.field: ' + RESERVED_RULE(raw.field));
   return validateFieldFrom(raw, 'clusters', errors);
+}
+
+// ---------- tools: how an agent used its tools (src/metrics/tooluse.js; trap R1) ----------
+
+const TOOLS_KEYS = ['field', 'key_field', 'name_key', 'args_key', 'side_effects', 'never', 'max_calls'];
+function readTools(raw, errors) {
+  if (!isObj(raw)) { errors.push('tools must be an object'); return null; }
+  for (const k of Object.keys(raw)) if (!TOOLS_KEYS.includes(k)) errors.push('unknown key "tools.' + k + '" (allowed: ' + TOOLS_KEYS.join(', ') + ')');
+  if (!isPath(raw.field)) errors.push('tools.field ' + PATH_RULE);
+  const path = (k, fallback) => { const v = raw[k] === undefined ? fallback : raw[k]; if (!isPath(v)) errors.push('tools.' + k + ' ' + PATH_RULE); return v; };
+  const names = k => { const v = raw[k] === undefined ? [] : raw[k]; if (!Array.isArray(v) || !v.every(isName)) { errors.push('tools.' + k + ' must be a list of tool names'); return []; } return v.map(s => s.trim()); };
+  const maxCalls = raw.max_calls === undefined ? null : raw.max_calls;
+  if (maxCalls !== null && !(Number.isInteger(maxCalls) && maxCalls >= 1)) errors.push('tools.max_calls must be a whole number of 1 or more');
+  return { field: raw.field, key_field: path('key_field', 'expected_tools'), name_key: path('name_key', 'tool'), args_key: path('args_key', 'args'),
+    side_effects: names('side_effects'), never: names('never'), max_calls: maxCalls };
 }
 
 // ---------- split: a tuning half and a held-out half (src/split.js; traps O2, O4) ----------
@@ -562,6 +581,7 @@ function validateConfig(raw) {
   for (const [name, v] of Object.entries(allowed)) if (Array.isArray(v)) allowed[name] = allowedAsRead(v, equivalents, name);
 
   const split = validateSplit(raw.split, raw.clusters, errors);
+  const tools = raw.tools === undefined ? null : readTools(raw.tools, errors);
 
   const config = errors.length ? null : {
     id_field: idField, input, outputs, routing, wrong_when: wrongWhen, thresholds, trap_field: trapField,
@@ -569,6 +589,7 @@ function validateConfig(raw) {
   };
   // Only with a split, so a config without one is the same object as before.
   if (config && split) config.split = split;
+  if (config && tools) config.tools = tools;
   return { config, errors };
 }
 

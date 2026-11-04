@@ -745,6 +745,48 @@ function readCluster(raw, config, side, where, p) {
 // reads them from the predictions. The route is passed through as given;
 // align.js checks it against the config, because that needs the key too.
 // opts.sameFile: the answer key is in the same records (see H4 below).
+// ---------- How an agent used its tools (`tools` in the config; section R of test/TRAPS.md) ----------
+
+const isToolName = v => typeof v === 'string' && v.trim() !== '';
+// n8n and others write a call's arguments as JSON text.
+function toolArgs(v) {
+  if (typeof v !== 'string') return isObj(v) ? v : {};
+  try { const j = JSON.parse(v); return isObj(j) ? j : {}; } catch (e) { return {}; }
+}
+// A record's calls as [{ name, args }], or undefined. A record with no list is not a record with no
+// calls: reading it as none would pass the agent on what nobody saw (R2). A failed model call made none.
+function readToolCalls(raw, t, where, p) {
+  const list = getPath(raw, t.field);
+  if (list === undefined || list === null) {
+    p.strict('R2', where, 'has no "' + t.field + '" (tools.field): no list is not the same as no calls. Write [] for a record with none');
+    return undefined;
+  }
+  if (!Array.isArray(list)) { p.stop('R3', where, t.field + ' must be a list of calls, got ' + describe(list)); return undefined; }
+  const calls = [];
+  for (const c of list) {
+    const name = typeof c === 'string' ? c : isObj(c) ? getPath(c, t.name_key) : undefined;
+    if (!isToolName(name)) { p.stop('R3', where, 'a call has no tool name at "' + t.name_key + '" (tools.name_key): ' + describe(c)); return undefined; }
+    calls.push({ name: name.trim(), args: isObj(c) ? toolArgs(getPath(c, t.args_key)) : {} });
+  }
+  return calls;
+}
+// What the key expects of a record: a list is what must run; an object says more. Nothing said is
+// not the same as nothing required: it is reported as not measured.
+const EXPECT_KEYS = ['required', 'forbidden', 'order', 'args', 'max_calls'];
+function readToolExpect(raw, t, where, p) {
+  const v = getPath(raw, t.key_field);
+  if (v === undefined || v === null) return undefined;
+  const bad = message => { p.stop('R4', where, t.key_field + ': ' + message); return undefined; };
+  const list = x => Array.isArray(x) && x.every(isToolName);
+  if (Array.isArray(v)) return list(v) ? { required: v.map(s => s.trim()) } : bad('must list tool names');
+  if (!isObj(v)) return bad('must be a list of tool names, or an object with ' + EXPECT_KEYS.join(', ') + ', got ' + describe(v));
+  for (const k of Object.keys(v)) if (!EXPECT_KEYS.includes(k)) return bad('unknown key "' + k + '" (allowed: ' + EXPECT_KEYS.join(', ') + ')');
+  for (const k of ['required', 'forbidden', 'order']) if (v[k] !== undefined && !list(v[k])) return bad(k + ' must be a list of tool names');
+  if (v.args !== undefined && !(isObj(v.args) && Object.values(v.args).every(isObj))) return bad('args must say, per tool, the fields a call must have');
+  if (v.max_calls !== undefined && !(Number.isInteger(v.max_calls) && v.max_calls >= 1)) return bad('max_calls must be a whole number of 1 or more');
+  return v;
+}
+
 function normalizePredictions(raws, config, source, p, opts = {}) {
   if (raws.length === 0) return [];   // reading the file already reported why
   if (!idsFound(raws, config.id_field, source, 'predictions', p)) return [];
@@ -762,6 +804,11 @@ function normalizePredictions(raws, config, source, p, opts = {}) {
   const out = [];
   const eq = equivalentsReader(config);
   const fieldCtx = { csv: formatOf(source, config.input.predictions) === 'csv', text: [], below: [] };
+  // A list of tool calls no record has is a typo, not an agent that called nothing (trap P1).
+  const tools = config.tools;
+  const readTools = Boolean(tools) && anyHas(raws, tools.field);
+  if (tools && !readTools) p.strict('P1', source, noRecord(tools.field, 'tools.field') + ': no tool use can be judged');
+  const called = new Set();
   raws.forEach((raw, i) => {
     if (!isObj(raw)) { p.stop('B1', source + ' record #' + (i + 1), 'is ' + describe(raw) + ', not a record'); return; }
     const id = readId(raw, config.id_field, source + ' record #' + (i + 1), p);
@@ -785,8 +832,14 @@ function normalizePredictions(raws, config, source, p, opts = {}) {
     if (cluster !== undefined) rec.cluster = cluster;
     const fields = readFields(raw, config, where, p, { ...fieldCtx, id, scored });
     if (fields) rec.fields = fields;
+    if (readTools && scored) {
+      const calls = readToolCalls(raw, tools, where, p);
+      if (calls) { rec.tool_calls = calls; for (const c of calls) called.add(c.name); }
+    }
     out.push(rec);
   });
+  // A misspelt side effect switches its safety check off without a sound (trap R11).
+  if (readTools) for (const s of tools.side_effects) if (!called.has(s)) p.warn('R5', source, 'tools.side_effects names ' + JSON.stringify(s) + ', which no record called: if it is misspelt, that tool is not being watched');
   reportFields(fieldCtx, config, source, p);
   eq.report(p, source, 'predicted');
   return out;
@@ -827,6 +880,10 @@ function normalizeKey(raws, config, source, p) {
     if (groups) rec.groups = groups;
     const cluster = readCluster(raw, config, 'key', where, p);
     if (cluster !== undefined) rec.cluster = cluster;
+    if (config.tools) {
+      const expect = readToolExpect(raw, config.tools, where, p);
+      if (expect) rec.tool_expect = expect;
+    }
     out.push(rec);
   });
   eq.report(p, source, 'answer key');
