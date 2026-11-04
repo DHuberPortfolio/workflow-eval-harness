@@ -753,7 +753,13 @@ A panel's agreement is not evidence that it is right. In a blind test on the 25 
 person on 14 of 24 decisions (58.3%, likely 38.8-75.5%) and unanimous Haiku judges on 15 of 21 (71.4%,
 likely 50.0-86.2%); answering no every time would have matched 16 of 25 (64.0%). Those were borderline
 cases, and their F1 scores landed nearer the person's than the untouched key did, by errors that offset.
-So treat judged numbers as advice beside the key's own: never run a gate on them.
+When all three disagreed with the key, the person agreed on 5 of 11 (Sonnet) and 6 of 11 (Haiku), against
+9 of the 25 overall: a real signal, and not proof.
+
+So run a gate twice, on the key as it stands and with `--rulings`, and fail if either fails. One AI ruling
+can turn a failing build into a passing one, or the reverse: this way a unanimous panel can stop a build
+and cannot rescue one. Keep the judged file beside the key: `suspects --rulings` skips what is ruled, so
+the judges are not asked twice.
 
 ## A judge's answer key checked by a person (`wfeval estimate`)
 

@@ -1,6 +1,6 @@
 ---
 name: wfeval
-description: Evaluate an AI agent or workflow with the workflow eval harness (wfeval): score its runs against an answer key, find silent errors, and have a panel of AI judges look at doubts about the key. Use when asked to use the eval tool or eval harness, run wfeval, or evaluate, score or grade a workflow or agent.
+description: Evaluate an AI agent or workflow with the workflow eval harness (wfeval): score its runs against an answer key, find silent errors, and have a panel of AI judges look at doubts about the key. Use when asked to use the eval tool, my eval harness or wfeval, or to evaluate, score or grade a workflow or agent.
 ---
 
 # Evaluating a workflow with wfeval
@@ -15,8 +15,8 @@ bill per token runs until the person says so.
 ## 1. Score
 
 Run what the task calls for: usually `score`, and `variance` or `compare` with several runs. This
-step uses no AI and costs nothing. **This is the official result.** Any gate (`--fail-on`,
-`--fail-if-worse`) runs here, against the answer key as it stands.
+step uses no AI and costs nothing. Any gate (`--fail-on`, `--fail-if-worse`) runs here, against the
+answer key as it stands. Keep this result: step 6 runs the same gate again.
 
 ## 2. Find what needs judging
 
@@ -83,23 +83,32 @@ wfeval judges --config <config> --rulings <pending file> --write-rulings <new ju
 ```
 
 Only a unanimous panel decides, and each decision is marked as an AI judge's. A split, or a judge who
-gave no answer, stays pending. Then score again with `--rulings <judged file>`.
+gave no answer, stays pending.
+
+Then score again with `--rulings <judged file>`, with the same gate. **The result fails if either
+run fails.** A unanimous panel can stop a build the key passes, and it cannot rescue one the key
+fails.
+
+Keep the judged file beside the answer key and pass it with `--rulings` from then on. `suspects`
+skips what is already ruled, so the judges are not asked the same thing twice, and their decisions
+count in every later run until a person changes them.
 
 The answer key file is never changed. Decisions already made by a person are carried over as written:
 a panel answers what was open and overrules nobody.
 
 ## 7. Report
 
-Lead with the official result from step 1. Then, separately and labelled as AI judgment: what the
-panel decided, the numbers with its decisions, and how many doubts stayed open. Say that AI judges
-made these decisions. Never let a judged number take the place of the official one, and never run a
-gate on it.
+Give both results side by side, the key as it stands and with the judges, and say that AI judges
+made the second. If either gate failed, say which, and that the result fails. List every entry where
+all three disagreed with the key, with their reasons: those are the places the key may be wrong. Say
+how many doubts stayed open.
 
-**Why the judges advise and do not decide.** In a blind test on 25 real rulings a person had made, a
-unanimous Sonnet panel matched the person on 14 of 24 decisions and a unanimous Haiku panel on 15 of
-21, while answering "no" every time would have matched 16 of 25. Three judges agreeing is not
-evidence that they are right: they share blind spots. These 25 were the hard, borderline cases, so
-the test says little about easy ones, but it is the only measurement there is.
+**Why judges can stop a build but not rescue one.** One AI ruling can do either: an add turned a
+failing fixture into a passing one, and a remove did the reverse. In a blind test on 25 real rulings
+a person had made, when all three judges disagreed with the key the person agreed on 5 of 11 (Sonnet)
+and 6 of 11 (Haiku), against 9 of the 25 overall. That is a real signal and not proof: enough to stop
+and look, not enough to wave a failure through. These were the hard, borderline cases, so the test
+says little about easy ones, but it is the only measurement there is.
 
 ## What judges do not replace
 
