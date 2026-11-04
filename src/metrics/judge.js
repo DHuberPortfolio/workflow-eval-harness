@@ -36,34 +36,42 @@ const weakest = v => v.floor_confidence ?? v.confidence;
 // different costs, and they are counted apart (docs/SILENT_ERRORS.md).
 // A single-value output (label, ordinal) that is wrong is listed as wrong only: "the right
 // label was never proposed" adds nothing when there is exactly one label.
+// Most records have no finding of most kinds, and results keep every record's findings, so the
+// kinds with none share one frozen empty object: nothing writes to findings after this function.
+const NONE = Object.freeze({});
+const found = kind => kind !== NONE;
 function valueFindings(r, config) {
-  const f = { wrong: {}, missing_rejected: {}, missing: {}, invalid: {}, near_miss: {}, declined: {}, should_decline: {} };
+  const f = { wrong: NONE, missing_rejected: NONE, missing: NONE, invalid: NONE, near_miss: NONE, declined: NONE, should_decline: NONE };
+  const add = (bucket, name, vals) => {
+    if (vals.length === 0) return;
+    if (f[bucket] === NONE) f[bucket] = {};
+    f[bucket][name] = vals;
+  };
   for (const [name, o] of contentOutputs(config)) {
     if (o.type !== 'set') {
       const p = r.pred[name];
       const k = r.key[name];
       if (k == null) continue;
-      if (!p) { f.missing[name] = [k]; continue; }
+      if (!p) { add('missing', name, [k]); continue; }
       if (p.declined) {
-        if (k !== DECLINED) f.declined[name] = [k + (p.set_aside ? ' (set aside: ' + p.set_aside + ')' : '')];
+        if (k !== DECLINED) add('declined', name, [k + (p.set_aside ? ' (set aside: ' + p.set_aside + ')' : '')]);
         continue;
       }
-      if (k === DECLINED) { f.should_decline[name] = [p.value]; continue; }
+      if (k === DECLINED) { add('should_decline', name, [p.value]); continue; }
       const allowed = config.allowed_values[name];
-      if (Array.isArray(allowed) && !allowed.includes(p.value)) f.invalid[name] = [p.value];
+      if (Array.isArray(allowed) && !allowed.includes(p.value)) add('invalid', name, [p.value]);
       if (p.value === k) continue;
       const steps = o.type === 'ordinal' ? Math.abs(o.labels.indexOf(p.value) - o.labels.indexOf(k)) : null;
-      if (steps !== null && steps <= o.near_miss_steps) f.near_miss[name] = [p.value + ' for ' + k];
-      else f.wrong[name] = [p.value + (o.type === 'ordinal' ? ' for ' + k : '')];
+      if (steps !== null && steps <= o.near_miss_steps) add('near_miss', name, [p.value + ' for ' + k]);
+      else add('wrong', name, [p.value + (o.type === 'ordinal' ? ' for ' + k : '')]);
       continue;
     }
     const { applied, wrong, unfilled } = resolveSet(r.pred[name], r.key[name]);
-    const add = (bucket, vals) => { if (vals.length) f[bucket][name] = vals; };
-    add('wrong', wrong);
-    add('missing_rejected', unfilled.filter(u => u.set_aside.length).map(unfilledLabel));
-    add('missing', unfilled.filter(u => !u.set_aside.length).map(unfilledLabel));
+    add('wrong', name, wrong);
+    add('missing_rejected', name, unfilled.filter(u => u.set_aside.length).map(unfilledLabel));
+    add('missing', name, unfilled.filter(u => !u.set_aside.length).map(unfilledLabel));
     const allowed = config.allowed_values[name];
-    if (Array.isArray(allowed)) add('invalid', applied.filter(v => !allowed.includes(v)));
+    if (Array.isArray(allowed)) add('invalid', name, applied.filter(v => !allowed.includes(v)));
   }
   return f;
 }
@@ -85,14 +93,24 @@ function thresholdOf(r, configured) {
 function gatePasses(r, config, overrides = {}) {
   const t = config.thresholds;
   if (!t || !nonEmpty(t.auto_publish)) return true;
+  const useWeakest = t.gate_uses === 'weakest';
   let unknown = false;
   for (const [name, configured] of Object.entries(t.auto_publish)) {
-    const threshold = thresholdOf(r, name in overrides ? overrides[name] : configured);
+    const threshold = thresholdOf(r, Object.hasOwn(overrides, name) ? overrides[name] : configured);
     const applied = predValues(r, name, config.outputs[name]).filter(v => v.applied);
-    const confs = applied.map(t.gate_uses === 'weakest' ? weakest : v => v.confidence);
-    if (confs.length === 0) return false;
-    if (threshold === undefined || confs.some(c => c === null)) { unknown = true; continue; }
-    const lead = t.gate_uses === 'weakest' ? Math.min(...confs) : Math.max(...confs);
+    if (applied.length === 0) return false;
+    let lead = useWeakest ? Infinity : -Infinity;   // the value the gate compares, among those with a confidence
+    let noConfidence = false;
+    for (const v of applied) {
+      const c = useWeakest ? weakest(v) : v.confidence;
+      if (c === null) noConfidence = true;
+      else lead = useWeakest ? Math.min(lead, c) : Math.max(lead, c);
+    }
+    if (threshold === undefined) { unknown = true; continue; }
+    // A weakest gate fails on any value under it, known whatever a value with no confidence says
+    // (trap P9). A lead gate needs the strongest, and a value with no confidence could be it.
+    if (useWeakest && lead < threshold) return false;
+    if (noConfidence) { unknown = true; continue; }
     if (lead < threshold) return false;
   }
   return unknown ? null : true;
@@ -101,9 +119,10 @@ function gatePasses(r, config, overrides = {}) {
 // Facts about the whole run that single-record judgments need.
 function buildContext(records) {
   const classById = new Map(records.map(r => [r.id, r.route_class]));
-  // Primaries with at least one duplicate that was not suppressed: if the primary itself
-  // was suppressed, the content went out through the wrong copy.
-  const keptDuplicateOf = new Set(records.filter(r => r.duplicate_of && r.route_class !== 'exclude').map(r => r.duplicate_of));
+  // Primaries with at least one duplicate kept, out without review or with a person: if the primary
+  // itself was suppressed, the wrong copy was kept. A duplicate blocked or suppressed keeps nothing
+  // (trap P7): the primary is then a real record suppressed, SO-FALSE-DUPLICATE.
+  const keptDuplicateOf = new Set(records.filter(r => r.duplicate_of && (r.route_class === 'auto' || r.route_class === 'review')).map(r => r.duplicate_of));
   return { classById, keptDuplicateOf };
 }
 
@@ -114,11 +133,39 @@ function worst(types, config) {
 // Types in a stable order: the order they are listed in config.js, most severe first.
 const ordered = (types, config) => unique(types).sort((a, b) => Object.keys(config.severity).indexOf(a) - Object.keys(config.severity).indexOf(b));
 
+// A what-if judges the same records again at every threshold, and a record's findings read only
+// its pred, its key and the config's outputs, never a route or a threshold. So one sweep passes one
+// WeakMap to all its judgments (ctx.findings; judgeAll) and each pred is compared with the key once.
+// A sweep that changes what a record applies gives it a new pred, which is judged afresh.
+function findingsOf(r, config, known) {
+  if (!known) return valueFindings(r, config);
+  if (!known.has(r.pred)) known.set(r.pred, valueFindings(r, config));
+  return known.get(r.pred);
+}
+
+// The floor on one record: whether a value it applied has a confidence to compare at all (read), and
+// whether one is under the floor (below). Labels are not read: the floor is a per-value rule of set
+// outputs (docs/SILENT_ERRORS.md), and the report says so under not measured (trap P10).
+function floorCheck(r, config, floor) {
+  let read = false;
+  for (const [name, o] of Object.entries(config.outputs)) {
+    if (o.type !== 'set') continue;
+    for (const v of r.pred[name]) {
+      if (!v.applied || v.confidence === null) continue;
+      read = true;
+      if (weakest(v) < floor) return { read, below: true };
+    }
+  }
+  return { read, below: false };
+}
+
 function judgeRecord(r, config, ctx) {
   const gold = r.gold_class;   // null without a gold route
-  const values = valueFindings(r, config);
-  const mismatch = nonEmpty(values.wrong) || nonEmpty(values.missing_rejected) || nonEmpty(values.missing) || nonEmpty(values.near_miss) ||
-    nonEmpty(values.declined) || nonEmpty(values.should_decline);
+  const values = findingsOf(r, config, ctx.findings);
+  // An invalid value is in the list too: a value the key lists but allowed_values does not is still
+  // a value that needed a person (trap P6), so a silent error always needed one.
+  const mismatch = found(values.wrong) || found(values.missing_rejected) || found(values.missing) || found(values.near_miss) ||
+    found(values.declined) || found(values.should_decline) || found(values.invalid);
 
   // Which evidence decides that a record needed a person (config: wrong_when).
   const useGold = gold !== null && config.wrong_when !== 'any_mismatch';
@@ -138,16 +185,18 @@ function judgeRecord(r, config, ctx) {
     if (r.duplicate_of && ctx.classById.get(r.duplicate_of) === 'exclude') routeTypes.push('SP-WRONG-PRIMARY');
   }
   const valueTypes = [];
-  if (nonEmpty(values.invalid)) valueTypes.push('SP-INVALID');
-  if (nonEmpty(values.wrong)) valueTypes.push('SP-WRONG');
-  if (nonEmpty(values.should_decline)) valueTypes.push('SP-SHOULD-DECLINE');
-  if (nonEmpty(values.missing_rejected)) valueTypes.push('SP-MISSING-REJECTED');
-  if (nonEmpty(values.missing)) valueTypes.push('SP-MISSING');
-  if (nonEmpty(values.declined)) valueTypes.push('SP-DECLINED');
-  if (nonEmpty(values.near_miss)) valueTypes.push('SP-NEAR-MISS');
+  if (found(values.invalid)) valueTypes.push('SP-INVALID');
+  if (found(values.wrong)) valueTypes.push('SP-WRONG');
+  if (found(values.should_decline)) valueTypes.push('SP-SHOULD-DECLINE');
+  if (found(values.missing_rejected)) valueTypes.push('SP-MISSING-REJECTED');
+  if (found(values.missing)) valueTypes.push('SP-MISSING');
+  if (found(values.declined)) valueTypes.push('SP-DECLINED');
+  if (found(values.near_miss)) valueTypes.push('SP-NEAR-MISS');
 
   let silent = null;
   const safeguards = [];
+  let gateUnknown = false;   // the gate could not be checked: a confidence or a threshold is missing
+  let floorRead = false;     // the floor had a confidence to compare
   if (r.route_class === 'auto') {
     // A silent error if the deciding evidence says so; all types found are listed,
     // because the others explain it (D7: "should have been reviewed" because "the floor
@@ -158,10 +207,15 @@ function judgeRecord(r, config, ctx) {
       silent = { types, severity: worst(types, config) };
     }
     // Safeguards that should have held the record, whether or not the content was right.
-    if (config.thresholds && gatePasses(r, config) === false) safeguards.push('SG-GATE');
+    const gate = config.thresholds ? gatePasses(r, config) : true;
+    if (gate === false) safeguards.push('SG-GATE');
+    gateUnknown = gate === null;
     const floor = config.thresholds ? config.thresholds.floor : null;
-    if (floor !== null && Object.entries(config.outputs).some(([name, o]) => o.type === 'set' &&
-        r.pred[name].some(v => v.applied && v.confidence !== null && weakest(v) < floor))) safeguards.push('SG-FLOOR');
+    if (floor !== null) {
+      const f = floorCheck(r, config, floor);
+      floorRead = f.read;
+      if (f.below) safeguards.push('SG-FLOOR');
+    }
   }
 
   // Blocked or suppressed, but the key says it should have gone through or to a person.
@@ -170,7 +224,7 @@ function judgeRecord(r, config, ctx) {
   // SO-FALSE-BLOCK. It needs no correct route: the key's answer says something was lost,
   // unless the key's route says the record should be left out anyway.
   let omission = null;
-  if (r.route_class === 'block' && nonEmpty(values.declined) && (gold === null || gold === 'auto' || gold === 'review')) {
+  if (r.route_class === 'block' && found(values.declined) && (gold === null || gold === 'auto' || gold === 'review')) {
     omission = { types: ['SO-DECLINED'], severity: config.severity['SO-DECLINED'] };
   } else if ((gold === 'auto' || gold === 'review') && (r.route_class === 'block' || r.route_class === 'exclude')) {
     const type = r.route_class === 'block' ? 'SO-FALSE-BLOCK'
@@ -192,14 +246,17 @@ function judgeRecord(r, config, ctx) {
     routed_correctly: gold === null ? null : r.route_class === gold,
     silent,
     safeguards,
+    gate_unknown: gateUnknown,
+    floor_read: floorRead,
     omission,
     key_leaves_out: keyLeavesOut,
     wasted_review: r.route_class === 'review' && (!needsHuman || keyLeavesOut),
   };
 }
 
-function judgeAll(records, config) {
-  const ctx = buildContext(records);
+// findings: for a sweep (findingsOf).
+function judgeAll(records, config, findings = null) {
+  const ctx = { ...buildContext(records), findings };
   return records.map(r => judgeRecord(r, config, ctx));
 }
 

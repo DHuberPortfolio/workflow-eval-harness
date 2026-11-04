@@ -30,7 +30,7 @@
 //           linear: for names of one length a salt can only swap the two halves, never draw a
 //           new split, so it takes no salt (trap O2).
 
-const crypto = require('crypto');
+const { sha256 } = require('./hash.js');
 
 // CRC-32 as zlib computes it (the standard check value: "123456789" gives 0xcbf43926). Written
 // out because zlib.crc32 needs Node 22.2, and CI runs Node 18.
@@ -47,7 +47,7 @@ function crc32(text) {
 
 // A unit's place on the line from 0 to 1 under sha256: the first 4 bytes of the hash as a number.
 function sha256Point(name, salt) {
-  const h = crypto.createHash('sha256').update(salt === '' ? name : salt + ':' + name, 'utf8').digest();
+  const h = sha256(salt === '' ? name : salt + ':' + name).digest();
   return h.readUInt32BE(0) / 4294967296;
 }
 
@@ -73,18 +73,25 @@ function unitsOf(records, config) {
         // Follow duplicate_of to the first record that is not a duplicate (or that has a cluster).
         // A loop (two records each the other's duplicate, a key mistake) takes the first of its ids
         // in text order, so every record in it still gets one unit.
+        // A walk stops at a record already placed, and every record it passed gets that unit, so a
+        // chain of any length is walked once (trap P36).
         const path = [r.id];
+        const place = new Map([[r.id, 0]]);
         let at = r;
         for (;;) {
           const to = at.duplicate_of;
           if (!to) { u = at.id; break; }
-          if (path.includes(to)) { u = path.slice(path.indexOf(to)).sort()[0]; break; }
+          if (units.has(to)) { u = units.get(to); break; }
+          if (place.has(to)) { u = path.slice(place.get(to)).sort()[0]; break; }
           const next = byId.get(to);
           if (!next) { u = to; break; }
           if (next.cluster !== undefined && next.cluster !== null) { u = next.cluster; break; }
+          place.set(to, path.length);
           path.push(to);
           at = next;
         }
+        for (const id of path) units.set(id, u);
+        return u;
       }
     }
     units.set(r.id, u);
@@ -212,7 +219,7 @@ function balanceOf(records, config, halves) {
         x.units.set(u, (x.units.get(u) || 0) + 1);
       }
     }
-    const labels = [...byLabel.entries()].sort((a, b) => (a[0] === '(none)' ? 1 : b[0] === '(none)' ? -1 : a[0].localeCompare(b[0]))).map(([label, x]) => {
+    const labels = [...byLabel.entries()].sort((a, b) => (a[0] === '(none)' ? 1 : b[0] === '(none)' ? -1 : compareText(a[0], b[0]))).map(([label, x]) => {
       const pmf = heldOutDistribution([...x.units.values()], s);
       const row = { label, records: x.records, held_out: x.held_out, tuning: x.records - x.held_out, expected: x.records * s,
         p_value: twoSided(pmf, x.held_out), smallest_p: smallestP(pmf) };
@@ -252,6 +259,7 @@ function heldOutNumbers(h) {
     silent_errors: { ...r.silent_errors.rate, by_severity: r.silent_errors.by_severity },
     straight_through: r.straight_through,
     silent_omissions: r.silent_omissions ? r.silent_omissions.rate : null,
+    ...(r.silent_omissions ? { omissions_by_severity: Object.fromEntries(SEVERITIES.map(s => [s, r.silent_omissions.records.filter(x => x.severity === s).length])) } : {}),
     review_precision: r.review_queue.precision,
     block_precision: r.block ? r.block.precision : null,
     safeguard_failures: r.safeguard_failures.records,
@@ -290,7 +298,7 @@ function heldOutClaim(rate, targetPct, level) {
   if (rate.d === 0) return { ...base, bound_pct: null, shown: false, why: 'nothing_out' };
   const p = chanceAtMost(rate.n, rate.d, target);
   const why = level === 0 ? 'listed' : none(rate.d) > FIRST_LOOK ? 'too_few' : none(rate.d) > level ? 'used_up' : null;
-  return { ...base, p_value: p, bound_pct: level > 0 ? Number((exactBound(rate.n, rate.d, level) * 100).toFixed(1)) : null,
+  return { ...base, p_value: p, bound_pct: level > 0 ? boundPct(exactBound(rate.n, rate.d, level), target) : null,
     rate_at_or_above: rate.n / rate.d >= target, shown: level > 0 && p <= level, why };
 }
 
@@ -323,7 +331,9 @@ function setAside(halves, moved) {
 // problem wrote them (problems.js markId), never found by searching the text: a number in a sentence
 // ("12 records") is never taken for record 12, whatever the ids look like.
 
-const { MARKS, unmark, stopsText, withMarks } = require('./problems.js');
+const { SEVERITIES } = require('./config.js');
+const { addAll, compareText } = require('./values.js');
+const { markId, unmark, stopsText, withMarks } = require('./problems.js');
 
 // One text with the hidden ids' places taken out, and the comma, space or quotes that went with them.
 // The kept ids are marked again, so the result knows where they are.
@@ -331,7 +341,8 @@ function rebuild(text, places, hide) {
   let out = '';
   let i = 0;
   for (const x of places) {
-    out += text.slice(i, x.start) + (hide(x.id) ? '\u0001' : MARKS.OPEN + text.slice(x.start, x.end) + (text.slice(x.start, x.end) === x.id ? '' : MARKS.MID + x.id) + MARKS.CLOSE);
+    const shown = text.slice(x.start, x.end);
+    out += text.slice(i, x.start) + (hide(x.id) ? '\u0001' : shown === x.id ? markId(x.id) : markId(x.id, shown));
     i = x.end;
   }
   out += text.slice(i);
@@ -366,7 +377,8 @@ function maskProblems(items, ids, note = heldNote) {
     kept.push(masked);
   }
   for (const { item, count } of byText.values()) item.message += note(count);
-  items.splice(0, items.length, ...kept);
+  items.length = 0;
+  addAll(items, kept);
   return items;
 }
 // A thrown stop (problems.js throwIfStopped keeps the problems it lists), said again without the
@@ -380,21 +392,17 @@ function maskStop(e, ids, note = heldNote) {
 // No half known: every record id is counted, none named.
 const maskAll = e => maskStop(e, () => true, unknownNote);
 
-// The worst of several runs' held-out rates, as variance picks the worst run (runs.js): the highest
-// rate as an exact fraction; on a tie, the wider range. Never the runs added together (trap I8).
-function worstRun(rates, labels) {
-  let worst = null;
-  rates.forEach((r, i) => {
-    if (r.d === 0) return;
-    const w = worst === null ? null : rates[worst];
-    if (w === null || r.n * w.d > w.n * r.d || (r.n * w.d === w.n * r.d && r.high_pct > w.high_pct)) worst = i;
-  });
-  return worst === null ? null : { run: worst + 1, label: labels[worst], ...rates[worst] };
+const { chanceAtMost, worstRun, boundPct } = require('./metrics/stats.js');
+
+// A held-out half of nothing but failed calls has nothing to show: a look at it spends a share for no
+// number (trap P41). Words for why, or null. held: the half's paired records.
+function heldHalfFailed(held) {
+  const failed = held.filter(r => r.scored === false).length;
+  return held.length > 0 && failed === held.length ? 'every model call in the held-out half failed (' + failed + ' of ' + held.length + ' records)' : null;
 }
 
-const { chanceAtMost } = require('./metrics/stats.js');
-
 module.exports = {
+  heldHalfFailed,
   crc32, sha256Point, heldOutName, unitsOf, heldOut, splitOf, balanceOf, heldOutDistribution, twoSided, smallestP, taroneLevel,
   splitSettings, heldOutNumbers, heldOutClaim, exactBound, worstRun, setAside, maskProblems, maskStop, maskAll, plainNote,
 };

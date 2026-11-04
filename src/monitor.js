@@ -6,19 +6,22 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const crypto = require('node:crypto');
+const { fingerprint } = require('./hash.js');
 const { problems } = require('./problems.js');
+const { acrossFiles } = require('./load.js');
+const { readText } = require('./text.js');
+const { maxOf, minOf, addAll, compareText } = require('./values.js');
 const { scoreRun } = require('./score.js');
 const { csvToRecords } = require('./csv.js');
 const { addGroupBy } = require('./config.js');
 const { declineOutputs } = require('./metrics/judge.js');
 const { NONE } = require('./metrics/traps.js');
-const { monitorSeries, monitorSegments, SERIES } = require('./metrics/monitor.js');
+const { monitorSeries, monitorSegments, SERIES, MAX_EVERY } = require('./metrics/monitor.js');
 const { rate } = require('./metrics/stats.js');
 
-const fingerprint = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 // The largest period may hold this many times the smallest's records before L7 warns.
 const UNEVEN = 4;
+const MOST_CHECKED = 10000000;
 
 // L20: the records left out (blocked, or suppressed as a duplicate) whose omission the answer key
 // can judge, each judged as score judges a silent omission (src/metrics/judge.js): with a correct
@@ -46,7 +49,7 @@ function omissionBase(config, p) {
 // field read from the answer key, as score --group-by reads it (config.js addGroupBy). Returns the
 // config to score with, and the group's name, field and side.
 function segmentGroup(config, segmentBy) {
-  if (config.groups[segmentBy]) return { config, name: segmentBy, ...config.groups[segmentBy], declared: true };
+  if (Object.hasOwn(config.groups, segmentBy)) return { config, name: segmentBy, ...config.groups[segmentBy], declared: true };
   return { config: addGroupBy(config, [segmentBy]), name: segmentBy, field: segmentBy, from: 'key', declared: false };
 }
 
@@ -70,6 +73,7 @@ function readRuns(config, runPaths, mode, p, keysDir = null, watch = 'silent-err
   const judgeable = omissions ? omissionBase(config, p) : null;
   if (omissions && judgeable === null) return [];
   const unjudged = [];         // L20: records left out that the key cannot judge, per period
+  const files = acrossFiles();  // P1: a quiet period has no record holding a field the others have
   let labelled = 0, several = 0;   // L23: records with a segment value at all; L22: with several
   // --keys must be a folder: checked once, not once per period file.
   if (keysDir !== null && !(fs.existsSync(keysDir) && fs.statSync(keysDir).isDirectory())) {
@@ -100,7 +104,7 @@ function readRuns(config, runPaths, mode, p, keysDir = null, watch = 'silent-err
     if (keysDir !== null && !match) { p.stop('A1', path.normalize(keyPath), 'no answer key for period file ' + path.normalize(file) + ' (--keys looks for a file of the same name)'); continue; }
     let results;
     try {
-      results = scoreRun({ config: segment ? segment.config : config, predPath: file, keyPath, mode });
+      results = scoreRun({ config: segment ? segment.config : config, predPath: file, keyPath, mode, liveRecords: true, across: files });
     } catch (e) {
       // L35: a run file without its answers (the key in a file of its own) stops at A8, which names
       // key_field. In monitor the usual cause is a key kept apart: say how to give it.
@@ -112,8 +116,8 @@ function readRuns(config, runPaths, mode, p, keysDir = null, watch = 'silent-err
     }
     const name = path.basename(file, path.extname(file));
     const notes = results.problems.filter(i => i.level !== 'stop');
-    perfect.push(...notes.filter(i => i.trap === 'A8'));
-    p.items.push(...notes.filter(i => i.trap !== 'A8'));
+    addAll(perfect, notes.filter(i => i.trap === 'A8'));
+    for (const i of notes) if (i.trap !== 'A8' && i.trap !== 'P2') p.items.push(i);   // P2: L3 says it of a period
     const paired = new Map(results.paired.map(r => [r.id, r]));
     // The series' base: the records out without review, or the records left out the key can judge.
     const inBase = omissions ? r => judgeable(r, paired.get(r.id)) : r => r.route_class === 'auto';
@@ -132,6 +136,7 @@ function readRuns(config, runPaths, mode, p, keysDir = null, watch = 'silent-err
     const held = results.records.filter(x => (omissions ? !leftOut(x) : x.route_class !== 'auto')).length;
     if (held) notOut.push({ name, held });
     const row = omissions ? { period: name, file, out: base.length, silent: base.filter(r => r.omission).length } : { period: name, file, out: se.d, silent: se.n };
+    row.counted = results.routing.total - results.quality.left_out.model_failed.length;   // P2: records really scored
     if (omissions) {
       const n = results.records.filter(r => leftOut(r) && !inBase(r)).length;
       if (n) unjudged.push({ name, n });
@@ -154,6 +159,7 @@ function readRuns(config, runPaths, mode, p, keysDir = null, watch = 'silent-err
     }
     periods.push(row);
   }
+  files.report(p);
   // L17: the rate's base is the records out without review; the others checked are left out, and said so.
   if (notOut.length) {
     const total = notOut.reduce((t, x) => t + x.held, 0);
@@ -175,7 +181,7 @@ function readRuns(config, runPaths, mode, p, keysDir = null, watch = 'silent-err
   // A8 warns when every answer matches the output exactly. In a scorecard, one perfect week is
   // normal; every week perfect suggests the answers were copied from the outputs, so it is
   // reported only then.
-  if (perfect.length > 1 && perfect.length === runPaths.length) p.items.push(...perfect);
+  if (perfect.length > 1 && perfect.length === runPaths.length) addAll(p.items, perfect);
   return periods;
 }
 
@@ -196,7 +202,7 @@ const COUNTED = ['out_without_review', 'silent_errors', 'blocked_or_suppressed',
 const COUNT_COLUMNS = { 'silent-errors': ['out_without_review', 'silent_errors'], 'silent-omissions': ['blocked_or_suppressed', 'silent_omissions'] };
 function readCounts(file, p, watch = 'silent-errors', segmentBy = null, info = {}) {
   let text;
-  try { text = fs.readFileSync(file, 'utf8'); } catch (e) { p.stop('A1', file, 'cannot read the counts file: ' + e.message); return []; }
+  try { text = readText(file); } catch (e) { p.stop('A1', file, 'cannot read the counts file: ' + e.message); return []; }
   if (text.charCodeAt(0) === 0xFEFF) {   // A3: Windows PowerShell starts files with a byte-order mark
     text = text.slice(1);
     p.fix('A3', file, 'removed an invisible byte-order mark from the start of the file');
@@ -255,7 +261,9 @@ function readCounts(file, p, watch = 'silent-errors', segmentBy = null, info = {
       return;
     }
     const sw = row.scored_with === undefined || String(row.scored_with).trim() === '' ? '(not given)' : String(row.scored_with).trim();
-    const x = { period: name, out, silent, scored_with: sw };
+    // P2: what the file counted at all: the other series' columns, where it has them, are records too.
+    const counted = COUNTED.slice(0, 4).reduce((t, col) => t + (whole(row[col], csv) || 0), 0);
+    const x = { period: name, out, silent, scored_with: sw, counted };
     if (segCol !== null) {
       const v = row[segCol];
       // As a group label (H8): text, a number or true/false; an object would pool as "[object Object]".
@@ -340,7 +348,7 @@ function bySegment(rows, file, p) {
   return order.map(name => {
     const mine = byPeriod.get(name);
     return {
-      period: name, out: mine.reduce((t, r) => t + r.out, 0), silent: mine.reduce((t, r) => t + r.silent, 0),
+      period: name, out: mine.reduce((t, r) => t + r.out, 0), silent: mine.reduce((t, r) => t + r.silent, 0), counted: mine.reduce((t, r) => t + r.counted, 0),
       scored_with: mine[0].scored_with, scored: mine,
       segments: new Map(mine.map(r => [r.segment, { out: r.out, silent: r.silent }])),
     };
@@ -370,7 +378,7 @@ function looseNames(rows, file, p) {
   const renamed = new Map();
   const out = rows.map(row => {
     if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
-    const r = {};
+    const r = Object.create(null);   // a column named __proto__ is a column, not this row's prototype (trap P14)
     for (const [k, v] of Object.entries(row)) {
       const n = looseName(k);
       if (n !== k) renamed.set(k, n);
@@ -413,8 +421,17 @@ function orderKey(name) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(name)) return { kind: 'day', key: name };
   if (/^\d{4}-\d{2}$/.test(name)) return { kind: 'month', key: name };
   if (/^\d{4}-W\d{2}$/.test(name)) return { kind: 'week', key: name };
-  const m = /^(.*?)(\d+)(\D*)$/.exec(name);
-  return m ? { kind: 'number ' + m[1] + '#' + m[3], key: Number(m[2]) } : null;
+  // The last run of digits, read from the end: on a long name a regular expression takes quadratic
+  // time (trap P37). A line break before it reads as no number, as "." never crossed one.
+  const isDigit = i => { const c = name.charCodeAt(i); return c >= 48 && c <= 57; };
+  let end = name.length;
+  while (end > 0 && !isDigit(end - 1)) end--;
+  if (end === 0) return null;
+  let start = end - 1;
+  while (start > 0 && isDigit(start - 1)) start--;
+  const before = name.slice(0, start);
+  if (/[\n\r\u2028\u2029]/.test(before)) return null;
+  return { kind: 'number ' + before + '#' + name.slice(end), key: Number(name.slice(start, end)) };
 }
 
 // sort: run files, whose order a shell's glob chose (week-10 before week-2). When every name gives
@@ -437,7 +454,7 @@ function checkOrder(periods, where, p, sort = false) {
   // (week-1, week-10, week-2): any other order was chosen by someone, and out of time it stops.
   const given = periods.map(x => x.period);
   const asText = given.join('\n');
-  const textOrder = [...given].sort().join('\n') === asText || [...given].sort((a, b) => a.localeCompare(b)).join('\n') === asText;
+  const textOrder = [...given].sort().join('\n') === asText || [...given].sort((a, b) => compareText(a, b)).join('\n') === asText;
   if (sort && textOrder && keys.some((k, i) => i > 0 && k.key < keys[i - 1].key)) {
     const order = periods.map((x, i) => i).sort((a, b) => (keys[a].key < keys[b].key ? -1 : keys[a].key > keys[b].key ? 1 : a - b));
     p.fix('L1', where, 'the period files were given out of order; sorted by their names: ' +
@@ -475,6 +492,9 @@ function monitorRun({ config = null, runPaths = [], countsPath = null, keysDir =
     if (v !== null && !(typeof v === 'number' && v > 0 && v < 100)) throw new Error(flag + ' must be a percentage above 0 and below 100, got ' + JSON.stringify(v));
   }
   if (periodSize !== null && !(Number.isInteger(periodSize) && periodSize >= 1)) throw new Error('--period-size must be a whole number of records, 1 or more, got ' + JSON.stringify(periodSize));
+  // Past this, the chance of no alarm per period is 1 in floating point, and the chain cannot tell a
+  // level that keeps the promise from one that does not (trap P32).
+  if (falseAlarmEvery > MAX_EVERY) throw new Error('--false-alarm-every is at most 1,000,000,000,000 records: past that the arithmetic cannot show the alarm level keeps the promise');
   // Defaults: the acceptable rate is half the target; the alarming rate is double the acceptable
   // rate (so the target itself when only --target is given). docs/METRICS.md says why.
   const p0 = acceptable !== null ? acceptable : target / 2;
@@ -528,11 +548,15 @@ function monitorRun({ config = null, runPaths = [], countsPath = null, keysDir =
   // With segments, every row of the counts file says how it was scored.
   if (countsPath) checkScoredWith(periods.some(x => x.scored) ? periods.flatMap(x => x.scored) : periods, countsPath, p);
   const sizes = periods.filter(x => x.out > 0).map(x => x.out);
-  if (sizes.length && Math.max(...sizes) > UNEVEN * Math.min(...sizes)) {
-    p.warn('L7', countsPath || 'period files', 'the periods range from ' + Math.min(...sizes) + ' to ' + Math.max(...sizes) + ' ' + words.base + '. ' +
+  if (sizes.length && maxOf(sizes) > UNEVEN * minOf(sizes)) {
+    p.warn('L7', countsPath || 'period files', 'the periods range from ' + minOf(sizes) + ' to ' + maxOf(sizes) + ' ' + words.base + '. ' +
       'Both checks weigh every record the same, so a big period counts for more than a small one; the false-alarm figure is for periods of the median size (or --period-size), and smaller ones false-alarm more often. ' +
       'If a different share of each period\'s records was checked, the records checked do not stand for the periods equally.');
   }
+  // Trap P32: the bound's and the alarm's arithmetic grow with the records checked, and a person's
+  // checks never reach this. A typo in a counts file should stop, not run for hours.
+  const checkedInAll = periods.reduce((t, x) => t + x.out, 0);
+  if (checkedInAll > MOST_CHECKED) p.stop('P32', countsPath || 'period files', checkedInAll + ' ' + words.base + ' checked in all: monitor takes at most 10,000,000. Check the counts');
   const segmented = segment !== null || (countsPath !== null && Boolean(info.segment_column));
   const segs = segmented ? segmentSeries(periods, countsPath || '--segment-by', p, segments) : null;
   p.throwIfStopped();
@@ -543,6 +567,15 @@ function monitorRun({ config = null, runPaths = [], countsPath = null, keysDir =
   const memberships = segmented && !countsPath ? periods.map(x => x.memberships || 0) : null;
   const series = segmented ? monitorSegments(periods, segs.family, { ...opts, shared, provisional: segments === null, memberships }) : monitorSeries(periods, opts);
   series.settings.acceptable_given = acceptable !== null;
+  // Trap P2: nothing scored in any period the alarm counts: said at the top, and the gate fails on it.
+  // Records scored with none in the series' base are a healthy workflow: nothing to measure, and said so.
+  const watched = periods.slice(from);
+  const onward = from > 0 ? ' from ' + periods[from].period + ' on' : '';
+  const nothing = watched.every(x => x.counted === 0) ? (countsPath ? 'every count is zero in every period' : 'no record was scored in any period') + onward : null;
+  if (!nothing && watched.every(x => x.out === 0)) {
+    p.warn('P2', countsPath || 'period files', 'No record ' + (watch === 'silent-errors' ? 'went out without review' : 'was blocked or suppressed') + ' in any period' + onward +
+      ', so the series has nothing to measure: a gate on it reads no alarm, not a clean series.');
+  }
   baselineNote(series, p0, p, watch);
   if (segmented) {
     const { members, false_alarm_every_each, without_segments, rows, overlap } = series.segments;
@@ -560,6 +593,7 @@ function monitorRun({ config = null, runPaths = [], countsPath = null, keysDir =
     kind: 'monitor',
     ...(watch === 'silent-errors' ? {} : { watch }),
     inputs: { ...(countsPath ? { counts: countsPath } : { runs: runPaths, ...(keysDir !== null ? { keys: keysDir } : {}) }), mode, ...(since !== null ? { since } : {}) },
+    ...(nothing ? { nothing_evaluated: { why: nothing } } : {}),
     ...series,
     problems: p.items,
   };
@@ -591,7 +625,7 @@ function checkDeclared(segments, segmentBy) {
 //   segments whose names differ only by case are one segment split in two: STRICT (L23).
 function segmentSeries(periods, where, p, declared = null) {
   const seen = [...new Set(periods.flatMap(x => [...x.segments.keys()]))];
-  const other = {};
+  const other = new Map();
   let labels;
   if (declared !== null) {
     const named = declared.map(s => String(s).trim());
@@ -605,7 +639,7 @@ function segmentSeries(periods, where, p, declared = null) {
       const pooled = new Map();
       for (const [label, c] of x.segments) {
         const to = label === NONE || named.includes(label) ? label : OTHER;
-        if (to === OTHER) other[label] = (other[label] || 0) + c.out;
+        if (to === OTHER) other.set(label, (other.get(label) || 0) + c.out);
         const acc = pooled.get(to) || { out: 0, silent: 0 };
         acc.out += c.out;
         acc.silent += c.silent;
@@ -615,7 +649,7 @@ function segmentSeries(periods, where, p, declared = null) {
     }
     labels = [...named, OTHER, NONE];
   } else {
-    labels = seen.sort((a, b) => (a === NONE ? 1 : b === NONE ? -1 : a.localeCompare(b)));
+    labels = seen.sort((a, b) => (a === NONE ? 1 : b === NONE ? -1 : compareText(a, b)));
     const lower = new Map();
     for (const label of labels) {
       const k = label.toLowerCase();
@@ -629,7 +663,7 @@ function segmentSeries(periods, where, p, declared = null) {
   return {
     family: declared !== null ? all : all.filter(s => records(s) > 0),
     empty: all.filter(s => records(s) === 0).map(s => s.segment),
-    other,
+    other: Object.fromEntries(other),
   };
 }
 
@@ -662,4 +696,4 @@ function baselineNote(series, p0, p, watch = 'silent-errors') {
       : ' (better: the rate measured before launch, from score on a golden set or the first weeks).'));
 }
 
-module.exports = { monitorRun };
+module.exports = { monitorRun, orderKey };

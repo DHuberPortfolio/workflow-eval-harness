@@ -32,9 +32,10 @@
 // record's own to at most this (the lower of the two). Both are gate what-ifs: they move only
 // records the gate can move (whatif.js), and rest on the same assumption.
 
-const fs = require('fs');
 const { problems, markId } = require('./problems.js');
+const { readText } = require('./text.js');
 const { equivalentOf, DECLINED } = require('./config.js');
+const { isObj, isName, isPath, isProb, isLabel, describe, own } = require('./values.js');
 
 const POLICY_KEYS = ['name', 'hold_if', 'auto_publish', 'auto_publish_cap'];
 const CONDITION_KEYS = ['all', 'output', 'value', 'values', 'applied', 'confidence_at_least', 'field', 'equals', 'in', 'below', 'at_least'];
@@ -44,14 +45,6 @@ const AS_RUN = 'as run';
 // Operators the quick form does not have, and what to write instead.
 const NOT_AN_OPERATOR = 'use < or >= (there is no <=, > or ==): field:match<0.5, field:match>=0.5, field:client=north';
 
-const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
-const isName = v => typeof v === 'string' && v.trim().length > 0;
-const isPath = v => isName(v) && v.split('.').every(part => part.length > 0);
-const isProb = v => typeof v === 'number' && v >= 0 && v <= 1;
-// What equals and in compare: text, a number or true/false, as trimmed text (as group labels are).
-const isLabel = x => typeof x === 'string' || typeof x === 'boolean' || (typeof x === 'number' && Number.isFinite(x));
-const describe = v => (v === null ? 'null' : v === undefined ? 'nothing' : Array.isArray(v) ? 'a list'
-  : typeof v === 'string' ? 'the text ' + JSON.stringify(v) : typeof v);
 
 // The answer key's fields, which a policy may not read (trap E17): a routing rule can only use
 // what the workflow knew when it routed. A field the predictions also use for an output or the
@@ -86,7 +79,7 @@ function conditionProblems(c, config) {
   for (const k of Object.keys(c)) if (!CONDITION_KEYS.includes(k)) out.push(['E12', 'unknown key "' + k + '" (allowed: ' + CONDITION_KEYS.join(', ') + ')']);
   if (c.output === undefined && c.field === undefined) out.push(['E12', 'needs "output" or "field": what the condition looks at']);
   if (c.output !== undefined) {
-    const o = typeof c.output === 'string' ? config.outputs[c.output] : undefined;
+    const o = typeof c.output === 'string' ? own(config.outputs, c.output) : undefined;
     if (!o) out.push(['E13', 'output ' + JSON.stringify(c.output) + ' is not declared in the config (outputs: ' + Object.keys(config.outputs).join(', ') + ')']);
     else if (o.type !== 'set' && o.field === config.routing.field) out.push(['E13', 'output "' + c.output + '" is the route itself; a policy changes routes, so it cannot read them']);
     if (c.value !== undefined && c.values !== undefined) out.push(['E12', 'give "value" or "values", not both']);
@@ -123,8 +116,8 @@ function thresholdProblems(changes, key, config) {
   const gates = config.thresholds ? config.thresholds.auto_publish : {};
   const out = [];
   for (const [o, x] of Object.entries(changes)) {
-    if (!config.outputs[o]) out.push(['E13', key + ': output "' + o + '" is not declared in the config']);
-    else if (!(o in gates)) out.push(['E13', key + ': output "' + o + '" has no auto_publish threshold in the config, so there is no gate to change']);
+    if (!own(config.outputs, o)) out.push(['E13', key + ': output "' + o + '" is not declared in the config']);
+    else if (!Object.hasOwn(gates, o)) out.push(['E13', key + ': output "' + o + '" has no auto_publish threshold in the config, so there is no gate to change']);
     if (!isProb(x)) out.push(['E12', key + '.' + o + ' must be a number from 0 to 1, got ' + describe(x)]);
   }
   return out;
@@ -197,7 +190,7 @@ function normalize(c, config, where, p) {
 // The file on disk (E10).
 function loadPolicies(file, config, p = problems('strict')) {
   let text;
-  try { text = fs.readFileSync(file, 'utf8'); } catch (e) { throw new Error('1 problem(s) stop scoring (details in test/TRAPS.md):\n  - [E10] ' + file + ': cannot be read: ' + e.message); }
+  try { text = readText(file); } catch (e) { throw new Error('1 problem(s) stop scoring (details in test/TRAPS.md):\n  - [E10] ' + file + ': cannot be read: ' + e.message); }
   let raw;
   try { raw = JSON.parse(text.replace(/^﻿/, '')); } catch (e) { throw new Error('1 problem(s) stop scoring (details in test/TRAPS.md):\n  - [E10] ' + file + ': is not valid JSON: ' + e.message); }
   return readPolicies(raw, config, file, p);

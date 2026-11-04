@@ -27,6 +27,7 @@
 // be wrong. Ties: the stronger answer from the runs first, then the key's record order (N7).
 
 const { DECLINED } = require('../config.js');
+const { minOf, maxOf } = require('../values.js');
 
 // Confidence bins: never stated, below 0.50, 0.50-0.59, ..., 0.80-0.89, 0.90 or more.
 const EDGES = [0.5, 0.6, 0.7, 0.8, 0.9];
@@ -64,9 +65,19 @@ const binWords = b => (b === 0 ? 'never' : b === 1 ? 'below ' + EDGES[0].toFixed
 // Where a bin's records sit on the curve: its middle (never stated: 0).
 const binMiddle = b => (b === 0 ? 0 : b === 1 ? EDGES[0] / 2 : b === BINS - 1 ? (EDGES[EDGES.length - 1] + 1) / 2 : (EDGES[b - 2] + EDGES[b - 1]) / 2);
 
-const plainOf = slots => slots.filter(s => typeof s === 'string' || s.any_of.length === 1).map(s => (typeof s === 'string' ? s : s.any_of[0]));
-const altsOf = slots => slots.filter(s => typeof s !== 'string' && s.any_of.length > 1).flatMap(s => s.any_of);
-const mean = a => a.reduce((s, x) => s + x, 0) / a.length;
+// A key list as what it holds plainly (a value, or an any_of of one) and as alternatives.
+function plainAndAlts(slots) {
+  const plain = new Set();
+  const alt = new Set();
+  for (const s of slots) {
+    if (typeof s === 'string') plain.add(s);
+    else if (s.any_of.length === 1) plain.add(s.any_of[0]);
+    else for (const v of s.any_of) alt.add(v);
+  }
+  return { plain, alt };
+}
+const total = a => a.reduce((s, x) => s + x, 0);
+const mean = a => total(a) / a.length;
 
 // ---------- the evidence ----------
 
@@ -77,12 +88,19 @@ function collect(runs, config) {
   const evidence = runs.map(run => new Map(evidenceRecords(run, config).map(r => [r.id, r])));
   const ids = runs[0].map(r => r.id);
   const order = new Map(ids.map((id, i) => [id, i]));
+  // The records with evidence from any run: what each run gives (null for none), and the first that does.
+  const rows = [];
+  for (const id of ids) {
+    const per = evidence.map(m => m.get(id) || null);
+    const first = per.find(Boolean);
+    if (first) rows.push({ id, per, first });
+  }
   const sets = {};
   const labels = {};
   for (const [name, o] of Object.entries(config.outputs)) {
     if (isRouteOutput(o, config)) continue;
-    if (o.type === 'set') sets[name] = setCells(name, ids, evidence, config);
-    else labels[name] = labelEntries(name, o, ids, evidence);
+    if (o.type === 'set') sets[name] = setCells(name, rows, config);
+    else labels[name] = labelEntries(name, o, rows);
   }
   return { runs: runs.length, order, sets, labels, groups: groupsOf(runs[0], config) };
 }
@@ -103,7 +121,10 @@ function groupsOf(paired, config) {
     }
   }
   const members = new Map();
-  for (const r of paired) members.set(find(r.id), [...(members.get(find(r.id)) || []), r.id]);
+  for (const r of paired) {
+    const root = find(r.id);
+    if (members.has(root)) members.get(root).push(r.id); else members.set(root, [r.id]);
+  }
   const out = new Map();
   for (const ids of members.values()) if (ids.length > 1) for (const id of ids) out.set(id, ids);
   return out;
@@ -116,27 +137,29 @@ function said(r, name, v) {
   const copies = r.pred[name].filter(x => x.value === v);
   if (copies.length === 0) return { said: false, applied: false, inherited: false, confidence: null, p: 0 };
   const known = copies.map(x => x.confidence).filter(c => c !== null);
-  const confidence = known.length ? Math.max(...known) : null;
+  const confidence = known.length ? maxOf(known) : null;
   return { said: true, applied: copies.some(x => x.applied), inherited: copies.every(x => x.inherited), confidence, p: confidence === null ? 1 : confidence };
 }
 
-function setCells(name, ids, evidence, config) {
+function setCells(name, rows, config) {
   const allowed = config.allowed_values[name];
   const cells = new Map();   // value -> Map id -> cell
   const alts = new Map();    // value -> records where it is an any_of alternative (no cell: I10)
   const altIds = new Map();  // value -> those records' ids
   const recordIds = new Set();
+  const held = new Map();    // id -> that record's cells and alternatives (moveRecord)
   let records = 0;
-  for (const id of ids) {
-    const per = evidence.map(m => m.get(id) || null);
-    const first = per.find(Boolean);
-    if (!first) continue;
+  for (const { id, per, first } of rows) {
     records++;
     recordIds.add(id);
-    const key = first.key[name];
-    const plain = new Set(plainOf(key));
-    const alt = new Set(altsOf(key));
-    for (const v of alt) { alts.set(v, (alts.get(v) || 0) + 1); altIds.set(v, new Set([...(altIds.get(v) || []), id])); }
+    const { plain, alt } = plainAndAlts(first.key[name]);
+    for (const v of alt) {
+      alts.set(v, (alts.get(v) || 0) + 1);
+      if (!altIds.has(v)) altIds.set(v, new Set());
+      altIds.get(v).add(id);
+    }
+    const own = { cells: [], alts: [...alt] };
+    held.set(id, own);
     const values = new Set(plain);
     for (const r of per) if (r) for (const x of r.pred[name]) values.add(x.value);
     for (const v of values) {
@@ -146,18 +169,17 @@ function setCells(name, ids, evidence, config) {
       const runs = per.map(r => said(r, name, v));
       const known = runs.filter(Boolean);
       if (!cells.has(v)) cells.set(v, new Map());
-      cells.get(v).set(id, { id, output: name, value: v, listed: plain.has(v), runs, x: mean(known.map(e => e.p)) });
+      const cell = { id, output: name, value: v, listed: plain.has(v), runs, x: mean(known.map(e => e.p)) };
+      cells.get(v).set(id, cell);
+      own.cells.push(cell);
     }
   }
-  return { cells, alts, altIds, records, recordIds };
+  return { cells, alts, altIds, records, recordIds, held };
 }
 
-function labelEntries(name, o, ids, evidence) {
+function labelEntries(name, o, rows) {
   const entries = new Map();
-  for (const id of ids) {
-    const per = evidence.map(m => m.get(id) || null);
-    const first = per.find(Boolean);
-    if (!first) continue;
+  for (const { id, per, first } of rows) {
     const key = first.key[name];
     // A decline is not a label: neither side's decline is a suspect (N17).
     if (key === null || key === undefined || key === DECLINED) continue;
@@ -267,30 +289,50 @@ function curveOf(agree, n, from = 1) {
 
 // Per set output and value: cells per bin with the key listing it (k1) and not (k0), the records
 // that hold none (a value neither listed nor stated on a record counts as k0 in the never bin), and
-// the output's pooled figures. without: records to leave out altogether (a suspect's duplicate
-// group or cluster, N4).
-function setStats(s, without = null) {
-  const out = id => without !== null && without.has(id);
-  const records = without === null ? s.records : [...s.recordIds].filter(id => !out(id)).length;
+// the output's pooled figures, over every record. gone: records taken out since (moveRecord).
+function setStats(s) {
   const per = new Map();
   const pooledCounts = { k1: Array(BINS).fill(0), k0: Array(BINS).fill(0) };
   for (const [v, byId] of s.cells) {
     const k1 = Array(BINS).fill(0);
     const k0 = Array(BINS).fill(0);
-    let cells = 0;
-    for (const cell of byId.values()) {
-      if (out(cell.id)) continue;
-      cells++;
-      (cell.listed ? k1 : k0)[binOf(cell.x)]++;
-    }
-    const alts = without === null ? s.alts.get(v) || 0 : [...(s.altIds.get(v) || [])].filter(id => !out(id)).length;
-    k0[0] += records - cells - alts;
-    per.set(v, { k1, k0, n1: k1.reduce((a, b) => a + b, 0), n0: k0.reduce((a, b) => a + b, 0) });
+    for (const cell of byId.values()) (cell.listed ? k1 : k0)[binOf(cell.x)]++;
+    k0[0] += s.records - byId.size - (s.alts.get(v) || 0);
+    per.set(v, { k1, k0 });
     for (let b = 0; b < BINS; b++) { pooledCounts.k1[b] += k1[b]; pooledCounts.k0[b] += k0[b]; }
   }
-  pooledCounts.n1 = pooledCounts.k1.reduce((a, b) => a + b, 0);
-  pooledCounts.n0 = pooledCounts.k0.reduce((a, b) => a + b, 0);
-  return { per, pooled: pooledCounts };
+  return { per, pooled: pooledCounts, gone: 0 };
+}
+
+// Takes one record out of an output's counts (sign -1), as if it were never in the set, or puts it
+// back (+1). Every value then has one record fewer that holds none of it: that is kept as one
+// number (gone) rather than written to every value, so a record costs its own cells, not a pass
+// over the values, and a value this record does hold (it never counted as holding none) gets its
+// one back here. Whole counts, so taking out and putting back leaves them exactly as they were.
+function moveRecord(st, own, sign) {
+  st.gone -= sign;
+  const holds = v => { st.per.get(v).k0[0] -= sign; st.pooled.k0[0] -= sign; };
+  for (const cell of own.cells) {
+    const side = cell.listed ? 'k1' : 'k0';
+    const b = binOf(cell.x);
+    st.per.get(cell.value)[side][b] += sign;
+    st.pooled[side][b] += sign;
+    holds(cell.value);
+  }
+  for (const v of own.alts) if (st.per.has(v)) holds(v);
+}
+
+// One value's counts and the output's pooled ones as they stand, with their totals.
+function countsNow(st, value) {
+  const v = st.per.get(value);
+  const k0 = v.k0.slice();
+  k0[0] -= st.gone;
+  const pooledK0 = st.pooled.k0.slice();
+  pooledK0[0] -= st.gone * st.per.size;
+  return {
+    v: { k1: v.k1, k0, n1: total(v.k1), n0: total(k0) },
+    pooled: { k1: st.pooled.k1, k0: pooledK0, n1: total(st.pooled.k1), n0: total(pooledK0) },
+  };
 }
 
 // Per label output: for each record and each label a run gave, the average confidence in it and
@@ -302,10 +344,10 @@ function labelPairs(e, n, agree, sign = 1) {
     if (label === e.key) agree[b] += sign;
   }
 }
-function labelStats(entries, without = null) {
+function labelStats(entries) {
   const n = Array(BINS).fill(0);
   const agree = Array(BINS).fill(0);
-  for (const e of entries.values()) if (without === null || !without.has(e.id)) labelPairs(e, n, agree);
+  for (const e of entries.values()) labelPairs(e, n, agree);
   return { n, agree };
 }
 
@@ -313,60 +355,70 @@ function labelStats(entries, without = null) {
 
 const odds = p => p / Math.max(1 - p, 1e-9);
 
-// Each suspect with x, its weight (the ranking score) and the counts behind it, for the why line.
-// Leave-one-out (N4): a suspect's own entry is taken out of its counts below; the rest of its
-// duplicate group or cluster, if the config names either, is left out of the statistics altogether,
-// as a copy of its key entry would vouch for it.
-function rankSuspects(suspects, c) {
-  const memo = new Map();
-  const statsFor = id => {
-    const others = (c.groups.get(id) || []).filter(x => x !== id).sort();
-    const k = others.join('\u0000');
-    if (!memo.has(k)) {
-      const without = others.length ? new Set(others) : null;
-      memo.set(k, {
-        S: Object.fromEntries(Object.entries(c.sets).map(([name, s]) => [name, setStats(s, without)])),
-        L: Object.fromEntries(Object.entries(c.labels).map(([name, e]) => [name, labelStats(e, without)])),
-      });
-    }
-    return memo.get(k);
-  };
-  const ranked = suspects.map(s => {
-    const { S, L } = statsFor(s.id);
-    if (s.kind === 'label') {
-      const x = labelX(s.entry, s.with);
-      const b = binOf(x);
-      // The suspect's record has a pair for every label its runs gave, the key's own label among
-      // them when a run gave it: kept, the key's entry would vouch for itself.
-      const n = L[s.output].n.slice();
-      const agree = L[s.output].agree.slice();
-      labelPairs(s.entry, n, agree, -1);
-      const C = curveOf(agree, n)(x);
-      return { ...s, x, bin: b, weight: odds(C.value), evidence: { kind: 'label', bin: binWords(b), agree: agree[b], of: n[b], curve: C.value, curve_from: C.from } };
-    }
-    const x = s.cell.x;
+// One suspect with x, its weight (the ranking score) and the counts behind it, for the why line.
+// A suspect's own entry is taken out of its counts here (N4).
+function rankOne(s, S, L) {
+  if (s.kind === 'label') {
+    const x = labelX(s.entry, s.with);
     const b = binOf(x);
-    const st = S[s.output];
-    const v = st.per.get(s.value);
-    if (s.kind === 'key_lacks') {
-      // This record is one of the k0 in its bin, for the value and for the output's curve alike.
-      const n = v.k1[b] + v.k0[b] - 1;
-      const k0 = st.pooled.k0.slice();
-      k0[b]--;
-      const C = curveOf(st.pooled.k1, st.pooled.k1.map((k, i) => k + k0[i]), 0)(x);
-      const q = (v.k1[b] + SMOOTH * C.value) / (n + SMOOTH);
-      return { ...s, x, bin: b, weight: odds(q), evidence: { kind: 'key_lacks', bin: binWords(b), listed: v.k1[b], of: n, curve: C.value, curve_from: C.from, q } };
-    }
-    // key_lists: this record is one of the k1 in its bin. The output's shares get one record in
-    // each bin, so a bin nobody else is in is rare, not impossible (a share of 0 would make any
-    // answer in it infinitely suspect).
-    const F1 = (st.pooled.k1[b] - 1 + 1) / (st.pooled.n1 - 1 + BINS);
-    const F0 = (st.pooled.k0[b] + 1) / (st.pooled.n0 + BINS);
-    const f1 = (v.k1[b] - 1 + SMOOTH * F1) / (v.n1 - 1 + SMOOTH);
-    const f0 = (v.k0[b] + SMOOTH * F0) / (v.n0 + SMOOTH);
-    return { ...s, x, bin: b, weight: f0 / Math.max(f1, 1e-9),
-      evidence: { kind: 'key_lists', bin: binWords(b), when_listed: v.k1[b] - 1, listed: v.n1 - 1, when_lacking: v.k0[b], lacking: v.n0 } };
+    // The suspect's record has a pair for every label its runs gave, the key's own label among
+    // them when a run gave it: kept, the key's entry would vouch for itself.
+    const n = L[s.output].n.slice();
+    const agree = L[s.output].agree.slice();
+    labelPairs(s.entry, n, agree, -1);
+    const C = curveOf(agree, n)(x);
+    return { ...s, x, bin: b, weight: odds(C.value), evidence: { kind: 'label', bin: binWords(b), agree: agree[b], of: n[b], curve: C.value, curve_from: C.from } };
+  }
+  const x = s.cell.x;
+  const b = binOf(x);
+  const { v, pooled: p } = countsNow(S[s.output], s.value);
+  if (s.kind === 'key_lacks') {
+    // This record is one of the k0 in its bin, for the value and for the output's curve alike.
+    const n = v.k1[b] + v.k0[b] - 1;
+    const k0 = p.k0.slice();
+    k0[b]--;
+    const C = curveOf(p.k1, p.k1.map((k, i) => k + k0[i]), 0)(x);
+    const q = (v.k1[b] + SMOOTH * C.value) / (n + SMOOTH);
+    return { ...s, x, bin: b, weight: odds(q), evidence: { kind: 'key_lacks', bin: binWords(b), listed: v.k1[b], of: n, curve: C.value, curve_from: C.from, q } };
+  }
+  // key_lists: this record is one of the k1 in its bin. The output's shares get one record in
+  // each bin, so a bin nobody else is in is rare, not impossible (a share of 0 would make any
+  // answer in it infinitely suspect).
+  const F1 = (p.k1[b] - 1 + 1) / (p.n1 - 1 + BINS);
+  const F0 = (p.k0[b] + 1) / (p.n0 + BINS);
+  const f1 = (v.k1[b] - 1 + SMOOTH * F1) / (v.n1 - 1 + SMOOTH);
+  const f0 = (v.k0[b] + SMOOTH * F0) / (v.n0 + SMOOTH);
+  return { ...s, x, bin: b, weight: f0 / Math.max(f1, 1e-9),
+    evidence: { kind: 'key_lists', bin: binWords(b), when_listed: v.k1[b] - 1, listed: v.n1 - 1, when_lacking: v.k0[b], lacking: v.n0 } };
+}
+
+// Leave-one-out (N4): the rest of a suspect's duplicate group or cluster, if the config names
+// either, is left out of the statistics altogether, as a copy of its key entry would vouch for it.
+// One set of counts serves every suspect, one group at a time: the group's records come out
+// together, each suspect's own goes back for its turn, and the group goes back after. So a group
+// costs its own records whatever the size of the set (counting afresh per group was quadratic).
+function rankSuspects(suspects, c) {
+  const S = Object.fromEntries(Object.entries(c.sets).map(([name, s]) => [name, setStats(s)]));
+  const L = Object.fromEntries(Object.entries(c.labels).map(([name, e]) => [name, labelStats(e)]));
+  const move = (id, sign) => {
+    for (const [name, s] of Object.entries(c.sets)) if (s.held.has(id)) moveRecord(S[name], s.held.get(id), sign);
+    for (const [name, entries] of Object.entries(c.labels)) if (entries.has(id)) labelPairs(entries.get(id), L[name].n, L[name].agree, sign);
+  };
+  const inGroup = new Map();   // group (its list of ids, or undefined) -> the places of its suspects
+  suspects.forEach((s, i) => {
+    const group = c.groups.get(s.id);
+    if (inGroup.has(group)) inGroup.get(group).push(i); else inGroup.set(group, [i]);
   });
+  const ranked = new Array(suspects.length);
+  for (const [group, places] of inGroup) {
+    if (group) for (const id of group) move(id, -1);
+    for (const i of places) {
+      if (group) move(suspects[i].id, 1);
+      ranked[i] = rankOne(suspects[i], S, L);
+      if (group) move(suspects[i].id, -1);
+    }
+    if (group) for (const id of group) move(id, 1);
+  }
   // Ties (N7): the runs' stronger answer first (a higher average confidence in the workflow's side;
   // for a key_lists suspect, the workflow's side is that the value does not apply), then the key's
   // record order, then the output's and the value's.
@@ -383,13 +435,13 @@ function runsSaid(s) {
     const known = s.entry.runs.filter(Boolean);
     const gave = known.filter(r => r.label === s.with);
     const confs = gave.map(r => r.confidence).filter(x => x !== null);
-    return { runs: known.length, said: gave.length, label: s.with, confidence: confs.length ? { min: Math.min(...confs), max: Math.max(...confs) } : null };
+    return { runs: known.length, said: gave.length, label: s.with, confidence: confs.length ? { min: minOf(confs), max: maxOf(confs) } : null };
   }
   const known = s.cell.runs.filter(Boolean);
   const stated = known.filter(e => e.said);
   const confs = stated.map(e => e.confidence).filter(x => x !== null);
   return { runs: known.length, said: stated.length, applied: known.filter(e => e.applied).length,
-    confidence: confs.length ? { min: Math.min(...confs), max: Math.max(...confs) } : null };
+    confidence: confs.length ? { min: minOf(confs), max: maxOf(confs) } : null };
 }
 
 // The verbs a person can rule a suspect with (N11).

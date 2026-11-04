@@ -15,10 +15,9 @@
 // Every one stops in lenient mode too, as a list of cluster values does (G15): there is no
 // weighting to fall back on.
 
-const { mixedRate } = require('./stats.js');
+const { mixedRate, pct1 } = require('./stats.js');
 const { NONE } = require('./traps.js');
 
-const pct1 = x => (x === null ? null : Number((x * 100).toFixed(1)));
 
 // mix: loadMix() of the file; summaries: results.records (each with id, route_class, silent);
 // records: the paired records, with their groups; sources: the files a record is named by, so a

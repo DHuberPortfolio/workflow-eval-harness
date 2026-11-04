@@ -20,11 +20,17 @@ const { judgeAll, gatePasses } = require('./judge.js');
 const { scoreRouting } = require('./routing.js');
 const { scoreQuality } = require('./classification.js');
 const { chanceAtMost, wilson } = require('./stats.js');
+const { countable, thousands } = require('../values.js');
 
 const round = (x, d) => Number(x.toFixed(d));
 
+// Thresholds are compared to four decimals, so a sweep has at most 10,001 different rows. A step finer
+// than that only repeats them, and is refused before anything is allocated (trap P33).
+const MOST_ROWS = 10001;
 function steps(from, to, step) {
   if (!(from >= 0 && to <= 1 && from <= to && step > 0)) throw new Error('thresholds must satisfy 0 <= from <= to <= 1 and step > 0');
+  const rows = Math.floor((to - from) / step + 1e-9) + 1;
+  if (rows > MOST_ROWS) throw new Error('--step ' + (step >= 1e-6 ? step.toFixed(Math.min(20, Math.ceil(-Math.log10(step)))) : step) + ' would give ' + (countable(rows) ? thousands(rows) : 'too many') + ' rows: thresholds are compared to four decimals, so use a step of 0.0001 or more');
   const out = [];
   for (let i = 0; round(from + i * step, 4) <= to + 1e-9; i++) out.push(round(from + i * step, 4));
   return out;
@@ -40,8 +46,9 @@ function withThresholds(config, changes) {
   return { ...config, thresholds: { ...config.thresholds, ...changes } };
 }
 
-function summarize(records, config, extra) {
-  const routing = scoreRouting(judgeAll(records, config), config, records);
+// findings: one sweep's value findings, kept across its rows (judge.js findingsOf).
+function summarize(records, config, extra, findings = null) {
+  const routing = scoreRouting(judgeAll(records, config, findings), config, records);
   return {
     ...extra,
     through: records.filter(r => r.route_class === 'auto').map(r => r.id),
@@ -62,7 +69,7 @@ function gateSweep(records, config, { outputs = null, from = 0.5, to = 1, step =
   const gates = config.thresholds ? config.thresholds.auto_publish : {};
   if (Object.keys(gates).length === 0) throw new Error('the gate what-if needs thresholds.auto_publish in the config');
   const swept = outputs || Object.keys(gates);
-  for (const o of swept) if (!(o in gates)) throw new Error('"' + o + '" has no auto_publish threshold to sweep');
+  for (const o of swept) if (!Object.hasOwn(gates, o)) throw new Error('"' + o + '" has no auto_publish threshold to sweep');
 
   const canMove = movableFn(config);
   const current = new Set(swept.map(o => gates[o])).size === 1 && typeof gates[swept[0]] === 'number' ? gates[swept[0]] : null;
@@ -72,6 +79,7 @@ function gateSweep(records, config, { outputs = null, from = 0.5, to = 1, step =
   const grid = steps(from, to, step);
   if (current !== null && !grid.includes(current)) { grid.push(current); grid.sort((a, b) => a - b); }
 
+  const findings = new WeakMap();
   const rows = grid.map(t => {
     const auto = { ...gates };
     for (const o of swept) auto[o] = t;
@@ -88,7 +96,7 @@ function gateSweep(records, config, { outputs = null, from = 0.5, to = 1, step =
       current: t === current,
       moved_in: moved.filter((m, i) => m.route_class === 'auto' && records[i].route_class !== 'auto').map(m => m.id),
       moved_out: moved.filter((m, i) => m.route_class !== 'auto' && records[i].route_class === 'auto').map(m => m.id),
-    });
+    }, findings);
   });
 
   // Self-check: at the current threshold the simulation should reproduce the real routes.
@@ -101,7 +109,7 @@ function gateSweep(records, config, { outputs = null, from = 0.5, to = 1, step =
     outputs: swept,
     assumption: config.whatif ? 'records marked movable by ' + config.whatif.movable_field
       : 'no whatif.movable_field: every record that went out without review or was sent to a person is assumed routed by the gate alone (an upper bound)',
-    as_run: summarize(records, config, { threshold: null, current: false, moved_in: [], moved_out: [] }),
+    as_run: summarize(records, config, { threshold: null, current: false, moved_in: [], moved_out: [] }, findings),
     ...(target === null ? { rows, certification: null } : certifyGates(rows, target, confidence)),
     check,
   };
@@ -201,6 +209,7 @@ function floorSweep(records, config, { from = 0.4, to = 0.9, step = 0.05 } = {})
   const grid = steps(from, to, step);
   if (!grid.includes(f0)) { grid.push(f0); grid.sort((a, b) => a - b); }
 
+  const findings = new WeakMap();
   const rows = grid.map(f => {
     const cfg = withThresholds(config, { floor: f });
     const readmitted = [];
@@ -238,7 +247,7 @@ function floorSweep(records, config, { from = 0.4, to = 0.9, step = 0.05 } = {})
       readmitted, evicted, needs_replay: needsReplay,
       overall: q.overall ? { tp: q.overall.tp, fp: q.overall.fp, fn: q.overall.fn, precision: q.overall.precision, recall: q.overall.recall, f1: q.overall.f1 } : null,
       moved: changed.filter((m, i) => m.route_class !== records[i].route_class).map(m => m.id + ' -> ' + m.route_class),
-    });
+    }, findings);
   });
 
   return {

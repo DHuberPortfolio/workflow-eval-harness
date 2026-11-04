@@ -1,11 +1,20 @@
 // Small text-formatting helpers and the wording shared by the terminal and HTML reports.
 
-const pct = r => (r === null || r === undefined || r.pct === null ? 'n/a' : r.pct.toFixed(1) + '%');
+const { countable, thousands } = require('../values.js');
+
+// A percentage with one decimal, or the decimals it was given to keep it apart from a target or from 0.
+const decimals = x => { const s = String(x); return s.includes('.') ? s.length - s.indexOf('.') - 1 : 0; };
+const figure = x => (x !== 0 && Math.abs(x) < 0.0001 ? String(x) : x.toFixed(Math.max(1, decimals(x))));
+const shownPct = x => figure(x) + '%';
+const pct = r => (r === null || r === undefined || r.pct === null ? 'n/a' : shownPct(r.pct));
 const count = r => (r === null || r === undefined ? '' : r.n + ' of ' + r.d);
-const range = r => (r === null || r === undefined || r.low_pct === null ? '' : r.low_pct.toFixed(1) + '-' + r.high_pct.toFixed(1) + '%');
+const range = r => (r === null || r === undefined || r.low_pct === null ? '' : figure(r.low_pct) + '-' + figure(r.high_pct) + '%');
 const num = (x, d = 3) => (x === null || x === undefined ? 'n/a' : x.toFixed(d));
 const signed = (x, d = 2) => (x === null ? 'n/a' : (x > 0 ? '+' : '') + x.toFixed(d));
 const list = (ids, max = 12) => (ids.length === 0 ? '-' : ids.slice(0, max).join(' ') + (ids.length > max ? ' +' + (ids.length - max) + ' more' : ''));
+
+// Trap P2: the line at the top of a report whose numbers read nothing.
+const nothingLine = why => 'NOTHING WAS EVALUATED  ' + why + ': the numbers below say nothing about the workflow.';
 
 // The same words for the same ideas in every report.
 // What happened to a record, by route class.
@@ -67,21 +76,25 @@ const TARGET_WORDS = {
   count: { out: 'records', mistake: 'mistake', source: 'count' },
 };
 // 3372 -> "3,372". Written out rather than toLocaleString, so every machine prints the same.
-const thousands = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+// A number of things, with their noun: "1,200 records", or "more records than any sample could hold".
+const sized = (n, noun) => (countable(n) ? thousands(n) + ' ' + noun : 'more ' + noun + ' than any sample could hold');
+const plural = (n, one, many) => thousands(n) + ' ' + (n === 1 ? one : many);
 function targetLines(t, words) {
   const under = 'under ' + t.target_pct + '%';
   if (t.tested === 0) return [under + ': nothing to show yet, with no ' + words.out + '.'];
-  if (t.shown) return [under + ': shown. The whole likely range is under it (it reaches ' + t.high_pct.toFixed(1) + '%).'];
-  const all = x => (x.all_records ? ' (about ' + thousands(x.all_records) + ' records in all, at this run\'s straight-through rate)' : '');
-  const lines = [under + ': not shown: the likely range reaches ' + t.high_pct.toFixed(1) + '%.'];
+  if (t.shown) return [under + ': shown. The whole likely range is under it (it reaches ' + shownPct(t.high_pct) + ').'];
+  const all = x => (x.all_records && countable(x.all_records) ? ' (about ' + thousands(x.all_records) + ' records in all, at this run\'s straight-through rate)' : '');
+  const lines = [under + ': not shown: the likely range reaches ' + shownPct(t.high_pct) + '.'];
   if (t.rate_at_or_above) {
-    lines.push('At ' + t.rate_pct.toFixed(1) + '%, no number of ' + words.out + ' can show it: the rate itself is at or above the target, and has to come down first.');
+    lines.push('At ' + shownPct(t.rate_pct) + ', no number of ' + words.out + ' can show it: the rate itself is at or above the target, and has to come down first.');
   } else if (t.plan) {
     const chance = Math.round(t.chance * 100);
-    lines.push('If the real rate is ' + t.plan.assumed_pct.toFixed(1) + '% (this ' + words.source + '\'s), about ' + thousands(t.plan.n) + ' ' + words.out + ' give ' +
-      (chance === 80 ? 'an ' : 'a ') + chance + '% chance of showing it' + all(t.plan) + (t.plan.exact ? '' : ' (a textbook estimate)') + '.');
+    const odds = (chance === 80 ? 'an ' : 'a ') + chance + '% chance of showing it';
+    lines.push('If the real rate is ' + shownPct(t.plan.assumed_pct) + ' (this ' + words.source + '\'s), ' + (countable(t.plan.n)
+      ? 'about ' + sized(t.plan.n, words.out) + ' give ' + odds + all(t.plan) + (t.plan.exact ? '' : ' (a textbook estimate)')
+      : 'it takes ' + sized(t.plan.n, words.out) + ' for ' + odds) + '.');
   }
-  lines.push('The least any test needs: ' + thousands(t.perfect_run.n) + ' ' + words.out + ' with no ' + words.mistake + ' at all' + all(t.perfect_run) + '.');
+  lines.push('The least any test needs: ' + sized(t.perfect_run.n, words.out) + (countable(t.perfect_run.n) ? '' : ',') + ' with no ' + words.mistake + ' at all' + all(t.perfect_run) + '.');
   lines.push('Choose the number of ' + words.out + ' before testing: stopping as soon as the range dips under the target makes the result look better than it is.');
   return lines;
 }
@@ -262,7 +275,8 @@ function withKeyLabels(results) {
 }
 
 module.exports = {
-  withKeyLabels, pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines,
+  nothingLine, shownPct,
+  withKeyLabels, plural, pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines,
   groupSource, GROUP_RANGES, severalLabels, some, ruledValue, rulingsWords, pendingLine, rulingStatus, clusterLine, CLUSTER_GROUP_NOTE, CLUSTER_TARGET_NOTE,
-  mixLines, thousands,
+  mixLines, thousands, sized, shownPct, figure,
 };

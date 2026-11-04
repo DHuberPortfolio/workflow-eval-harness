@@ -11,9 +11,7 @@
 // own, and those are counted, so the report can say how many.
 // Per-group rows and --target stay as they are (records counted as independent); the reports say so.
 
-const { clusteredRange } = require('./stats.js');
-
-const pct1 = x => (x === null ? null : Number((x * 100).toFixed(1)));
+const { clusteredRange, pct1 } = require('./stats.js');
 
 // summaries: results.records (each with id, route_class, silent); records: the paired records,
 // each with its cluster. null when the config has no clusters, so results without them are unchanged.

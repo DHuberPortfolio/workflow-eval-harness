@@ -125,6 +125,7 @@ test('O6: a held-out silent error stays hidden; --show-held-out lists it, and th
   const r = score(config, 'predictions-v2.json');
   assert.deepEqual(noIds(renderTerminal(r) + JSON.stringify(resultsJson(r)), HELD), []);
   assert.deepEqual(r.split.held_out.silent_errors.by_severity, { critical: 0, high: 1, medium: 0, low: 0 });
+  assert.equal(JSON.parse(fs.readFileSync(log, 'utf8')).looks[0].ids_shown, false);
   const shown = score(config, 'predictions-v2.json', { showHeldOut: true });
   assert.deepEqual(shown.split.held_out_report.routing.silent_errors.records.map(x => x.id), ['S05']);
   assert.match(renderTerminal(shown), /S05/);

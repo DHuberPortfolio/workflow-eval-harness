@@ -2,19 +2,20 @@
 // Returns one results object; the terminal, JSON and HTML reports all render this same
 // object, so they cannot disagree with each other.
 
-const { problems } = require('./problems.js');
-const { loadRun, loadKey } = require('./load.js');
+const { problems, addNew } = require('./problems.js');
+const { loadRun, loadKey, acrossFiles } = require('./load.js');
 const { applyRulings, addToKey, applyToKey, annotateGaps, pendingKind } = require('./rulings.js');
 const { judgeAll, judgeRecord, buildContext } = require('./metrics/judge.js');
 const { scoreQuality } = require('./metrics/classification.js');
-const { scoreRouting } = require('./metrics/routing.js');
-const { scoreTraps } = require('./metrics/traps.js');
+const { scoreRouting, nothingEvaluated } = require('./metrics/routing.js');
+const { scoreTraps, trapCounts } = require('./metrics/traps.js');
 const { scoreGroups } = require('./metrics/groups.js');
 const { scoreClusters } = require('./metrics/clusters.js');
 const { scoreMix } = require('./metrics/mix.js');
 const { scoreCalibration } = require('./metrics/calibration.js');
 const { targetCheck } = require('./metrics/target.js');
 const { rate } = require('./metrics/stats.js');
+const { addAll, compareText } = require('./values.js');
 
 // Per-record summary kept in the results, for reports and for comparing runs.
 function recordSummary(j) {
@@ -28,15 +29,18 @@ function recordSummary(j) {
 
 // Every metric from paired records. Pure: no files, no problems collector. Used by
 // score, variance, compare and what-if alike. `groups` only when the config has groups.
-function scoreRecords(records, config) {
+// parts: as for scoreRun.
+function scoreRecords(records, config, parts = 'all') {
+  if (parts === 'paired') return { traps: trapCounts(records, config) };
+  const all = parts === 'all';
   const judgments = judgeAll(records, config);
-  const groups = scoreGroups(judgments, config, records);
+  const groups = all ? scoreGroups(judgments, config, records) : null;
   return {
     routing: scoreRouting(judgments, config, records),
     quality: scoreQuality(records, config),
-    traps: scoreTraps(judgments, config),
+    traps: all ? scoreTraps(judgments, config) : trapCounts(records, config),
     ...(groups ? { groups } : {}),
-    calibration: scoreCalibration(records, config),
+    calibration: scoreCalibration(records, config, !all),
     records: judgments.map(recordSummary),
   };
 }
@@ -56,13 +60,22 @@ function scoreRecords(records, config) {
 // does; compare, variance and whatif record their own). showHeldOut: the held-out half in full, ids
 // and all (--show-held-out; a look too). exclude: records set aside in both halves before anything is
 // read from the log (compare --after-key, where two keys put them in different halves: trap O26).
+// parts: what the caller reads, so a command that repeats runs does not pay for what only score's
+// report shows. 'all', the default: everything. 'rates': routing, quality, the records' summaries and
+// the calibration gap (variance, compare), with no per-claim lists, group tables or trap tables, no
+// clusters, key gaps or pending bracket. 'paired': no metric, only the paired records (whatif,
+// suspects). Whichever is asked, the files raise the same problems. Only I6 and P2, which score's
+// report says of itself, are raised for 'all' alone: variance and compare have their own notes.
+// keys: a command's Map of keys already read (load.js loadRun). liveRecords, across, needs: as for
+// loadRun; a split that follows clusters needs them, whoever asks.
 function scoreRun({ config, predPath, keyPath, mode = 'strict', target = null, chance = 0.8, rulings = null, mix = null,
-  applySplit = false, heldOut = false, look = false, showHeldOut = false, now = undefined, exclude = [] }) {
+  applySplit = false, heldOut = false, look = false, showHeldOut = false, now = undefined, exclude = [], parts = 'all', keys = null, liveRecords = false, across = null, needs = {} }) {
   const split = applySplit && config.split ? config.split : null;
   const p = problems(mode);
+  const reads = split && split.by === 'cluster' ? { ...needs, clusters: true } : needs;
   // ---- split: a stop that names held-out records names them in no report (trap O6).
   let run;
-  try { run = loadRun({ config, predPath, keyPath, mode, p }); } catch (e) { throw split && !showHeldOut ? maskLoadStop(e, config, keyPath) : e; }
+  try { run = loadRun({ config, predPath, keyPath, mode, p, keys, liveRecords, across, needs: reads }); } catch (e) { throw split && !showHeldOut ? maskLoadStop(e, config, keyPath) : e; }
   const ruled = rulings ? applyRulings(rulings, run.key, config, p) : null;
   // Adds, and with suspects' verbs removes and label replaces too (N14), all in memory.
   const every = ruled ? applyToKey(run.records, ruled) : run.records;
@@ -71,10 +84,10 @@ function scoreRun({ config, predPath, keyPath, mode = 'strict', target = null, c
   const sp = split ? splitSetUp({ every, config, p, keyPath, showHeldOut, exclude }) : null;
   const halves = sp ? sp.halves : null;
   const records = halves ? every.filter(r => halves.half.get(r.id) === 'tuning' && !sp.setAside.has(r.id)) : every;
-  const results = halves ? scoreHalf(every, config, halves.tuning) : scoreRecords(records, config);
+  const results = halves ? scoreHalf(every, config, halves.tuning, parts) : scoreRecords(records, config, parts);
   // ---- end split
   // The silent error rate's range counting clusters (trap G14): only with clusters in the config.
-  const clusters = scoreClusters(results.records, records, config);
+  const clusters = parts === 'all' ? scoreClusters(results.records, records, config) : null;
   if (clusters) results.clusters = clusters;
   // The rate on a real mix (trap G18). Its stops (G19-G21) join the run's, reported together below.
   if (mix) {
@@ -96,16 +109,32 @@ function scoreRun({ config, predPath, keyPath, mode = 'strict', target = null, c
     }
   }
   p.throwIfStopped();
-  results.key_gaps = keyGapsOf(records, results, config, ruled);
+  if (parts === 'all') results.key_gaps = keyGapsOf(records, results, config, ruled);
   // ---- split: rulings on held-out records are counted, never listed; the bracket is the tuning half's (O18).
   // A ruling on a record in neither half (not in the key) is listed as without a split.
   const shownRulings = ruled && halves ? rulingsWithout(ruled, sp.hidden) : ruled;
-  if (ruled) results.rulings = { ...shownRulings, if_pending_added: pendingAdded(records, results, config, shownRulings) };
+  if (ruled) results.rulings = { ...shownRulings, ...(parts === 'all' ? { if_pending_added: pendingAdded(records, results, config, shownRulings) } : {}) };
+  // Asked to look, the gate reads both halves. A look at a run that evaluated nothing, or at a half of
+  // failed calls, would spend the half's share and show nothing: none is spent, and nothing of the
+  // half is shown, so a look not counted is never a look (trap P41).
+  const looking = Boolean(halves && (heldOut || showHeldOut) && parts !== 'paired');
+  const held = looking ? every.filter(r => halves.half.get(r.id) === 'held_out') : null;
+  const nothing = parts === 'paired' ? null : nothingEvaluated(looking ? [...records, ...held] : records, config, halves && !looking ? ' in the tuning half' : '');
+  if (nothing) results.nothing_evaluated = { why: nothing };
   if (halves) {
+    const empty = looking ? nothing || heldHalfFailed(held) : null;
     const identity = { command: 'score', files: { predictions: predPath, key: keyPath, rulings: rulings ? rulings.file : null } };
-    results.split = heldOut || showHeldOut ? heldOutPart({ every, config, sp, target, look, showHeldOut, now, mode, identity, ruled }) : notLookedPart({ every, config, sp, ruled });
+    results.split = (heldOut || showHeldOut) && !empty ? heldOutPart({ every, config, sp, target, look, showHeldOut, now, mode, identity, ruled }) : notLookedPart({ every, config, sp, ruled, empty });
   }
   // ---- end split
+  // What one report says of itself (traps P2, P3). variance and compare have their own notes (I6).
+  if (parts === 'all') {
+    const failed = failedInRun(results);
+    if (failed > 0) p.warn('I6', predPath, failed + ' model call(s) failed in this run; its numbers reflect those failures as well as the workflow. Rerun those records before quoting them.');
+    if (!nothing && results.routing.silent_errors.rate.d === 0) {
+      p.warn('P2', predPath, 'No record went out without review' + (results.split ? ' in the tuning half' : '') + ', so the silent error rate has nothing to measure: a build gate on it reads no silent error, not a clean run.');
+    }
+  }
 
   return {
     inputs: { predictions: predPath, key: keyPath, mode, wrong_when: config.wrong_when, ...(rulings ? { rulings: rulings.file } : {}), ...(mix ? { mix: mix.file } : {}) },
@@ -114,6 +143,9 @@ function scoreRun({ config, predPath, keyPath, mode = 'strict', target = null, c
     paired: records,   // the paired records themselves (with any added values); not written to the JSON results
   };
 }
+
+// I6: a run where model calls failed is measuring the failures. With a split, its held-out half's too (trap O20).
+const failedInRun = results => results.quality.left_out.model_failed.length + (results.split ? results.split.failed : 0);
 
 // Trap I16: possible key gaps from this one run, since repeated runs cost money. The values
 // applied that the key does not list, with the exclusions variance makes (keyGapCandidates:
@@ -130,10 +162,14 @@ function keyGapsOf(records, results, config, ruled) {
   const silent = new Map(results.records.map(x => [x.id, x.silent]));
   const byId = new Map(records.map(r => [r.id, r]));
   const ctx = buildContext(records);   // adding values to a key changes no route, so one context serves
+  const onRecord = new Map();
+  for (const c of candidates) {
+    if (onRecord.has(c.id)) onRecord.get(c.id).push(c); else onRecord.set(c.id, [c]);
+  }
   const left = new Map();
-  for (const id of new Set(candidates.map(c => c.id))) {
+  for (const [id, gaps] of onRecord) {
     if (!silent.get(id)) continue;
-    const j = judgeRecord(addToKey([byId.get(id)], candidates.filter(c => c.id === id))[0], config, ctx);
+    const j = judgeRecord(addToKey([byId.get(id)], gaps)[0], config, ctx);
     left.set(id, j.silent ? j.silent.types : []);
   }
   const marked = candidates.map(({ id, output, value, confidence, ...ruling }) => ({
@@ -197,13 +233,14 @@ const MOST_WAYS = 4096;
 // and highest add up. out: the records out without review; was: the silent errors as the key stands.
 function pendingRange(records, config, pending, out, was) {
   const ctx = buildContext(records);   // routes only: rulings change no route
+  const byId = new Map(records.map(r => [r.id, r]));
   const byRecord = new Map();
   for (const x of pending) if (out.has(x.id)) byRecord.set(x.id, [...(byRecord.get(x.id) || []), x]);
   let low = was.size;
   let high = was.size;
   const tooMany = [];
   for (const [id, list] of byRecord) {
-    const r = records.find(x => x.id === id);
+    const r = byId.get(id);
     // Each entry's outcomes: a set value as the key has it or changed as proposed; a label, any label.
     const ways = list.map(x => (pendingKind(x) === 'replace' ? config.outputs[x.output].labels.map(String) : [false, true]));
     const total = ways.reduce((n, w) => n * w.length, 1);
@@ -242,18 +279,17 @@ const rulingNotes = (results, file) => results.problems.filter(i => i.level !== 
 
 // ---------- Across runs ----------
 
-const fs = require('fs');
-const crypto = require('crypto');
-const { varianceOf, compareOf, keyGapCandidates } = require('./metrics/runs.js');
-
-const fingerprint = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+const { fingerprint } = require('./hash.js');
+const { varianceOf, compareOf, keyGapCandidates, tallyKeyGaps, gapList } = require('./metrics/runs.js');
 
 // N result files from repeated runs of identical code: mean and spread per metric.
 // rulings: as for scoreRun; every run is scored against the key plus its adds, and the
 // possible key gaps carry their rulings, rejected ones counted rather than listed.
 // applySplit, heldOut, look, showHeldOut, now: with config.split only, and only when the caller asks
 // (heldOutVariance, below; the held-out half only with heldOut or showHeldOut).
-function varianceRun({ config, keyPath, predPaths, mode = 'strict', rulings = null, applySplit = false, heldOut = false, look = false, showHeldOut = false, now = undefined }) {
+// across: the command's acrossFiles() when these runs are some of its files (compare's noise runs), and
+// it reports them; otherwise this reports its own (trap P1).
+function varianceRun({ config, keyPath, predPaths, mode = 'strict', rulings = null, applySplit = false, heldOut = false, look = false, showHeldOut = false, now = undefined, keys = new Map(), across = null }) {
   // I1: the spread of one number is meaningless.
   if (predPaths.length < 2) throw new Error('[I1] variance needs two or more runs, got ' + predPaths.length);
   const notes = [];
@@ -264,36 +300,54 @@ function varianceRun({ config, keyPath, predPaths, mode = 'strict', rulings = nu
     if (seen.has(h)) notes.push({ level: 'warn', trap: 'I3', where: f, message: 'has exactly the same content as ' + seen.get(h) + '; the spread will look smaller than it is' });
     else seen.set(h, f);
   }
-  const runs = predPaths.map(f => ({ label: f, results: scoreRun({ config, predPath: f, keyPath, mode, rulings, applySplit, heldOut, showHeldOut }) }));
-  notes.push(...failedCallNotes(runs));
+  // A run's paired records are most of what it holds, and only the key gaps read them here: tallied
+  // as each run is scored and let go, so the runs are not all in memory at once.
+  const found = new Map();
+  const files = across || acrossFiles();
+  const runs = predPaths.map((f, i) => {
+    const results = scoreRun({ config, predPath: f, keyPath, mode, rulings, applySplit, heldOut, showHeldOut, parts: 'rates', keys, across: files });
+    tallyKeyGaps(found, results.paired, i, config);
+    results.paired = null;
+    return { label: f, results };
+  });
+  if (!across) addAll(notes, fieldNotes(files, mode));
+  addAll(notes, failedCallNotes(runs));
   // ---- split: its own warnings (O3, O5, O15, and O10 with --lenient), once: every run has the same halves.
-  if (applySplit && config.split) notes.push(...splitNotes([runs[0].results], notes));
-  const v = varianceOf(runs, config);
+  if (applySplit && config.split) splitNotes([runs[0].results], notes);
+  const v = varianceOf(runs, config, gapList(found, runs.length));
   if (rulings) {
     // One key, so the rulings apply alike to every run: reported once, from the first.
     const { candidates, rejected } = annotateGaps(v.records.key_gap_candidates, runs[0].results.rulings);
     v.records.key_gap_candidates = candidates;
     v.records.key_gaps_rejected = rejected;
     v.rulings = rulingsSummary(runs[0].results);
-    notes.push(...rulingNotes(runs[0].results, rulings.file));
+    addAll(notes, rulingNotes(runs[0].results, rulings.file));
   }
   const result = { inputs: { key: keyPath, runs: predPaths, mode, ...(rulings ? { rulings: rulings.file } : {}) }, ...v, problems: notes };
   // ---- split: every number above is the tuning half's; the worst run on the held-out half too.
   if (applySplit && config.split) {
-    result.split = heldOut || showHeldOut ? heldOutVariance({ runs, config, keyPath, predPaths, rulings, look, showHeldOut, now, mode, notes }) : notLookedCommand(runs[0].results.split, config);
+    const empty = runs.find(r => r.results.split.not_looked);
+    result.split = (heldOut || showHeldOut) && !empty ? heldOutVariance({ runs, config, keyPath, predPaths, rulings, look, showHeldOut, now, mode, notes }) : notLookedCommand((empty || runs[0]).results.split, config);
   }
   // ---- end split
   return result;
+}
+
+// What several runs say about a field none of them, or only some, has (trap P1). Stops when none has it.
+function fieldNotes(files, mode) {
+  const p = problems(mode);
+  files.report(p);
+  p.throwIfStopped();
+  return p.items;
 }
 
 // I6: a run where model calls failed is measuring the failures (every failed record went to a
 // person), not the workflow. Comparing it with clean runs mixes the two.
 // With a split, the run's quality is the tuning half's: the held-out half's failures are counted too (trap O20).
 function failedCallNotes(runs) {
-  const failed = r => r.results.quality.left_out.model_failed.length + (r.results.split ? r.results.split.failed : 0);
-  return runs.filter(r => failed(r) > 0).map(r => ({
+  return runs.filter(r => failedInRun(r.results) > 0).map(r => ({
     level: 'warn', trap: 'I6', where: r.label,
-    message: failed(r) + ' model call(s) failed in this run; its numbers reflect those failures, not the workflow. Rerun it before comparing.',
+    message: failedInRun(r.results) + ' model call(s) failed in this run; its numbers reflect those failures, not the workflow. Rerun it before comparing.',
   }));
 }
 
@@ -302,8 +356,10 @@ function failedCallNotes(runs) {
 // against an old key and a new one, so every change is the key's. rulings apply to both keys.
 // applySplit, heldOut, look, showHeldOut, now: with config.split only, and only when the caller asks
 // (heldOutCompare, below; the held-out half only with heldOut or showHeldOut).
+// beforeLook: called with the paired results before a look at the held-out half is recorded; what it
+// throws stops the command with no look spent.
 function compareRun({ config, keyPath, afterKeyPath = null, beforePath, afterPath, noisePaths = [], mode = 'strict', rulings = null,
-  applySplit = false, heldOut = false, look = false, showHeldOut = false, now = undefined }) {
+  applySplit = false, heldOut = false, look = false, showHeldOut = false, now = undefined, beforeLook = null }) {
   const notes = [];
   let samePredictions = false;
   const split = applySplit && config.split;
@@ -320,18 +376,20 @@ function compareRun({ config, keyPath, afterKeyPath = null, beforePath, afterPat
         'each change below mixes what the workflow did with what the key says. Give the same run as --before and --after to see the key\'s part alone.' });
     }
   }
-  const before = scoreRun({ config, predPath: beforePath, keyPath, mode, rulings, applySplit, heldOut, showHeldOut, exclude: apart });
-  const after = scoreRun({ config, predPath: afterPath, keyPath: afterKeyPath || keyPath, mode, rulings, applySplit, heldOut, showHeldOut, exclude: apart });
-  const noise = noisePaths.length ? varianceRun({ config, keyPath, predPaths: noisePaths, mode, rulings, applySplit, heldOut, showHeldOut }) : null;
-  notes.push(...failedCallNotes([{ label: beforePath, results: before }, { label: afterPath, results: after }]), ...(noise ? noise.problems : []));
+  const keys = new Map();
+  const files = acrossFiles();
+  const before = scoreRun({ config, predPath: beforePath, keyPath, mode, rulings, applySplit, heldOut, showHeldOut, exclude: apart, parts: 'rates', keys, across: files });
+  before.paired = null;   // compared by their summaries: nothing here reads a run's paired records
+  const after = scoreRun({ config, predPath: afterPath, keyPath: afterKeyPath || keyPath, mode, rulings, applySplit, heldOut, showHeldOut, exclude: apart, parts: 'rates', keys, across: files });
+  const noise = noisePaths.length ? varianceRun({ config, keyPath, predPaths: noisePaths, mode, rulings, applySplit, heldOut, showHeldOut, keys, across: files }) : null;
+  addAll(notes, fieldNotes(files, mode));
+  addAll(notes, failedCallNotes([{ label: beforePath, results: before }, { label: afterPath, results: after }]));
+  if (noise) addAll(notes, noise.problems);
   // ---- split: its own warnings (O3, O5, O15, and O10 with --lenient), each once.
-  if (split) notes.push(...splitNotes([before, after], notes));
+  if (split) splitNotes([before, after], notes);
   if (rulings) {
     // Both runs read the same rulings file: each of its notes once, whichever key raised it.
-    const seen = new Set(notes.map(i => i.trap + i.where + i.message));
-    for (const i of [...rulingNotes(before, rulings.file), ...rulingNotes(after, rulings.file)]) {
-      if (!seen.has(i.trap + i.where + i.message)) { seen.add(i.trap + i.where + i.message); notes.push(i); }
-    }
+    addNew(notes, [...rulingNotes(before, rulings.file), ...rulingNotes(after, rulings.file)]);
   }
   const inputs = { key: keyPath, ...(afterKeyPath !== null ? { after_key: afterKeyPath } : {}), before: beforePath, after: afterPath, noise: noisePaths, mode,
     ...(rulings ? { rulings: rulings.file } : {}) };
@@ -342,10 +400,15 @@ function compareRun({ config, keyPath, afterKeyPath = null, beforePath, afterPat
     ...(rulings ? { rulings: { before: rulingsSummary(before), after: rulingsSummary(after) } } : {}),
     problems: notes,
   };
+  // Trap P2: a run that evaluated nothing has nothing to compare: said at the top, and a gate fails on it.
+  const nothing = [[beforePath, before], [afterPath, after]].filter(([, r]) => r.nothing_evaluated).map(([file, r]) => ({ file, why: r.nothing_evaluated.why }));
+  if (nothing.length) result.nothing_evaluated = nothing;
+  if (beforeLook) beforeLook(result.paired);
   // ---- split: every number above is the tuning half's; the paired verdict on the held-out half too.
   if (applySplit && config.split) {
-    const files = { before: beforePath, after: afterPath, key: keyPath, after_key: afterKeyPath, rulings: rulings ? rulings.file : null };
-    result.split = heldOut || showHeldOut ? heldOutCompare({ before, after, config, files, look, showHeldOut, now, mode, notes }) : notLookedCommand(after.split, config);
+    const named = { before: beforePath, after: afterPath, key: keyPath, after_key: afterKeyPath, rulings: rulings ? rulings.file : null };
+    const empty = [before, after].find(r => r.split.not_looked);
+    result.split = (heldOut || showHeldOut) && !empty ? heldOutCompare({ before, after, config, files: named, look, showHeldOut, now, mode, notes }) : notLookedCommand((empty || after).split, config);
     if (apart.length) result.split.keys_apart = apart.length;
   }
   // ---- end split
@@ -370,11 +433,10 @@ function sameRecords(config, keyPath, afterKeyPath, mode, countOnly = false) {
 
 // ---------- Free text, graded by a person ----------
 
-const { readGrades } = require('./grading.js');
-const { scoreGrades, agreementOf } = require('./metrics/grades.js');
-
 // A reviewer's grades file, and optionally a second reviewer's grades of the same forms.
 function scoreGradesRun({ gradesPath, secondPath = null, mode = 'strict' }) {
+  const { readGrades } = require('./grading.js');
+  const { scoreGrades, agreementOf } = require('./metrics/grades.js');
   const p = problems(mode);
   const first = readGrades(gradesPath, p);
   const second = secondPath ? readGrades(secondPath, p) : null;
@@ -392,7 +454,8 @@ function scoreGradesRun({ gradesPath, secondPath = null, mode = 'strict' }) {
     p.throwIfStopped();
     agreement = agreementOf(first, second);
   }
-  return { kind: 'grades', inputs: { grades: gradesPath, second: secondPath, mode }, ...scoreGrades(first), agreement, problems: p.items };
+  return { kind: 'grades', inputs: { grades: gradesPath, second: secondPath, mode }, ...scoreGrades(first), agreement, problems: p.items,
+    ...(first.grades.size === 0 ? { nothing_evaluated: { why: 'no field was graded' } } : {}) };
 }
 
 // ---------- The tuning half and the held-out half (config.split; traps O1-O20) ----------
@@ -404,7 +467,7 @@ function scoreGradesRun({ gradesPath, secondPath = null, mode = 'strict' }) {
 // config names one (src/split-log.js); a claim made on it ("shown under the target") may use only
 // that look's share of the 5%, and without a log no claim is made.
 
-const { splitOf, balanceOf, heldOutClaim, splitSettings, heldOutNumbers, worstRun, setAside, maskProblems, maskStop, maskAll } = require('./split.js');
+const { splitOf, balanceOf, heldOutClaim, heldHalfFailed, splitSettings, heldOutNumbers, worstRun, setAside, maskProblems, maskStop, maskAll } = require('./split.js');
 const { prepareLook, commitLook, lookStatus, notRecorded } = require('./split-log.js');
 
 // Values a report never shows (they name held-out records), kept on the split result for the
@@ -447,17 +510,9 @@ function halvesApart(config, keyPath, afterKeyPath, mode, showHeldOut, notes) {
 }
 
 // The split's own warnings from the runs scored (O3, O5, O15, O10), each once, for variance and
-// compare, which keep only some of each run's notes. have: the notes already kept.
-function splitNotes(results, have) {
-  const seen = new Set(have.map(i => i.trap + i.where + i.message));
-  const out = [];
-  for (const r of results) {
-    for (const i of r.problems.filter(x => x.level !== 'stop' && ['O3', 'O5', 'O10', 'O15'].includes(x.trap))) {
-      const k = i.trap + i.where + i.message;
-      if (!seen.has(k)) { seen.add(k); out.push(i); }
-    }
-  }
-  return out;
+// compare, which keep only some of each run's notes. notes: the notes kept so far, added to.
+function splitNotes(results, notes) {
+  addNew(notes, results.flatMap(r => r.problems.filter(x => x.level !== 'stop' && ['O3', 'O5', 'O10', 'O15'].includes(x.trap))));
 }
 
 // The halves, the log read before anything is scored (records that changed half: set aside with
@@ -476,7 +531,7 @@ function splitSetUp({ every, config, p, keyPath, showHeldOut, exclude = [] }) {
   const moved = pre ? pre.moved : [];
   if (moved.length) {
     halves = setAside(halves, moved);
-    hidden.push(...moved);
+    addAll(hidden, moved);
   }
   mask(hidden);
   const out = new Set([...moved, ...exclude]);
@@ -488,9 +543,9 @@ function splitSetUp({ every, config, p, keyPath, showHeldOut, exclude = [] }) {
 // record of the other: with split.by "id" a primary's omission type would otherwise say whether its
 // held-out duplicate was suppressed (trap O3). With the default split, a duplicate and its primary
 // are always in one half, so nothing changes. Otherwise exactly scoreRecords, on that half's records.
-function scoreHalf(every, config, ids) {
+function scoreHalf(every, config, ids, parts = 'all') {
   const keep = new Set(ids);
-  return scoreRecords(every.filter(r => keep.has(r.id)), config);
+  return scoreRecords(every.filter(r => keep.has(r.id)), config, parts);
 }
 
 // Trap O20: min_per_trap is about the golden set, so with a split it counts the answer key's records,
@@ -500,7 +555,7 @@ function trapCoverage(every, config, tuningTraps) {
   const count = new Map();
   for (const r of every) for (const t of r.traps) count.set(t, (count.get(t) || 0) + 1);
   const inTuning = new Map(tuningTraps.groups.map(g => [g.trap, g.records.length]));
-  const below = [...count.entries()].filter(([, n]) => n < config.min_per_trap).sort((a, b) => a[0].localeCompare(b[0]))
+  const below = [...count.entries()].filter(([, n]) => n < config.min_per_trap).sort((a, b) => compareText(a[0], b[0]))
     .map(([trap, records]) => ({ trap, records, tuning: inTuning.get(trap) || 0 }));
   tuningTraps.coverage.below = below;   // the PER TRAP line says the same as the stop
   return below;
@@ -578,11 +633,12 @@ const failedIn = (every, halves) => every.filter(r => halves.half.get(r.id) === 
 
 // Without --held-out (trap O25): the held-out half in counts only (its records, the rulings on them),
 // and what a look at it would be. Nothing of it is scored, so nothing is shown and no look is spent.
-function notLookedPart({ every, config, sp, ruled }) {
+// empty: why a look that was asked for was not made (trap P41); null when none was asked for.
+function notLookedPart({ every, config, sp, ruled, empty = null }) {
   const { halves } = sp;
   const out = {
     ...splitSettings(config), tuning: { records: halves.tuning.length }, held_out: { records: halves.held_out.length },
-    straddling: halves.straddling, balance: sp.checked.balance, set_aside: sp.moved.length, looked: false, next_look: lookStatus(config, halves.held_out),
+    straddling: halves.straddling, balance: sp.checked.balance, set_aside: sp.moved.length, looked: false, ...(empty ? { not_looked: empty } : {}), next_look: lookStatus(config, halves.held_out),
     ...(ruled ? { rulings: { held_out: heldOutRulings(ruled, sp.hidden) } } : {}),
   };
   return hide(out, { every, halves, moved: sp.moved, hidden: sp.hidden, ruled, failed: failedIn(every, halves) });
@@ -590,7 +646,7 @@ function notLookedPart({ every, config, sp, ruled }) {
 // The same for compare and variance, from one of their runs.
 function notLookedCommand(s, config) {
   return { ...splitSettings(config), tuning: { records: s.tuning.records }, held_out: { records: s.held_out.records }, set_aside: s.set_aside,
-    looked: false, next_look: s.next_look, ...(s.rulings ? { rulings: s.rulings } : {}) };
+    looked: false, ...(s.not_looked ? { not_looked: s.not_looked } : {}), next_look: s.next_look, ...(s.rulings ? { rulings: s.rulings } : {}) };
 }
 
 // A look for compare or variance: recorded once for the whole command. A stop (a lock held, say)

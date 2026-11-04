@@ -21,7 +21,8 @@
 
 const { gateSweep } = require('./metrics/whatif.js');
 const { policySweep } = require('./metrics/policy.js');
-const { splitSettings, heldOutClaim } = require('./split.js');
+const { nothingEvaluated } = require('./metrics/routing.js');
+const { splitSettings, heldOutClaim, heldHalfFailed } = require('./split.js');
 const { commitLook, notRecorded, lookStatus } = require('./split-log.js');
 
 // w: the what-if as computed on the tuning half. split: scoreRun's results.split for the run (its
@@ -35,13 +36,16 @@ function heldOutWhatif(w, { split, config, kind, policies = [], heldOut = false,
   if (!best) return out;   // nothing chosen on the tuning half: nothing to check, no look
   const named = kind === 'gate' ? { threshold: best.threshold } : { name: best.name };
   const tuning = best.silent_error_rate;
-  if (!heldOut && !showHeldOut) {
+  const held = split.every.filter(r => halves.half.get(r.id) === 'held_out');
+  // Nothing to see: no look spent, as with score and the others (trap P41).
+  const empty = heldOut || showHeldOut ? nothingEvaluated(split.every, config) || heldHalfFailed(held) : null;
+  if ((!heldOut && !showHeldOut) || empty) {
     // The choice, and how to check it: nothing of the held-out half is read.
+    if (empty) out.not_looked = empty;
     out.chosen = { ...named, tuning_silent_errors: tuning };
     out.next_look = lookStatus(config, halves.held_out);
     return out;
   }
-  const held = split.every.filter(r => halves.half.get(r.id) === 'held_out');
   let row;
   if (kind === 'gate') {
     const g = gateSweep(held, config, { outputs: w.outputs, from: best.threshold, to: best.threshold, step: 1 });

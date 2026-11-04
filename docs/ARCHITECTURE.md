@@ -26,6 +26,9 @@ the answer key's own mistakes:
   one key, one or more runs (+ rulings) ────> suspects.js ──> metrics/suspects.js   (wfeval suspects)
 ```
 
+- **Text at the edges.** `text.js` reads every input file, stopping on a file that is not UTF-8, and
+  makes results safe for a terminal. Every report reaches the terminal through `report()` in
+  `bin/wfeval.js`, so no renderer has to think about control characters, and a test holds it to that.
 - **Messy input is handled in one place.** `load.js` (and `csv.js` for spreadsheets) is
   the only code that reads predictions and answer keys. After it, every id is trimmed text, every confidence
   is a number or null, every `applied` a real true or false. Nothing downstream re-checks.
@@ -76,7 +79,7 @@ the answer key's own mistakes:
 ## It refuses to guess
 
 An evaluation tool that quietly miscounts is worse than none. Every way the harness itself
-could compute a wrong number is listed in [`test/TRAPS.md`](../test/TRAPS.md) (265 of them),
+could compute a wrong number is listed in [`test/TRAPS.md`](../test/TRAPS.md) (310 of them),
 with what the tool does about each:
 
 - **Stop**, and name every offending record: a record in the answer key that never came out
@@ -142,4 +145,7 @@ The metric tests are checked against answers worked out by hand before the code 
 
 The tests were checked for teeth by breaking the code on purpose (swapping precision and
 recall, ignoring `key_field`, weakening the "record never came out" stop) and confirming a
-test fails each time.
+test fails each time; `scripts/mutate.js` does that at scale. `test/metamorphic.test.js` holds
+properties that need no worked answer (shuffle the records and every rate stays), and `verify/`
+is a second implementation in Python, written only from the docs.
+[ENGINEERING.md](ENGINEERING.md) says what each check can and cannot show, and how to run it.

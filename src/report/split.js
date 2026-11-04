@@ -4,7 +4,7 @@
 // at and the claims made on it. Sentences are wrapped to 100 columns; the held-out table has the same
 // words as the HEADLINE table. The terminal and the HTML report say the same sentences.
 
-const { pct, count, range, table, omissionWhat, thousands } = require('./format.js');
+const { pct, count, range, table, omissionWhat, thousands, sized, plural } = require('./format.js');
 
 // Words wrapped to 100 columns, every line indented.
 function wrap(text, indent = '  ', width = 100) {
@@ -31,7 +31,6 @@ function headed(text, width = 100) {
 
 // A share of the 5%, as a percentage: 2.5%, 1.25%, 0.625%, 0.313%.
 const share = level => Number((level * 100).toPrecision(3)) + '%';
-const plural = (n, one, many) => thousands(n) + ' ' + (n === 1 ? one : many);
 const percent = x => Number((x * 100).toPrecision(3)) + '%';
 // A date as the reader's own calendar has it (split.log keeps the exact time, in UTC).
 function localDate(iso) {
@@ -102,6 +101,7 @@ function nextLookWords(lk) {
 }
 // The held-out half not looked at (no --held-out): one line.
 function notLookedLine(s) {
+  if (s.not_looked) return 'HELD-OUT HALF  not looked at: ' + s.not_looked + ', so no look was spent.';
   const lk = s.next_look;
   const how = '--held-out looks at it, and counts as a look';
   if (!lk || !lk.counted) return 'HELD-OUT HALF  not looked at. ' + how + ' (without split.log, looks are not counted and no claim is made).';
@@ -152,7 +152,7 @@ function claimLines(c, rate, lookNo, what = 'the held-out half', fresh = true) {
   if (!c.shown && rate && rate.high_pct !== null && rate.high_pct < c.target_pct) {
     lines.push('The likely range above is the usual 95% range (Wilson\'s, an approximation); the claim uses an exact bound, which is stricter at small counts.');
   }
-  const need = 'It takes ' + thousands(c.records_needed) + ' records out without review, none a silent error, at this look.';
+  const need = 'It takes ' + sized(c.records_needed, 'records out without review') + ', none a silent error, at this look.';
   const above = c.rate_at_or_above ? ' The rate itself is at or above the target, too.' : '';
   if (c.why === 'too_few') {
     lines.push('Too few records: even with no silent error at all, ' + plural(c.tested, 'record', 'records') + ' out could not show it, even at a first look. ' + need + above);
@@ -260,6 +260,9 @@ function heldOutWhatifSection(w) {
   const c = s.chosen;
   const name = c.name !== undefined ? 'policy "' + c.name + '"' : 'gate ' + c.threshold.toFixed(2);
   const tuning = pct(c.tuning_silent_errors) + ' (' + count(c.tuning_silent_errors) + ')';
+  if (s.not_looked) {
+    return headed('HELD-OUT HALF  not looked at: ' + s.not_looked + ', so no look was spent. The choice made on the tuning half is ' + name + ', certified there at a silent error rate of ' + tuning + '.');
+  }
   if (!s.looked) {
     const lk = s.next_look;
     const next = !lk || !lk.counted ? ' (without split.log, looks are not counted and no claim is made).' : ': ' + nextLookWords(lk) + '.';
@@ -311,7 +314,7 @@ function splitHtml(results, esc) {
 // The held-out half in the HTML report: the same rows and sentences as the terminal's, escaped.
 function heldOutHtml(results, esc) {
   const s = results.split;
-  if (s.looked === false) return '<h2>Held-out half</h2>\n<p>' + esc(notLookedLine(s).replace(/^HELD-OUT HALF {2}not looked at\./, 'Not looked at.')) + '</p>';
+  if (s.looked === false) return '<h2>Held-out half</h2>\n<p>' + esc(notLookedLine(s).replace(/^HELD-OUT HALF {2}not looked at([.:])/, 'Not looked at$1')) + '</p>';
   const out = ['<h2>Held-out half</h2>', '<p>' + esc(plural(s.held_out.records, 'record', 'records')) + ' kept out of tuning: ' +
     esc(listsIds(s) ? 'rates here, and the held-out silent errors listed below (--show-held-out).' : 'rates only, never which records.') + '</p>'];
   if (s.held_out.records > 0) {

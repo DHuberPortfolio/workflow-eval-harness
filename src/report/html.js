@@ -7,13 +7,13 @@ const {
   WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines, groupSource, GROUP_RANGES, severalLabels, rulingsWords, pendingLine,
   clusterLine, CLUSTER_GROUP_NOTE, CLUSTER_TARGET_NOTE, mixLines,
 } = require('./format.js');
-const { withKeyLabels } = require('./format.js');
+const { withKeyLabels, num, shownPct } = require('./format.js');
+const { minOf } = require('../values.js');
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const pct = r => (!r || r.pct === null ? 'n/a' : r.pct.toFixed(1) + '%');
+const pct = r => (!r || r.pct === null ? 'n/a' : shownPct(r.pct));
 const cnt = r => (!r ? '' : r.n + ' of ' + r.d);
 const rng = r => (!r || r.low_pct === null ? '' : r.low_pct.toFixed(1) + '–' + r.high_pct.toFixed(1) + '%');
-const num = (x, d = 3) => (x === null || x === undefined ? 'n/a' : x.toFixed(d));
 const ids = list => (list.length ? list.map(esc).join(', ') : '<span class="muted">none</span>');
 
 const SEVERITY_CLASS = { critical: 'critical', high: 'serious', medium: 'warning', low: 'low' };
@@ -74,7 +74,7 @@ function calibrationChart(c) {
   if (buckets.length === 0) return '';
   const W = 520, H = 340, L = 52, R = 20, T = 16, B = 44;
   const w = W - L - R, h = H - T - B;
-  const x0 = Math.min(0.5, Math.floor(Math.min(...buckets.map(b => b.from)) * 10) / 10);
+  const x0 = Math.min(0.5, Math.floor(minOf(buckets.map(b => b.from)) * 10) / 10);
   const x = v => L + ((v - x0) / (1 - x0)) * w;
   const y = v => T + (1 - v) * h;
   const parts = [];
@@ -214,6 +214,7 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
     esc(results.inputs.mode) + ' mode · generated ' + esc(generatedAt) + '<br>A record needed a person if ' + esc(WRONG_WHEN[results.inputs.wrong_when]) + '.</p>');
   // Trap I11: with a rulings file, the key in use is not the key file alone. Only then: a report
   // scored without rulings comes out exactly as before.
+  if (results.nothing_evaluated) s.push('<p class="meta"><strong>Nothing was evaluated:</strong> ' + esc(results.nothing_evaluated.why) + '. The numbers below say nothing about the workflow.</p>');
   if (results.rulings) s.push('<p class="meta">' + rulingsWords(results.rulings).map(esc).join('<br>') + '</p>');
   // config.split only: which half every number below is, above the headline.
   if (results.split) s.push(require('./split.js').splitHtml(results, esc));

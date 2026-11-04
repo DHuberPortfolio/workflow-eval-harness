@@ -6,7 +6,14 @@
 
 // Percentage to one decimal, or null when there is nothing to divide by.
 // null (not 0) because "no auto-published records" is not "no errors".
-const pct = (n, d) => (d === 0 ? null : Number(((n / d) * 100).toFixed(1)));
+// Worked from the whole-number counts, so ties round the same way: 0.05 and 0.15 both go up (trap P26;
+// 0.15 is a little under itself in binary, and toFixed sent it down). A rate that is not zero and
+// would round under 0.1 keeps two figures: 1 of 3000 is 0.033, not 0.0.
+function pct(n, d) {
+  if (d === 0) return null;
+  const tenths = Math.round((n * 1000) / d) / 10;
+  return n > 0 && tenths < 0.1 ? Number(((n / d) * 100).toPrecision(2)) : tenths;
+}
 
 // 95% everywhere, the same as error-rate-calculator, so both tools report identical ranges.
 const Z = 1.96;
@@ -33,12 +40,10 @@ function bounds(p, d, z = Z) {
 
 function rate(n, d) {
   const w = wilson(n, d);
-  return {
-    n, d,
-    pct: pct(n, d),
-    low_pct: w === null ? null : Number((w.low * 100).toFixed(1)),
-    high_pct: w === null ? null : Number((w.high * 100).toFixed(1)),
-  };
+  // A range that would read 0.0-0.0% keeps two figures at each end (trap P42).
+  const fine = w !== null && w.high > 0 && w.high < 0.0005;
+  const end = x => (w === null ? null : fine ? Number((x * 100).toPrecision(2)) : Number((x * 100).toFixed(1)));
+  return { n, d, pct: pct(n, d), low_pct: end(w && w.low), high_pct: end(w && w.high) };
 }
 
 // Cohen's kappa: how much two people agree beyond what chance alone would give.
@@ -67,23 +72,53 @@ function cohensKappa(matrix, categories) {
 // answer for the same counts; test/stats.test.js pins the values both tools' tests pin.
 // Rates are proportions here (0.05 is 5%).
 
-const MAX_RECORDS = 1000000;
-
 // Smallest number of records whose whole likely range sits under `target`, if mistakes turn up at
 // exactly `rate`. At rate 0 it is the hard minimum anyone needs: a perfect run of this many. Above
 // 0 it is a break-even point, not a plan (a fresh test that size lands under the target only about
 // half the time); planTest() is the plan. null when rate >= target: no amount of testing shows a
-// rate is under a target it is already at or above. Infinity past a million records.
+// rate is under a target it is already at or above. Infinity past what a number counts exactly.
 function recordsNeeded(rate, target) {
   checkPlan(rate, target);
   if (rate >= target) return null;
-  for (let n = 1; n <= MAX_RECORDS; n++) if (bounds(rate, n).high < target) return n;
-  return Infinity;
+  // The upper end falls as records are added, so the first size under the target is found by doubling
+  // and halving: no cap, and no loop over every size (trap P11).
+  const under = n => bounds(rate, n).high < target;
+  let hi = 1;
+  while (!under(hi)) {
+    hi *= 2;
+    if (hi > Number.MAX_SAFE_INTEGER) return Infinity;
+  }
+  let lo = Math.floor(hi / 2);
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (under(mid)) hi = mid; else lo = mid;
+  }
+  return hi;
 }
 
 function checkPlan(rate, target) {
   if (!(target > 0 && target < 1)) throw new RangeError('target must be between 0 and 1');
   if (!(rate >= 0 && rate <= 1)) throw new RangeError('rate must be between 0 and 1');
+}
+
+// An upper bound as a percentage, beside a target it is compared with: one decimal, or more when one
+// decimal would print the target itself. 4.98% is under 5%, and "shown under 5%" beside "5.0%" reads
+// as a contradiction (traps P25; L14). Both proportions; target may be null.
+const pctOf = x => Number((x * 100).toPrecision(12));   // 0.025 -> 2.5, without 2.5000000000000004
+// Whether figure v can stand for x, percentages both, beside target t (null for none): not 0 for
+// something above it, and on the side of the target x is on (traps P25, P42).
+const standsFor = (v, x, t) => (x === 0 || v !== 0) && (t === null || ((v === t) === (x === t) && (v < t) === (x < t)));
+// A bound as a percentage: one decimal, or the figures that keep it true beside the target.
+function boundPct(upper, target) {
+  const x = pctOf(upper);
+  const t = target === null ? null : pctOf(target);
+  const one = Number((upper * 100).toFixed(1));
+  if (standsFor(one, x, t)) return one;
+  for (let figures = 2; figures < 12; figures++) {
+    const v = Number(x.toPrecision(figures));
+    if (standsFor(v, x, t)) return v;
+  }
+  return x;
 }
 
 // ln(i!), grown on demand.
@@ -318,4 +353,19 @@ function mixedRate(strata, z = Z) {
   return { shares: W, rate: R, effective, ...bounds(R, effective, z), straight_through: st };
 }
 
-module.exports = { Z, pct, wilson, rate, cohensKappa, recordsNeeded, chanceAtMost, planTest, pairedDifference, clusteredRange, mixedRate };
+// A share as a percentage to one decimal, or null.
+const pct1 = x => (x === null ? null : Number((x * 100).toFixed(1)));
+
+// The run to quote from several runs' rates: the highest as an exact fraction (trap G6); on a tie, the
+// wider range. Never the runs added together (trap I8). null when no run has a rate.
+function worstRun(rates, labels) {
+  let worst = null;
+  rates.forEach((r, i) => {
+    if (r.d === 0) return;
+    const w = worst === null ? null : rates[worst];
+    if (w === null || r.n * w.d > w.n * r.d || (r.n * w.d === w.n * r.d && r.high_pct > w.high_pct)) worst = i;
+  });
+  return worst === null ? null : { run: worst + 1, label: labels[worst], ...rates[worst] };
+}
+
+module.exports = { Z, pct, pct1, boundPct, standsFor, pctOf, wilson, rate, cohensKappa, recordsNeeded, chanceAtMost, planTest, pairedDifference, clusteredRange, mixedRate, worstRun };

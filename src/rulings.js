@@ -24,10 +24,11 @@
 //             scored as the key stands; score gives the rate as if made, too (trap I15).
 // A plain pending, or "proposed": "add", is the possible key gap it always was.
 
-const fs = require('fs');
 const { problems, markId } = require('./problems.js');
+const { readText } = require('./text.js');
 const { equivalentOf, DECLINED } = require('./config.js');
 const { accepted } = require('./metrics/slots.js');
+const { isObj, describe, own, addAll } = require('./values.js');
 
 const RULINGS = ['add', 'reject', 'pending', 'remove', 'keep', 'replace'];
 const KEYS = ['id', 'output', 'value', 'ruling', 'by', 'on', 'note', 'with', 'proposed'];
@@ -37,9 +38,6 @@ const LABEL_RULINGS = ['replace', 'keep', 'pending'];
 const PROPOSED = ['add', 'remove'];
 // A file that uses none of what suspects added reads, and reports, exactly as before.
 const isNew = x => ['remove', 'keep', 'replace'].includes(x.ruling) || x.with !== undefined || x.proposed !== undefined;
-const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
-const describe = v => (v === null ? 'null' : v === undefined ? 'nothing' : Array.isArray(v) ? 'a list'
-  : typeof v === 'string' ? 'the text ' + JSON.stringify(v) : typeof v);
 const named = x => markId(x.id) + ' ' + x.output + ' ' + x.value;   // the id marked: see problems.js
 
 // "a label output", "an ordinal output".
@@ -54,7 +52,7 @@ function readRuling(r, at, config, p) {
   // Ids are read as a record's are: text or a number, compared as trimmed text (B7, B8).
   const id = typeof r.id === 'string' || (typeof r.id === 'number' && Number.isFinite(r.id)) ? String(r.id).trim() : '';
   if (id === '') bad('needs "id": the answer key record the ruling is for');
-  const o = typeof r.output === 'string' ? config.outputs[r.output] : undefined;
+  const o = typeof r.output === 'string' ? own(config.outputs, r.output) : undefined;
   if (typeof r.output !== 'string' || r.output === '') bad('needs "output": the set output the value belongs to');
   else if (!o) bad('"' + r.output + '" is not an output in the config (outputs: ' + Object.keys(config.outputs).join(', ') + ')');
   // A label that is also the route is judged as the route; no ruling changes where a record should go (N16).
@@ -142,7 +140,7 @@ function loadRulings(file, config, mode = 'strict') {
   const p = problems(mode);
   let raw;
   try {
-    raw = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, ''));
+    raw = JSON.parse(readText(file).replace(/^﻿/, ''));
   } catch (e) {
     p.stop('I12', file, (e.code ? 'cannot read the rulings file: ' : 'not valid JSON: ') + e.message);
     p.throwIfStopped();
@@ -191,7 +189,7 @@ const pendingKind = x => (x.with !== undefined ? 'replace' : x.proposed === 'rem
 //     can fill, and every run would then miss it
 // The file's own clean-ups and warnings are added to p, so the run's report lists them.
 function applyRulings(rulings, keyRecords, config, p) {
-  p.items.push(...rulings.problems);
+  addAll(p.items, rulings.problems);
   const keyById = new Map(keyRecords.map(k => [k.id, k]));
   const byLower = new Map(keyRecords.map(k => [k.id.toLowerCase(), k.id]));
   const out = { file: rulings.file, added: [], rejected: [], pending: [], set_aside: [] };
@@ -259,12 +257,18 @@ function applyRulings(rulings, keyRecords, config, p) {
 function addToKey(records, list) {
   if (list.length === 0) return records;
   const byId = new Map();
-  for (const x of list) byId.set(x.id, [...(byId.get(x.id) || []), x]);
+  for (const x of list) {
+    if (!byId.has(x.id)) byId.set(x.id, []);
+    byId.get(x.id).push(x);
+  }
   return records.map(r => {
     const mine = byId.get(r.id);
     if (!mine) return r;
     const key = { ...r.key };
-    for (const x of mine) key[x.output] = [...key[x.output], x.value];
+    for (const x of mine) {
+      if (key[x.output] === r.key[x.output]) key[x.output] = [...r.key[x.output]];   // key records are shared: copied once, then added to
+      key[x.output].push(x.value);
+    }
     return { ...r, key };
   });
 }

@@ -392,6 +392,7 @@ test('K10: --pick must be a whole number of 1 or more', () => {
 
 test('K11: --pick more than the records out stops, saying how many there are', () => {
   assert.throws(() => pickRun({ n: 21 }), /\[K11\].*20 records went out without review/);
+  for (const n of [0, 1.5]) assert.throws(() => pickRun({ n }), /\[K10\] --pick must be a whole number/);
   assert.equal(pickRun({ n: 20 }).picks.length, 20);
 });
 

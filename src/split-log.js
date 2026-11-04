@@ -44,7 +44,9 @@
 // look is lost and no two reports claim the same look number.
 
 const fs = require('fs');
-const crypto = require('crypto');
+const { readText } = require('./text.js');
+const { maxOf, minOf } = require('./values.js');
+const { sha256: hash, fingerprint: fingerprintFile } = require('./hash.js');
 
 const FORMAT = 'wfeval-split-log/1';
 const ALPHA = 0.05;
@@ -52,9 +54,10 @@ const ALPHA = 0.05;
 // The share of the 5% look k (1, 2, 3, ...) may use: half of what the looks before it left.
 const lookLevel = (k, alpha = ALPHA) => alpha / Math.pow(2, k);
 
-const sha256 = data => crypto.createHash('sha256').update(data).digest('hex');
-const fingerprintFile = file => sha256(fs.readFileSync(file));
+const sha256 = data => hash(data).digest('hex');
 const isPlain = x => x !== null && typeof x === 'object' && !Array.isArray(x);
+// A log keeps records by id, and an id named __proto__ is an id like any other (trap P14).
+const setOwn = (obj, key, value) => Object.defineProperty(obj, key, { value, enumerable: true, writable: true, configurable: true });
 
 // Any value as JSON with every object's keys in order, so the same settings always read the same.
 function canonical(x) {
@@ -97,11 +100,12 @@ function retry(fn) {
 function readLog(file, config) {
   if (!fs.existsSync(file)) return null;
   let log;
-  try { log = JSON.parse(retry(() => fs.readFileSync(file, 'utf8')).replace(/^﻿/, '')); } catch (e) {
-    throw new Error('[O11] split.log ' + file + ' is not valid JSON: ' + e.message + '. It counts the looks at the held-out half: restore it rather than start a new one');
+  // Its name comes from the config, so the error never quotes what the file holds (trap P39).
+  try { log = JSON.parse(retry(() => readText(file)).replace(/^﻿/, '')); } catch (e) {
+    throw new Error('[O11] split.log ' + file + ' is not valid JSON' + (e.code ? ' (' + e.message + ')' : '') + '. It counts the looks at the held-out half: restore it rather than start a new one');
   }
   const ok = isPlain(log) && log.format === FORMAT && Array.isArray(log.looks) && log.looks.every(isPlain) && isPlain(log.records) &&
-    isPlain(log.records.held_out) && isPlain(log.records.tuning) && (log.listings === undefined || Array.isArray(log.listings)) &&
+    isPlain(log.records.held_out) && isPlain(log.records.tuning) && (log.listings === undefined || (Array.isArray(log.listings) && log.listings.every(isPlain))) &&
     (log.moved === undefined || isPlain(log.moved));
   if (!ok) throw new Error('[O11] split.log ' + file + ' is not a split log (format ' + FORMAT + ', with each record\'s first look kept by id)');
   const want = splitKey(config);
@@ -155,8 +159,9 @@ function withLock(file, fn) {
   let fd;
   for (;;) {
     try { fd = fs.openSync(lock, 'wx'); break; } catch (e) {
-      if (e.code !== 'EEXIST' && !['EPERM', 'EBUSY', 'EACCES'].includes(e.code)) throw e;
+      if (e.code !== 'EEXIST' && !['EPERM', 'EBUSY', 'EACCES'].includes(e.code)) throw notWritable(file, e);
       if (Date.now() >= deadline) {
+        if (!fs.existsSync(lock)) throw notWritable(file, e);   // no lock there: the folder refused a new file
         throw new Error('[O17] split.log is locked: ' + lock + ' exists. Another run is writing the log, or one stopped part-way: ' +
           'if no other run is going, delete ' + lock + ' and run again');
       }
@@ -172,9 +177,16 @@ function withLock(file, fn) {
 // Written whole to a temporary file that then replaces the log, so a reader never sees half of it.
 function writeLog(file, log) {
   const tmp = file + '.' + process.pid + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(log, null, 2) + '\n');
-  retry(() => fs.renameSync(tmp, file));
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(log, null, 2) + '\n');
+    retry(() => fs.renameSync(tmp, file));
+  } catch (e) {
+    try { fs.unlinkSync(tmp); } catch { /* it never came to be */ }
+    throw notWritable(file, e);
+  }
 }
+// A log that cannot be written: the look is not counted, so nothing is claimed on it (trap P30).
+const notWritable = (file, e) => new Error('[O17] split.log cannot be written: ' + file + ' (' + e.code + '). This look is not counted. Make the file and its folder writable, and run again');
 
 // identity: { command, files: { name: path or [paths] }, options }. With the config's fingerprint
 // and the mode, the fingerprint of what a look shows.
@@ -208,7 +220,7 @@ function lookCount(log, ids, t) {
 }
 function listedAt(log, ids, t) {
   const hits = log.listings.filter(l => l.after < t && listingShowed(log, l, ids)).map(l => l.covers);
-  return hits.length ? Math.max(...hits) : null;
+  return hits.length ? maxOf(hits) : null;
 }
 
 // Records a look (or finds the same look again) and says what each claim may spend.
@@ -262,16 +274,16 @@ function commitLook({ config, identity, halves, moved = [], idsShown = false, mo
       };
       log.looks.push(entry);
       if (shown.length) log.listings.push({ after: entry.look, covers: entry.look, date, ids: shown });
-      for (const id of heldIds) if (!Object.hasOwn(seenIn.held_out, id)) seenIn.held_out[id] = entry.look;
-      for (const id of halves.tuning) if (!Object.hasOwn(seenIn.tuning, id)) seenIn.tuning[id] = entry.look;
+      for (const id of heldIds) if (!Object.hasOwn(seenIn.held_out, id)) setOwn(seenIn.held_out, id, entry.look);
+      for (const id of halves.tuning) if (!Object.hasOwn(seenIn.tuning, id)) setOwn(seenIn.tuning, id, entry.look);
     }
-    for (const id of moved) if (!Object.hasOwn(log.moved, id)) log.moved[id] = entry.look;
+    for (const id of moved) if (!Object.hasOwn(log.moved, id)) setOwn(log.moved, id, entry.look);
     const t = entry.look;
     // A record's first look; a record first seen after the look being repeated cannot be in it.
     const first = id => Math.min(firstSeen(log, id), t);
     const firsts = heldIds.map(first);
-    const oldest = firsts.length ? Math.min(...firsts) : t;
-    const newest = firsts.length ? Math.max(...firsts) : t;
+    const oldest = firsts.length ? minOf(firsts) : t;
+    const newest = firsts.length ? maxOf(firsts) : t;
     // A claim on these records: no share once any of them was listed before this look; otherwise
     // the share for the number of looks that were at them.
     const claimOn = ids => {

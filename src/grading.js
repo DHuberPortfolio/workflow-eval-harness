@@ -15,10 +15,11 @@
 //   the grading config  - where the forms' fields and source are, their sections, the kinds
 //   the forms           - the workflow's output, through load.js's file reading
 //   a grades file       - what the grading page saved (format GRADES_FORMAT)
-const fs = require('fs');
-const crypto = require('crypto');
+const { sha256 } = require('./hash.js');
 const { problems } = require('./problems.js');
+const { readText: readFileText } = require('./text.js');
 const { readRecords, readId, getPath } = require('./load.js');
+const { isObj, isName, isPath, describe } = require('./values.js');
 
 const GRADES = ['faithful', 'invented', 'missing'];
 const GRADES_FORMAT = 'wfeval-grades/1';
@@ -27,10 +28,6 @@ const CONFIG_KEYS = ['title', 'id_field', 'input', 'source_field', 'fields', 'ki
 const FIELD_KEYS = ['field', 'section', 'label'];
 const INPUT_KEYS = ['format', 'records_at', 'unwrap', 'delimiter'];
 
-const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
-const isName = v => typeof v === 'string' && v.trim().length > 0;
-const isPath = v => isName(v) && v.split('.').every(part => part.length > 0);
-const describe = v => (v === null ? 'null' : v === undefined ? 'nothing' : Array.isArray(v) ? 'a list' : typeof v === 'string' ? 'the text ' + JSON.stringify(v) : typeof v);
 
 // ---------- The grading config ----------
 
@@ -85,7 +82,7 @@ function validateGradingConfig(raw) {
 
 function loadGradingConfig(file) {
   let raw;
-  try { raw = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, '')); } catch (e) { throw new Error('cannot read grading config ' + file + ': ' + e.message); }
+  try { raw = JSON.parse(readFileText(file).replace(/^﻿/, '')); } catch (e) { throw new Error('cannot read grading config ' + file + ': ' + e.message); }
   const { config, errors } = validateGradingConfig(raw);
   if (errors.length) throw new Error('grading config ' + file + ' has ' + errors.length + ' problem(s):\n  - ' + errors.join('\n  - '));
   return config;
@@ -135,7 +132,7 @@ function readForms({ config, predPath, mode = 'strict' }) {
 // order. Two grades files are compared only if they graded the same thing (trap J7).
 function fingerprint(forms) {
   const canonical = JSON.stringify(forms.map(f => [f.id, f.source, f.fields.map(x => [x.name, x.text])]));
-  return 'sha256:' + crypto.createHash('sha256').update(canonical, 'utf8').digest('hex');
+  return 'sha256:' + sha256(canonical).digest('hex');
 }
 
 // ---------- A grades file ----------
@@ -146,7 +143,7 @@ function fingerprint(forms) {
 // and records problems in p (traps J1-J6, J10).
 function readGrades(file, p) {
   let data;
-  try { data = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, '')); } catch (e) {
+  try { data = JSON.parse(readFileText(file).replace(/^﻿/, '')); } catch (e) {
     p.stop('J1', file, 'cannot read it as JSON: ' + e.message);
     return null;
   }

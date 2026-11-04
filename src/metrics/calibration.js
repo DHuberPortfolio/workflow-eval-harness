@@ -57,23 +57,30 @@ function bucketKey(c, mode) {
   return { from: round(i * mode, 4), to: round(Math.min(1, (i + 1) * mode), 4) };
 }
 
-function bucketize(list, mode) {
+// listClaims: false leaves out each bucket's list of claims.
+function bucketize(list, mode, listClaims = true) {
   const map = new Map();
+  const bucketOf = new Map();   // a stated value -> its bucket, worked out once per value, not per claim
   for (const c of list) {
-    const b = bucketKey(round(c.confidence, 6), mode);
-    const k = b.from + '|' + b.to;
-    if (!map.has(k)) map.set(k, { ...b, items: [] });
-    map.get(k).items.push(c);
+    if (!bucketOf.has(c.confidence)) {
+      const b = bucketKey(round(c.confidence, 6), mode);
+      const k = b.from + '|' + b.to;
+      if (!map.has(k)) map.set(k, { ...b, items: [] });
+      bucketOf.set(c.confidence, map.get(k));
+    }
+    bucketOf.get(c.confidence).items.push(c);
   }
   const buckets = [...map.values()].sort((a, b) => a.from - b.from).map(b => {
     const n = b.items.length;
     const correct = b.items.filter(c => c.correct).length;
-    const stated = b.items.reduce((s, c) => s + c.confidence, 0) / n;
+    // Added in order of size: the order of a file is not evidence, and adding in the records' order
+    // moves the last digit, enough to round a tie in the fourth decimal either way.
+    const stated = b.items.map(c => c.confidence).sort((x, y) => x - y).reduce((s, c) => s + c, 0) / n;
     return {
       from: b.from, to: b.to, stated: round(stated, 4), n, correct,
       accuracy: rate(correct, n),
       gap: round(correct / n - stated, 2),
-      claims: b.items.map(c => ({ id: c.id, output: c.output, value: c.value, correct: c.correct })),
+      ...(listClaims ? { claims: b.items.map(c => ({ id: c.id, output: c.output, value: c.value, correct: c.correct })) } : {}),
     };
   });
   const total = list.length;
@@ -81,11 +88,14 @@ function bucketize(list, mode) {
   return { n: total, correct: list.filter(c => c.correct).length, accuracy: rate(list.filter(c => c.correct).length, total), ece, buckets };
 }
 
-function scoreCalibration(records, config) {
+// overallOnly: the overall figures alone, for a command that follows the gap across runs and shows
+// no calibration table.
+function scoreCalibration(records, config, overallOnly = false) {
   const { claims: all, noConfidence, inherited, declined } = claims(records, config);
-  const distinct = new Set(all.map(c => round(c.confidence, 6))).size;
+  const distinct = new Set([...new Set(all.map(c => c.confidence))].map(c => round(c, 6))).size;
   const setting = config.calibration.buckets;
   const mode = setting === 'auto' ? (distinct <= 12 ? 'distinct' : 0.1) : setting;
+  if (overallOnly) return { overall: bucketize(all, mode, false) };
 
   const outputs = {};
   for (const name of Object.keys(config.outputs)) {

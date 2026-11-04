@@ -16,14 +16,14 @@
 // those records spend nothing (O13). Without showHeldOut nothing of the held-out half is shown, so
 // nothing is recorded.
 
-const fs = require('fs');
-const crypto = require('crypto');
+const { fingerprint } = require('./hash.js');
+const { addNew, problems } = require('./problems.js');
+const { acrossFiles } = require('./load.js');
 const { scoreRun } = require('./score.js');
 const { suspectsOf, keyLeavesOut } = require('./metrics/suspects.js');
 const { splitSettings } = require('./split.js');
 const { commitLook, notRecorded } = require('./split-log.js');
 
-const fingerprint = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const KINDS = ['key_lacks', 'key_lists', 'label'];
 
 // The records a run gives evidence from: every record; with a split, the tuning half's (scoreRun's
@@ -54,10 +54,16 @@ function suspectsRun({ config, keyPath, predPaths, mode = 'strict', rulings = nu
   }
   // With a split, scoreRun draws the halves, checks the log for moved records, and masks every
   // problem and stop that names a held-out record (unless showHeldOut).
+  const keys = new Map();
+  const files = acrossFiles();
   const runs = used.map(f => {
-    const results = scoreRun({ config, predPath: f, keyPath, mode, rulings, applySplit: split, showHeldOut });
+    const results = scoreRun({ config, predPath: f, keyPath, mode, rulings, applySplit: split, showHeldOut, parts: 'paired', keys, across: files });
     return { label: f, results, records: recordsOf(results, showHeldOut) };
   });
+  const fields = problems(mode);
+  files.report(fields);
+  fields.throwIfStopped();
+  addNew(notes, fields.items);
   // N15 (as I6): a record whose model call failed gives no evidence from that run. Read from the
   // records that give evidence: with a split, a held-out record's failure is left out with it.
   for (const r of runs) {
@@ -69,13 +75,7 @@ function suspectsRun({ config, keyPath, predPaths, mode = 'strict', rulings = nu
   }
   // The run's own clean-ups and warnings (the first run's, which every run shares for the key and the
   // rulings file; the others' are their own).
-  const own = new Set(notes.map(i => i.trap + i.where + i.message));
-  for (const r of runs) {
-    for (const i of r.results.problems.filter(x => x.level !== 'stop')) {
-      const k = i.trap + i.where + i.message;
-      if (!own.has(k)) { own.add(k); notes.push(i); }
-    }
-  }
+  addNew(notes, runs.flatMap(r => r.results.problems.filter(x => x.level !== 'stop')));
 
   const all = suspectsOf(runs.map(r => r.records), config);
   // With a split, results.rulings holds the tuning half's rulings only (score counts the rest);

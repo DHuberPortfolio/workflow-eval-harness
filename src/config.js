@@ -6,6 +6,8 @@
 // know what the defaults are.
 const fs = require('fs');
 const path = require('path');
+const { isObj, isText, isName, isPath, isProb, isReserved, own } = require('./values.js');
+const { readText } = require('./text.js');
 
 const ROUTE_CLASSES = ['auto', 'review', 'block', 'exclude'];
 const OUTPUT_TYPES = ['set', 'label', 'ordinal'];
@@ -30,15 +32,12 @@ const ERROR_TYPES = {
   'SG-GATE': 'critical', 'SG-FLOOR': 'critical', 'SP-NEAR-MISS': 'low',
 };
 const OUTPUT_KEYS = ['type', 'field', 'key_field', 'labels', 'value_key', 'confidence_key', 'rejected_field', 'confidence_field', 'near_miss_steps', 'decline'];
+const ROUTING_KEYS = ['field', 'gold_field', 'map'];
 const INPUT_KEYS = ['format', 'records_at', 'unwrap', 'delimiter', 'list_separator', 'confidence_separator', 'any_of_separator', 'any_of_outputs'];
 
-const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
-const isName = v => typeof v === 'string' && v.length > 0;
-const isProb = v => typeof v === 'number' && v >= 0 && v <= 1;
-// A field name, or a dotted path into nested fields: "output.subject" is the
-// "subject" field inside the "output" field.
-const isPath = v => isName(v) && v.split('.').every(part => part.length > 0);
-const PATH_RULE = 'must be a field name, or a dotted path like "output.subject"';
+const PATH_RULE = 'must be a field name, or a dotted path like "output.subject", with no part named __proto__';
+// Trap P13: a name every object already has cannot name an output or a group.
+const RESERVED_RULE = name => '"' + name + '" is a reserved name (every JavaScript object has one): choose another';
 
 // outputs.<name>.decline: which value or field means the workflow declined to answer.
 // Only single labels: an ordinal's distance and a set's values have no clean place for "no
@@ -81,6 +80,7 @@ function validateGroups(raw, errors) {
   if (!isObj(raw)) { errors.push('groups must be an object: { "<name>": { "field": "<field>", "from": "key" } }'); return groups; }
   for (const [name, g] of Object.entries(raw)) {
     if (name.trim() === '') { errors.push('groups: every group needs a name'); continue; }
+    if (isReserved(name)) { errors.push('groups.' + name + ': ' + RESERVED_RULE(name)); continue; }
     const read = validateFieldFrom(g, 'groups.' + name, errors);
     if (read) groups[name] = read;
   }
@@ -103,6 +103,7 @@ function validateFieldFrom(g, at, errors) {
 // record with no value is a cluster of its own. null without it.
 function validateClusters(raw, errors) {
   if (raw === undefined) return null;
+  if (isObj(raw) && isReserved(raw.field)) errors.push('clusters.field: ' + RESERVED_RULE(raw.field));
   return validateFieldFrom(raw, 'clusters', errors);
 }
 
@@ -160,7 +161,7 @@ function validateEquivalents(raw, outputs, rawRouting, errors) {
   const routeField = isObj(rawRouting) ? (rawRouting.field === undefined ? 'route' : rawRouting.field) : null;
   for (const [name, groups] of Object.entries(raw)) {
     const at = 'equivalents.' + name;
-    const o = outputs[name];
+    const o = own(outputs, name);
     if (!o) { errors.push(at + ' is not a declared output'); continue; }
     if (!Array.isArray(groups) || groups.length === 0 || !groups.every(Array.isArray)) {
       errors.push(at + ' must be a list of groups, each a list of values that are the same thing: [["a", "a-alias"]]');
@@ -187,7 +188,7 @@ function validateEquivalents(raw, outputs, rawRouting, errors) {
 
 // What a value of one output is read as: its equivalents group's first value, or itself.
 function equivalentOf(equivalents, name) {
-  const to = new Map((equivalents[name] || []).flatMap(g => g.map(v => [v, g[0]])));
+  const to = new Map((own(equivalents, name) || []).flatMap(g => g.map(v => [v, g[0]])));
   return v => (to.has(v) ? to.get(v) : v);
 }
 
@@ -204,7 +205,8 @@ function addGroupBy(config, paths) {
   const groups = { ...config.groups };
   for (const p of paths) {
     if (!isPath(p)) throw new Error('--group-by ' + PATH_RULE + ', got ' + JSON.stringify(p));
-    const had = groups[p];
+    if (isReserved(p)) throw new Error('--group-by ' + p + ': ' + RESERVED_RULE(p) + ' for a group. To read a field of that name, give it a group in the config: "groups": { "<name>": { "field": "' + p + '" } }');
+    const had = own(groups, p);
     if (had && (had.field !== p || had.from !== 'key')) throw new Error('--group-by ' + p + ': the config already has a group named "' + p + '" that reads something else');
     groups[p] = { field: p, from: 'key' };
   }
@@ -216,6 +218,7 @@ function addGroupBy(config, paths) {
 // Returns a new config; the one passed in is not changed.
 function addClusterBy(config, p) {
   if (!isPath(p)) throw new Error('--cluster-by ' + PATH_RULE + ', got ' + JSON.stringify(p));
+  if (isReserved(p)) throw new Error('--cluster-by ' + p + ': ' + RESERVED_RULE(p));
   const had = config.clusters;
   if (had && (had.field !== p || had.from !== 'key')) {
     throw new Error('--cluster-by ' + p + ': the config already has clusters, read from the ' + (had.from === 'key' ? 'answer key' : 'predictions') + ' field "' + had.field + '"');
@@ -263,13 +266,13 @@ function validateConfig(raw) {
   for (const which of ['predictions', 'key']) {
     input[which] = { format: null, records_at: null, unwrap: null, delimiter: null, list_separator: '|', confidence_separator: '@', any_of_separator: null, any_of_outputs: null };
   }
-  const isSeparator = v => isName(v) && !/["\r\n]/.test(v);
+  const isSeparator = v => isText(v) && !/["\r\n]/.test(v);
   if (raw.input !== undefined) {
     if (!isObj(raw.input)) {
       errors.push('input must be an object');
     } else {
       for (const [which, spec] of Object.entries(raw.input)) {
-        if (!(which in input)) { errors.push('unknown key "input.' + which + '" (allowed: predictions, key)'); continue; }
+        if (!Object.hasOwn(input, which)) { errors.push('unknown key "input.' + which + '" (allowed: predictions, key)'); continue; }
         if (!isObj(spec)) { errors.push('input.' + which + ' must be an object'); continue; }
         for (const [k, v] of Object.entries(spec)) {
           const at = 'input.' + which + '.' + k;
@@ -326,6 +329,7 @@ function validateConfig(raw) {
   } else {
     for (const [name, o] of Object.entries(raw.outputs)) {
       const at = 'outputs.' + name;
+      if (isReserved(name)) { errors.push(at + ': ' + RESERVED_RULE(name)); continue; }
       if (!isObj(o)) { errors.push(at + ' must be an object'); continue; }
       for (const k of Object.keys(o)) {
         if (!OUTPUT_KEYS.includes(k)) errors.push('unknown key "' + at + '.' + k + '" (allowed: ' + OUTPUT_KEYS.join(', ') + ')');
@@ -380,6 +384,8 @@ function validateConfig(raw) {
   if (!isObj(r)) {
     errors.push('routing must be an object');
   } else {
+    // A misspelled key ("gold_fild") would otherwise be dropped, and the run scored another way (trap P5).
+    for (const k of Object.keys(r)) if (!ROUTING_KEYS.includes(k)) errors.push('unknown key "routing.' + k + '" (allowed: ' + ROUTING_KEYS.join(', ') + ')');
     const field = r.field === undefined ? 'route' : r.field;
     if (!isPath(field)) errors.push('routing.field ' + PATH_RULE);
     if (r.gold_field !== undefined && !isPath(r.gold_field)) errors.push('routing.gold_field ' + PATH_RULE);
@@ -444,7 +450,7 @@ function validateConfig(raw) {
           errors.push(at + '.auto_publish must map at least one output name to a threshold');
         } else {
           for (const [facet, v] of Object.entries(t.auto_publish)) {
-            if (!outputs[facet]) errors.push(at + '.auto_publish.' + facet + ' is not a declared output');
+            if (!own(outputs, facet)) errors.push(at + '.auto_publish.' + facet + ' is not a declared output');
             // A field name instead of a number: each record's own threshold, read from that
             // prediction field (a client's threshold, say). load.js reads it (trap E18).
             // Text that reads as a number is a quoted number, not a field's name (as E2 refuses "0.85").
@@ -494,7 +500,7 @@ function validateConfig(raw) {
     else {
       for (const [name, v] of Object.entries(raw.allowed_values)) {
         const at = 'allowed_values.' + name;
-        if (!outputs[name]) errors.push(at + ' is not a declared output');
+        if (!own(outputs, name)) errors.push(at + ' is not a declared output');
         if (Array.isArray(v) && v.length > 0 && v.every(isName)) allowed[name] = v;
         else if (isObj(v) && isName(v.file) && (v.field === undefined || isName(v.field)) && Object.keys(v).every(k => k === 'file' || k === 'field')) allowed[name] = { file: v.file, field: v.field || null };
         else errors.push(at + ' must be a list of values, or { "file": "...", "field": "..." }');
@@ -508,7 +514,7 @@ function validateConfig(raw) {
     if (!isObj(raw.severity)) errors.push('severity must be an object');
     else {
       for (const [type, level] of Object.entries(raw.severity)) {
-        if (!(type in ERROR_TYPES)) errors.push('severity.' + type + ' is not a known error type (known: ' + Object.keys(ERROR_TYPES).join(', ') + ')');
+        if (!Object.hasOwn(ERROR_TYPES, type)) errors.push('severity.' + type + ' is not a known error type (known: ' + Object.keys(ERROR_TYPES).join(', ') + ')');
         else if (!SEVERITIES.includes(level)) errors.push('severity.' + type + ' must be one of: ' + SEVERITIES.join(', '));
         else severity[type] = level;
       }
@@ -551,7 +557,7 @@ function validateConfig(raw) {
   // quietly leave every output unsplit.
   const anyOf = input.key.any_of_outputs;
   if (Array.isArray(anyOf)) {
-    for (const name of anyOf) if (!outputs[name] || outputs[name].type !== 'set') errors.push('input.key.any_of_outputs: "' + name + '" is not a set output');
+    for (const name of anyOf) if (!own(outputs, name) || outputs[name].type !== 'set') errors.push('input.key.any_of_outputs: "' + name + '" is not a set output');
   }
   for (const [name, v] of Object.entries(allowed)) if (Array.isArray(v)) allowed[name] = allowedAsRead(v, equivalents, name);
 
@@ -568,17 +574,21 @@ function validateConfig(raw) {
 
 // Reads allowed-value lists given as files, relative to the config file's folder.
 function resolveAllowedValues(config, configPath) {
+  const named = [...config.named_files];
+  Object.defineProperty(config, 'named_files', { value: named, enumerable: false, configurable: true });
   for (const [name, v] of Object.entries(config.allowed_values)) {
     if (Array.isArray(v)) continue;
     const file = path.resolve(path.dirname(configPath), v.file);
+    let text;
+    try { text = readText(file); } catch (e) { throw new Error('allowed_values.' + name + ': cannot read ' + file + ': ' + e.message); }
     let list;
-    try { list = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, '')); } catch (e) {
-      throw new Error('allowed_values.' + name + ': cannot read ' + file + ': ' + e.message);
-    }
+    // A config can name any file (trap P39): the error says what is wrong with it, never what is in it.
+    try { list = JSON.parse(text.replace(/^﻿/, '')); } catch (e) { throw new Error('allowed_values.' + name + ': ' + file + ' is not valid JSON'); }
     if (!Array.isArray(list)) throw new Error('allowed_values.' + name + ': ' + file + ' must hold a list');
     const values = list.map(x => (v.field ? (x !== null && typeof x === 'object' ? x[v.field] : undefined) : x));
     if (!values.every(isName)) throw new Error('allowed_values.' + name + ': every entry of ' + file + ' must be ' + (v.field ? 'an object with text in "' + v.field + '"' : 'text'));
     config.allowed_values[name] = allowedAsRead(values, config.equivalents, name);
+    named.push(file);
   }
   return config;
 }
@@ -586,13 +596,16 @@ function resolveAllowedValues(config, configPath) {
 // The only function here that touches the disk. Throws one error listing every problem.
 function loadConfig(configPath) {
   let text;
-  try { text = fs.readFileSync(configPath, 'utf8'); } catch (e) { throw new Error('cannot read config ' + configPath + ': ' + e.message); }
+  try { text = readText(configPath); } catch (e) { throw new Error('cannot read config ' + configPath + ': ' + e.message); }
   let raw;
   try { raw = JSON.parse(text.replace(/^﻿/, '')); } catch (e) { throw new Error('config ' + configPath + ' is not valid JSON: ' + e.message); }
   const { config, errors } = validateConfig(raw);
   if (errors.length) throw new Error('config ' + configPath + ' has ' + errors.length + ' problem(s):\n  - ' + errors.join('\n  - '));
   // split.log is relative to the config's folder, as allowed_values files are.
   if (config.split && config.split.log) config.split.log_path = path.resolve(path.dirname(configPath), config.split.log);
+  // The files the config itself names, kept apart from its settings: they are inputs an output option
+  // must not replace (trap P18), and moving one changes no number.
+  Object.defineProperty(config, 'named_files', { value: config.split && config.split.log ? [config.split.log_path] : [], enumerable: false, configurable: true });
   return resolveAllowedValues(config, configPath);
 }
 

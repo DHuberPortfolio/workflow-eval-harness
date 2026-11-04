@@ -41,8 +41,7 @@ function scoreGrades(g) {
 
   const listOf = grade => all.filter(x => x.grade === grade).map(x => ({ form: x.form, field: x.field, section: sectionOf.get(x.field), kinds: x.kinds, note: x.note }));
   const invented = listOf('invented');
-  const kinds = {};
-  for (const k of g.kinds) kinds[k] = invented.filter(x => x.kinds.includes(k)).length;
+  const kinds = Object.fromEntries(g.kinds.map(k => [k, invented.filter(x => x.kinds.includes(k)).length]));
 
   return {
     reviewer: g.reviewer,

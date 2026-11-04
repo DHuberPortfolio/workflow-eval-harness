@@ -2,7 +2,7 @@
 // disagree with, the likeliest key errors first, each with why it is listed, in the numbers the
 // ranking used (metrics/suspects.js).
 
-const { table, rulingsWords, rulingStatus, thousands } = require('./format.js');
+const { table, rulingsWords, rulingStatus, thousands, plural } = require('./format.js');
 const { howSplit, setAsideText, heldOutRulingsCount, localDate } = require('./split.js');
 
 const WIDTH = 100;
@@ -109,7 +109,6 @@ function why(s, runs) {
 
 // ---------- with a split in the config (traps O21-O24) ----------
 
-const plural = (k, one, many) => thousands(k) + ' ' + (k === 1 ? one : many);
 // A paragraph whose first line starts with a heading and whose later lines are indented two spaces.
 const headed = text => wrap(text, '  ').replace(/^ {2}/, '');
 

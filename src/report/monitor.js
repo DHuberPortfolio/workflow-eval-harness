@@ -5,10 +5,9 @@
 // share of them wrongly left out (SERIES); with segments, a table of them follows the whole's
 // report, and the whole's numbers say what the segments changed.
 
-const { pct, range } = require('./format.js');
+const { pct, range, nothingLine, thousands, sized } = require('./format.js');
 const { SERIES } = require('../metrics/monitor.js');
 
-const thousands = n => (n === Infinity ? 'more than a million' : Math.round(n).toLocaleString('en-US'));
 // A percentage to the decimals it was stored with, at least one: an upper bound of 4.98% keeps
 // both, and --target 0.05 prints as 0.05%, not 0.1% (L16).
 const pv = x => x.toFixed(Math.max(1, (String(x).split('.')[1] || '').length)) + '%';
@@ -91,7 +90,7 @@ function boundSection(m) {
     lines.push('With segments, the whole is checked together with them, so it needs more evidence before it is called shown: a bar of ' + b.bar.toFixed(1) + ' here, against 20 alone. ' +
       'That keeps one 5% for every "shown" in this report (see SEGMENTS). The bar is 20 plus the segments\' average shortfall below 20, so between 20 and 40.');
   }
-  lines.push('The price of looking any time: with no ' + w.hit + ' at all, ' + thousands(b.perfect_run.anytime) + ' ' + w.base + ' show it' + (m.segments ? ' at that bar' : '') + ', against ' +
+  lines.push('The price of looking any time: with no ' + w.hit + ' at all, ' + sized(b.perfect_run.anytime, w.base) + ' show it' + (m.segments ? ' at that bar' : '') + ', against ' +
     thousands(b.perfect_run.fixed) + ' for one test of a size fixed in advance (' + w.fixedTest + ').');
   if (m.detector.status === 'alarm') {
     lines.push('With an alarm raised, read this bound as the periods together, not as the rate now: the alarm says the rate has likely risen since ' + m.detector.rise_started + '.');
@@ -192,7 +191,7 @@ function renderMonitor(m) {
   const head = 'MONITOR  ' + m.periods.length + ' period(s) from ' + source + ' · ' + m.inputs.mode + ' mode' + (s.since ? ' · alarm restarted at ' + s.since + ' (--since)' : '') + '\n' +
     '  acceptable ' + p1(s.acceptable_pct) + ' · alarming ' + p1(s.alarming_pct) + (s.target_pct === null ? '' : ' · target ' + p1(s.target_pct)) +
     ' · rate: ' + w.header;
-  const parts = [head, table(m), detectorSection(m), boundSection(m), designSection(m), m.segments ? segmentSection(m) : null].filter(Boolean);
+  const parts = [m.nothing_evaluated ? nothingLine(m.nothing_evaluated.why) : null, head, table(m), detectorSection(m), boundSection(m), designSection(m), m.segments ? segmentSection(m) : null].filter(Boolean);
   const notes = m.problems.filter(i => i.level !== 'stop');
   if (notes.length) parts.push('NOTES (' + notes.length + ')\n' + notes.map(i => '  [' + i.trap + '] ' + i.where + ': ' + i.message).join('\n'));
   return parts.join('\n\n') + '\n';

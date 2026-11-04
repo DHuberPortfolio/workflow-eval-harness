@@ -8,14 +8,12 @@
 // total. Read and checked here, before any run is scored; whether the labels match the run's is
 // checked against the run (metrics/mix.js), since only the run knows its labels.
 
-const fs = require('fs');
 const { problems } = require('./problems.js');
+const { readText } = require('./text.js');
+const { isObj, describe } = require('./values.js');
 
 const KEYS = ['group', 'shares'];
 const SHAPE = '{ "group": "<group>", "shares": { "<label>": <share>, ... } }';
-const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
-const describe = v => (v === null ? 'null' : v === undefined ? 'nothing' : Array.isArray(v) ? 'a list'
-  : typeof v === 'string' ? 'the text ' + JSON.stringify(v) : typeof v);
 
 // Reads and checks a mix file against the config (trap G18). Every problem here stops, in lenient
 // mode too: a weight the tool guessed would move the estimate where no report shows it. Throws
@@ -25,7 +23,7 @@ function loadMix(file, config) {
   const p = problems('strict');
   let raw;
   try {
-    raw = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, ''));   // A3: a byte-order mark
+    raw = JSON.parse(readText(file).replace(/^﻿/, ''));   // A3: a byte-order mark
   } catch (e) {
     p.stop('G18', file, (e.code ? 'cannot read the mix file: ' : 'not valid JSON: ') + e.message);
     p.throwIfStopped();

@@ -80,8 +80,8 @@ function align(predictions, key, config, p, opts = {}) {
   // A8: one file, and every output reads the same field for prediction and answer.
   // Every record would match itself, so every score would be perfect and meaningless.
   if (opts.sameFile && Object.values(config.outputs).every(o => o.key_field === o.field)) {
-    p.stop('A8', predSource, 'predictions and answers come from the same file and the same fields, so every record would be scored against itself. ' +
-      'Set key_field on each output to where the answers are.');
+    p.stop('A8', predSource, (opts.sameContent ? predSource + ' and ' + keySource + ' hold the same records' : 'predictions and answers come from the same file') +
+      ' and the same fields, so every record would be scored against itself. Set key_field on each output to where the answers are.');
     return [];
   }
 
@@ -152,8 +152,11 @@ function align(predictions, key, config, p, opts = {}) {
   // A8: predictions identical to the key, and not one confidence anywhere. A real
   // workflow output almost always carries confidences; this is usually the key passed twice.
   // Only a warning: a perfect run of a workflow without confidences is possible.
-  if (records.length > 0 && records.every(r => hasNoConfidence(r.pred, config) && sameAsKey(r.pred, r.key, config))) {
-    p.warn('A8', predSource, 'every prediction matches the answer key exactly and none has a confidence. Check the right files were passed.');
+  // Or a key whose values carry confidences, as no person writes them: an earlier run, perhaps, or
+  // this one with its routes taken out (trap P20).
+  if (records.length > 0 && records.every(r => (opts.keyConfident || hasNoConfidence(r.pred, config)) && sameAsKey(r.pred, r.key, config))) {
+    p.warn('A8', predSource, opts.keyConfident ? 'every prediction matches the answer key exactly, and the key\'s values carry confidences, as a model\'s do: it looks like a run. Check the right files were passed.'
+      : 'every prediction matches the answer key exactly and none has a confidence. Check the right files were passed.');
   }
   return records;
 }

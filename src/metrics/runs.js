@@ -4,10 +4,13 @@
 // Every run is scored against the same key and config, so the runs always cover the same
 // records (trap I2) and are judged by the same rules (I4) by construction.
 
-const { pairedDifference, rate } = require('./stats.js');
+const { pairedDifference, rate, worstRun } = require('./stats.js');
+const { minOf, maxOf } = require('../values.js');
 const { accepted } = require('./slots.js');
 
 const round = (x, d = 1) => (x === null ? null : Number(x.toFixed(d)));
+// A figure in a table of runs: a rate that would round to 0 keeps two figures, as score prints it (trap P42).
+const shown = (x, unit, d) => (unit === 'points' && x && round(x, d) === 0 ? Number(x.toPrecision(2)) : round(x, d));
 
 // A rate as an exact percentage, never the rounded one (trap G6).
 const exact = r => (r === null || r === undefined || r.d === 0 ? null : (r.n / r.d) * 100);
@@ -54,12 +57,14 @@ const decimals = unit => (unit === 'F1' || unit === 'gap' ? 3 : unit === 'record
 function spread(values) {
   const known = values.filter(v => v !== null);
   if (known.length === 0) return { mean: null, sd: null, min: null, max: null, range: null };
-  const mean = known.reduce((s, v) => s + v, 0) / known.length;
+  const min = minOf(known);
+  const max = maxOf(known);
+  // The same value in every run has no spread, exactly: adding and dividing would leave 1e-14 of it.
+  const same = min === max;
+  const mean = same ? min : known.reduce((s, v) => s + v, 0) / known.length;
   // Sample standard deviation (divide by n - 1): the runs are a sample of all the runs
   // this workflow could produce.
-  const sd = known.length > 1 ? Math.sqrt(known.reduce((s, v) => s + (v - mean) ** 2, 0) / (known.length - 1)) : null;
-  const min = Math.min(...known);
-  const max = Math.max(...known);
+  const sd = known.length < 2 ? null : same ? 0 : Math.sqrt(known.reduce((s, v) => s + (v - mean) ** 2, 0) / (known.length - 1));
   return { mean, sd, min, max, range: max - min };
 }
 
@@ -71,30 +76,38 @@ function spread(values) {
 // alternative of an any_of slot is never one: the key already lists it (trap I10).
 function keyGapCandidates(runs, config) {
   const found = new Map();
-  runs.forEach((run, i) => {
-    for (const r of run.results.paired) {
-      if (!r.scored || r.route_class === 'exclude') continue;
-      for (const [name, o] of Object.entries(config.outputs)) {
-        if (o.type !== 'set' || r.key[name] == null) continue;
-        const inKey = accepted(r.key[name]);
-        const allowed = config.allowed_values[name];
-        for (const v of r.pred[name] || []) {
-          if (inKey.has(v.value) || v.inherited || (Array.isArray(allowed) && !allowed.includes(v.value))) continue;
-          const at = JSON.stringify([r.id, name, v.value]);
-          if (!found.has(at)) found.set(at, { id: r.id, output: name, value: v.value, runs: new Set(), applied: new Set(), confidences: [] });
-          const c = found.get(at);
-          c.runs.add(i);
-          if (v.applied) c.applied.add(i);
-          if (typeof v.confidence === 'number') c.confidences.push(v.confidence);
-        }
+  runs.forEach((run, i) => tallyKeyGaps(found, run.results.paired, i, config));
+  return gapList(found, runs.length);
+}
+
+// One run's paired records added to the tally (found), so a command can let go of each run's records
+// as it goes. i: the run's place among the runs.
+function tallyKeyGaps(found, paired, i, config) {
+  for (const r of paired) {
+    if (!r.scored || r.route_class === 'exclude') continue;
+    for (const [name, o] of Object.entries(config.outputs)) {
+      if (o.type !== 'set' || r.key[name] == null) continue;
+      const inKey = accepted(r.key[name]);
+      const allowed = config.allowed_values[name];
+      for (const v of r.pred[name] || []) {
+        if (inKey.has(v.value) || v.inherited || (Array.isArray(allowed) && !allowed.includes(v.value))) continue;
+        const at = JSON.stringify([r.id, name, v.value]);
+        if (!found.has(at)) found.set(at, { id: r.id, output: name, value: v.value, runs: new Set(), applied: new Set(), confidences: [] });
+        const c = found.get(at);
+        c.runs.add(i);
+        if (v.applied) c.applied.add(i);
+        if (typeof v.confidence === 'number') c.confidences.push(v.confidence);
       }
     }
-  });
-  // Most consistent first; ties keep the records' order.
+  }
+}
+
+// The tally as the list reports read. Most consistent first; ties keep the records' order.
+function gapList(found, of) {
   return [...found.values()]
     .map(c => ({
-      id: c.id, output: c.output, value: c.value, runs: c.runs.size, of: runs.length, applied: c.applied.size,
-      confidence: c.confidences.length ? { min: Math.min(...c.confidences), max: Math.max(...c.confidences) } : null,
+      id: c.id, output: c.output, value: c.value, runs: c.runs.size, of, applied: c.applied.size,
+      confidence: c.confidences.length ? { min: minOf(c.confidences), max: maxOf(c.confidences) } : null,
     }))
     .sort((a, b) => b.runs - a.runs);
 }
@@ -115,12 +128,6 @@ function keyGapCandidates(runs, config) {
 // over different records, not the runs added together (I8).
 function silentToQuote(runs) {
   const rates = runs.map(run => run.results.routing.silent_errors.rate);
-  let worst = null;
-  rates.forEach((r, i) => {
-    if (r.d === 0) return;
-    const w = worst === null ? null : rates[worst];
-    if (w === null || r.n * w.d > w.n * r.d || (r.n * w.d === w.n * r.d && r.high_pct > w.high_pct)) worst = i;
-  });
   const out = new Set();
   const silent = new Set();
   for (const run of runs) {
@@ -130,23 +137,24 @@ function silentToQuote(runs) {
     }
   }
   return {
-    worst_run: worst === null ? null : { run: worst + 1, label: runs[worst].label, ...rates[worst] },
+    worst_run: worstRun(rates, runs.map(run => run.label)),
     times_out: rates.reduce((s, r) => s + r.d, 0),
     records_out: out.size,
     any_run: { runs: runs.length, ...rate(silent.size, out.size), ids: [...silent] },
   };
 }
 
-// runs: [{ label, results }], two or more.
-function varianceOf(runs, config) {
+// runs: [{ label, results }], two or more. gaps: the key gap candidates, when the caller has tallied
+// them already and let go of the runs' paired records; without it, they are read from those.
+function varianceOf(runs, config, gaps = null) {
   const metrics = metricList(runs[0].results).map(m => {
     const values = runs.map(run => m.get(run.results));
     const s = spread(values);
     const d = decimals(m.unit);
     return {
       name: m.name, unit: m.unit,
-      values: values.map(v => round(v, d)),
-      mean: round(s.mean, d), sd: round(s.sd, d), min: round(s.min, d), max: round(s.max, d), range: round(s.range, d),
+      values: values.map(v => shown(v, m.unit, d)),
+      mean: shown(s.mean, m.unit, d), sd: shown(s.sd, m.unit, d), min: shown(s.min, m.unit, d), max: shown(s.max, m.unit, d), range: shown(s.range, m.unit, d),
     };
   });
 
@@ -168,7 +176,7 @@ function varianceOf(runs, config) {
     records: {
       route_changed: rows.filter(r => new Set(r.routes).size > 1).map(r => ({ id: r.id, routes: r.routes, should: r.gold_route })),
       silent_changed: rows.filter(r => new Set(r.silent).size > 1).map(r => ({ id: r.id, silent: r.silent })),
-      key_gap_candidates: keyGapCandidates(runs, config),
+      key_gap_candidates: gaps || keyGapCandidates(runs, config),
     },
   };
 }
@@ -190,7 +198,7 @@ function compareOf(before, after, noise = null, opts = {}) {
     else if (round(delta, d) === 0) verdict = 'no change';
     else if (!band || band.range === null) verdict = withoutNoise;
     else verdict = Math.abs(round(delta, d)) <= band.range ? 'within noise' : 'beyond noise';
-    return { name: m.name, unit: m.unit, before: round(b, d), after: round(a, d), delta: round(delta, d), noise_range: band ? band.range : null, verdict };
+    return { name: m.name, unit: m.unit, before: shown(b, m.unit, d), after: shown(a, m.unit, d), delta: round(delta, d), noise_range: band ? band.range : null, verdict };
   });
 
   const beforeById = new Map(before.records.map(r => [r.id, r]));
@@ -301,4 +309,4 @@ function worseOutcomes(paired, names) {
     .map(f => ({ flag: f, ...measured.get(GATE_OUTCOMES[f]) }));
 }
 
-module.exports = { varianceOf, compareOf, metricList, keyGapCandidates, GATE_OUTCOMES, gateNames, worseOutcomes };
+module.exports = { varianceOf, compareOf, metricList, keyGapCandidates, tallyKeyGaps, gapList, GATE_OUTCOMES, gateNames, worseOutcomes };

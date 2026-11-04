@@ -62,7 +62,7 @@ measurement of real traffic ([how it is worked out](METRICS.md#weighted-to-a-rea
 |---|---|---|
 | Straight-through | 50.0% (20 of 40) | The share that went out without review. Never read it alone: sending everything out scores 100% |
 | Silent omissions | 0.0% (0 of 40) | Records blocked or suppressed that should not have been |
-| Review precision | 100.0% (20 of 20) | Of the records sent to a person, the share that needed one. Low means reviewers are wasting their time. A record the answer key blocks or suppresses never needed one: the workflow should have left it out on its own |
+| Review precision | 100.0% (20 of 20) | Of the records sent to a person, the share that needed one. Low means reviewers are wasting their time. Where the key's route counts, a record the answer key blocks or suppresses never needed one: the workflow should have left it out on its own |
 | Safeguard failures | 0 | Records that got past the workflow's own gate or floor. Critical when not 0: the workflow has a hole, even if the content happened to be right |
 
 The pairing that matters: straight-through says how much work the workflow saves, the silent
@@ -96,7 +96,10 @@ end of the report say which were read as which.
 
 Below the silent errors come the silent omissions and safeguard failures (none here), then
 the **unnecessary reviews**: records sent to a person that could have gone out. A few are
-the price of safety; many teach reviewers to stop looking.
+the price of safety; many teach reviewers to stop looking. Records the answer key blocks or
+suppresses are listed apart there (`key_leaves_out` in `--json`), since no person was needed for
+them either; with `"wrong_when": "any_mismatch"` the key's route counts for nothing, so that list
+is empty, and only the values say whether a review was needed.
 
 ## 4. Output quality
 
@@ -135,6 +138,11 @@ With 37 claims the ranges are wide (the report says so). Read them as a directio
 basis for new thresholds.
 
 ## 7. Every record, and what was not measured
+
+A report whose run evaluated nothing says so first: `NOTHING WAS EVALUATED  every model call failed
+(40 of 40 records)`, or `most model calls failed (31 of 40 records, 77.5%)` when more than half did,
+and the numbers under it say nothing about the workflow. A build gate fails on it
+([exit code 3](CONFIG.md#build-gates)).
 
 The last table lists every record: where it went, where the answer key says it should have
 gone, whether it needed a person, and the outcome. **Not measured** lists what the report

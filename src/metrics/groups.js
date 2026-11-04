@@ -11,6 +11,7 @@
 // to more than the records; a record with none is grouped as "(none)" (H1), never dropped.
 
 const { rate } = require('./stats.js');
+const { compareText } = require('../values.js');
 const { scoreRouting } = require('./routing.js');
 const { NONE } = require('./traps.js');
 
@@ -50,7 +51,7 @@ function scoreGroups(judgments, config, records) {
       }
     }
     // By text, with "(none)" last: it is what is left over, not a group of its own.
-    const labels = [...byLabel.keys()].sort((a, b) => (a === NONE ? 1 : b === NONE ? -1 : a.localeCompare(b)));
+    const labels = [...byLabel.keys()].sort((a, b) => (a === NONE ? 1 : b === NONE ? -1 : compareText(a, b)));
     const { field, from } = config.groups[name];
     return {
       name, field, from,

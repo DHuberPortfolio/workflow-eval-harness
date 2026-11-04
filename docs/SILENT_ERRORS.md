@@ -12,6 +12,10 @@ There are two families:
 - **Silent publishes**: something went out without review that should not have, or not in that form.
 - **Silent omissions**: something that should have gone out or reached a person never did, and nobody was told.
 
+`score --fail-on <severity>` reads both families, each record at its severity, and safeguard
+failures at critical. Silent omissions joined it on Nov 3 (trap P4): before, a run that blocked every
+record was a green build. A build gated at `medium` or `high` can now stop where it passed.
+
 A record can have several types at once (it can carry a wrong value *and* be missing
 a correct one). The headline rate counts **records**; the breakdown counts **types**,
 so its rows can add up to more than the record count. A record's severity is its worst type.
@@ -70,14 +74,14 @@ The record went out without review (route class auto), and it needed a person.
 |---|---|---|---|
 | SP-FORBIDDEN | **Should have been blocked** | Key route class is block | critical |
 | SP-SHOULD-REVIEW | **Should have gone to a person** | Key route class is review | medium |
-| SP-WRONG-PRIMARY | **Wrong copy kept**: a duplicate went out while its primary was suppressed | Needs `duplicate_of_field` | medium |
+| SP-WRONG-PRIMARY | **Wrong copy kept**: a duplicate went out while its primary was suppressed | Key route class is exclude, and `duplicate_of_field` names a primary the workflow suppressed | medium |
 | SP-DUPLICATE | **Duplicate went out** | Key route class is exclude | low |
 
 **Value types** (compare the outputs with the answer key):
 
 | Code | Type | How the tool detects it | Default severity |
 |---|---|---|---|
-| SP-INVALID | **Value outside the allowed list** | Applied value not in `allowed_values`; "not measured" without one | critical |
+| SP-INVALID | **Value outside the allowed list** | Applied value not in `allowed_values`, even one the key lists: it needed a person; "not measured" without a list | critical |
 | SP-WRONG | **Wrong value** | Applied value not in the answer key | high |
 | SP-SHOULD-DECLINE | **Answered where it should have declined**: the answer key says no label fits | Label with `decline`: an answer, where the key holds a decline value | high |
 | SP-MISSING-REJECTED | **Correct value thrown away**: proposed, but not applied (the floor dropped it) | Key value present in predictions with `applied: false` | medium |
@@ -105,8 +109,8 @@ Every safeguard failure is a bug to find and fix:
 
 | Code | Type | How the tool detects it |
 |---|---|---|
-| SG-GATE | **Went out below the confidence gate** | Recompute the gate from the applied values and `thresholds.auto_publish` (the lead value, or the weakest with `gate_uses: weakest`). A gated output with nothing applied fails the gate. Two equivalent values merged into one count at their highest applied copy for the lead, and their lowest for the weakest |
-| SG-FLOOR | **A value under the floor was applied** | Applied value with confidence < `thresholds.floor` (for two equivalent values merged into one, the lowest applied copy's) |
+| SG-GATE | **Went out below the confidence gate** | Recompute the gate from the applied values and `thresholds.auto_publish` (the lead value, or the weakest with `gate_uses: weakest`). A gated output with nothing applied fails the gate. Two equivalent values merged into one count at their highest applied copy for the lead, and their lowest for the weakest. With `--lenient`, a value with no confidence leaves a lead gate unknown, not failed, since it could be the strongest, and the record is counted under not measured. A weakest gate still fails on a value known to be under it |
+| SG-FLOOR | **A value under the floor was applied** | Applied value of a set output with confidence < `thresholds.floor` (for two equivalent values merged into one, the lowest applied copy's). Label outputs are not checked, and the report lists them under not measured: a gate is what reads a label's confidence |
 
 Splitting the two missing-value types matters for tuning: **MISSING-REJECTED** is the
 floor's cost (the model knew; the guard dropped it), so a lower floor would fix it.
@@ -120,9 +124,9 @@ answer key says it should have gone out or to a person.
 | Code | Type | How the tool detects it | Default severity |
 |---|---|---|---|
 | SO-FALSE-DUPLICATE | **Real record suppressed as a duplicate**: the answer key says it is not a duplicate | Workflow route class exclude; key does not mark it as a duplicate | high |
-| SO-PRIMARY-SUPPRESSED | **Primary suppressed**: the answer key marks this as the primary, the workflow kept a duplicate instead | Needs `duplicate_of` in the key | medium |
+| SO-PRIMARY-SUPPRESSED | **Primary suppressed**: the answer key marks this as the primary, the workflow kept a duplicate instead | Needs `duplicate_of` in the key, and a copy kept: a duplicate that went out or to a person. With no copy kept, a blocked or suppressed primary is SO-FALSE-DUPLICATE | medium |
 | SO-FALSE-BLOCK | **Good record blocked**: never processed, but the answer key says it should go out or to a person | Workflow route class block; key route class auto or review | medium |
-| SO-DECLINED | **Declined and left out**: the answer key has an answer | Workflow route class block, a label declined where the key has a label, and the key's route (if any) does not say block. Takes the place of SO-FALSE-BLOCK: the decline is why it was left out | medium |
+| SO-DECLINED | **Declined and left out**: the answer key has an answer | Workflow route class block, a label declined where the key has a label, and the key's route (if any) does not say block or suppress. Takes the place of SO-FALSE-BLOCK: the decline is why it was left out | medium |
 
 SO-DECLINED is the one omission type that needs no correct route: the key's answer alone
 says something was lost. Without a correct route, the silent omission rate counts SO-DECLINED
@@ -167,14 +171,27 @@ the costly mistake (a wrong category, high) outranks the cheaper one (a decline,
 is not low, because low is for noise in counts, and a missed case-results page is a real gap.
 A workflow where a missing answer costs more can raise it with `severity`.
 
-A decline sent to a person is neither: a person saw it. If the key has an answer, the review
-was needed; if the key says decline, it was an unnecessary review.
+A decline sent to a person is neither: a person saw it. Whether the review was needed follows
+`wrong_when`, as for any record. Where values decide (`either`, `any_mismatch`), a key with an
+answer makes the decline a difference, so the review was needed; with `either` a key route of
+review needs one too, even where the key says to decline. With `gold_route` only the key's route
+decides: a decline the key routes straight out was an unnecessary review, whatever its answer.
 
 If the answer key also has a correct route and maps "left out" to block, an answer where the
 key says to decline is also SP-FORBIDDEN ("should have been blocked"), critical. That is the
 right reading when the route means "must never go out". For a registry, the key's decline
 values already say everything, so the example config (`examples/competitor-registry/`) has no
 correct route.
+
+## Failed model calls
+
+A record whose model call failed says so itself: `"scored": false` at the top level of the record,
+or a `scored` column in a CSV file. The name is fixed: no config key changes it, and a record
+without it counts as scored. A failed record still counts in routing: it went where it went, and if
+it went out it is judged as any record is, with nothing applied. It is left out of output quality
+and calibration, needs no confidence (E1) and no label (trap P22), and reports count it: `score`,
+`variance`, `compare` and `monitor` warn (I6). When more than half of a run's records failed,
+nothing was evaluated, and a build gate says so (see [Config](CONFIG.md#build-gates)).
 
 ## How the types show up in different workflows
 

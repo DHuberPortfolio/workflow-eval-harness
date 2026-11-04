@@ -639,6 +639,9 @@ test('--write-key carries the trap, group, cluster and duplicate fields by the s
   const z = mine.find(r => r.id === 'z');
   assert.deepEqual([z.traps, z.groups], [[], { channel: ['chat'] }]);
   assert.deepEqual(k.majority.fields_left_out, [{ id: 'z', field: 'trap', values: ['T-z', 'other', 'third'] }]);
+  // Two graders, split: no third value to fall back on, and the same.
+  const two = agreeKeys({ config: cfg, keyPaths: [a, b], majority: true });
+  assert.deepEqual(two.majority.fields_left_out, [{ id: 'z', field: 'trap', values: ['T-z', 'other'] }]);
 });
 
 test('--write-key: a set takes each value most graders listed (more than half); exactly half is a tie', () => {
@@ -717,7 +720,7 @@ test('wfeval agree: bad command lines', () => {
   assert.equal(run(['agree', '--keys', ...KEYS]).status, 1);                       // no --config
   assert.equal(run(['agree', '--config', 'x', '--keys', KEYS[0], '--grades', GA]).status, 1);
   assert.equal(run(['agree']).status, 1);
-  assert.equal(run(['agree', '--grades', GA, GB, '--seed=']).status, 1);
+  assert.equal(run(['agree', '--grades', GA, GB, '--seed=']).status, 2);   // P19: an empty value is a bad command
   const help = run(['--help']).stdout.split('\n');
   const at = help.findIndex(l => l.startsWith('  agree     --grades'));
   assert.ok(help[at + 1].includes('[--resamples <n>] [--seed <n>]'));

@@ -30,7 +30,7 @@ const withClusters = (clusters = { field: 'story' }) => {
   return config;
 };
 const scored = {};
-const S = (which, clusters) => (clusters ? scoreRun({ config: withClusters(clusters), predPath: PRED[which], keyPath })
+const S = (which, clusters, mode = 'strict') => (clusters ? scoreRun({ config: withClusters(clusters), predPath: PRED[which], keyPath, mode })
   : (scored[which] ??= scoreRun({ config: withClusters(), predPath: PRED[which], keyPath })));
 const near = (actual, expected, places) => assert.ok(Math.abs(actual - expected) < 0.5 * 10 ** -places, actual + ' is not ' + expected);
 const cli = args => spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'wfeval.js'), ...args], { encoding: 'utf8' });
@@ -236,8 +236,8 @@ test('G16: score on the perfect run falls back to the clusters taken together: 0
   assert.equal(r.routing.silent_errors.rate.high_pct, 24.3);
 });
 
-test('clusters read from the predictions read the predictions only: no story there, so every record is alone, a design effect of exactly 1', () => {
-  const c = S('main', { field: 'story', from: 'predictions' }).clusters;
+test('clusters read from the predictions read the predictions only: no story there, so with --lenient (trap P1) every record is alone, a design effect of exactly 1', () => {
+  const c = S('main', { field: 'story', from: 'predictions' }, 'lenient').clusters;
   assert.deepEqual([c.from, c.clusters, c.records_own_cluster, c.method, c.design_effect, c.effective_records, c.low_pct, c.high_pct],
     ['predictions', 12, 12, 'design_effect', 1, 12, 8.9, 53.2]);
 });
@@ -364,7 +364,7 @@ test('the terminal says it under the headline, in words, for each case', () => {
   assert.match(renderTerminal(S('main')), /the likely range is 4\.7-69\.0%\. With every silent error in one cluster, nothing shows how far a cluster's records go together, so each cluster's records are taken to go right or wrong together \(about 4 records' worth\): the cautious choice\./);
   assert.match(renderTerminal(S('even')), /the likely range is 8\.9-53\.2% \(design effect 1: the clusters show no clumping, so this is the range above\)/);
   assert.match(renderTerminal(S('perfect')), /the likely range is 0\.0-47\.6%\. With no silent errors, nothing shows how far a cluster's records go together, so each cluster's records are taken to go right or wrong together \(about 4 records' worth\): the cautious choice\./);
-  const alone = renderTerminal(S('main', { field: 'story', from: 'predictions' }));
+  const alone = renderTerminal(S('main', { field: 'story', from: 'predictions' }, 'lenient'));
   assert.match(alone, /12 records had no value there and are each a cluster of their own\./);
   assert.match(alone, /the likely range is 8\.9-53\.2% \(design effect 1: the clusters show no clumping, so this is the range above\)/);
   assert.doesNotMatch(renderTerminal(scoreRun({ config: plain, predPath: PRED.main, keyPath })), /counting clusters|came from/);

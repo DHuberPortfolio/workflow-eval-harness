@@ -2,7 +2,13 @@
 
 One JSON file per workflow. Only `outputs` and `routing.map` are required; everything
 else has a default, and a misspelled key is an error rather than a silent fallback.
-`wfeval check --config <file>` validates a config and prints what it understood.
+`wfeval check --config <file>` validates a config and prints what it understood; with `--pred`
+and `--key` it also says when a field the config names is in no record of the file.
+
+**A config is trusted input: treat it as code.** It can name files anywhere (`allowed_values`
+files are read, `split.log` is written, each relative to the config, and `..` and absolute paths
+are not refused). Run configs you would run a script from. An error about such a file says what is
+wrong with it, and never quotes what is in it.
 
 ```json
 {
@@ -43,6 +49,87 @@ else has a default, and a misspelled key is an error rather than a silent fallba
 
 Every field name can be a dotted path (`"output.subject"` is `subject` inside `output`).
 A field literally named with a dot is used first, because spreadsheet exports flatten names that way.
+No part of a path may be `__proto__`.
+
+**A field no record has.** A misspelt path reads as nothing, and nothing is a value, so a field the
+config names and no record of the file holds is reported once, naming the config key and the file:
+
+| Field | When no record has it |
+|---|---|
+| an output's `field` (a set) | one file: strict, and the stop says to use `--lenient` if the workflow leaves out empty lists. `monitor`, `variance`, `compare` and `suspects` judge all their files together: strict only if no file has it, and a file that alone lacks it warns (a quiet period) |
+| a group's `field`, `clusters.field` | a warning, since a table with one row shows it; strict when the command needs it: `--group-by`, `--cluster-by`, `--mix` on that group, a split that follows clusters |
+| `whatif.movable_field` | strict in `whatif --gate` and `--floor`; nothing else reads it |
+| `trap_field` | a warning, since one config can serve a key with trap labels and a key without; strict with `min_per_trap` |
+| `duplicate_of_field` | a warning, since a set may have no duplicates; strict when the key suppresses records |
+| `rejected_field`, `confidence_field`, `decline.field` | a warning: a run may have nothing to put there |
+| an output's `key_field`, a label's `field` | a stop in both modes: there is nothing to score |
+
+A strict line stops, and with `--lenient` warns. `null` counts as no value: a broken n8n expression
+writes it on every record. A failed model call holds nothing, so only records scored count, and
+`monitor` asks a period file for its outputs only. A set output that some records have and at least
+90% of a run's records lack gets one warning with the count: each is read as nothing found, which is
+right if the workflow leaves out empty lists.
+
+**Files are UTF-8.** A byte that is not UTF-8 stops, naming the file and the line: read as it is, two
+different values could come out as the same text. So does UTF-16, what PowerShell 5.1's `>` writes.
+In Excel, save as "CSV UTF-8"; in PowerShell, `Out-File -Encoding utf8`. A byte-order mark is fine.
+
+**Failed model calls.** A record marks its own: `"scored": false` at the top level of the record (or
+a `scored` column). The name is fixed, and no config key changes it. See
+[Failed model calls](SILENT_ERRORS.md#failed-model-calls).
+
+## What stops a run
+
+A stop names the file and the record, and the code is its row in `test/TRAPS.md`. The ones met most
+often on a new workflow's files:
+
+| Code | What it means | What to do |
+|---|---|---|
+| E1 | A value at a confidence gate has no confidence | Give it one, or take the output off `thresholds.auto_publish`. With `--lenient` a lead gate is unknown, not failed, and the record is counted under not measured. A `weakest` gate still fails on a value known to be under it |
+| D4 | A value in a list is neither text nor `{ "value": "..." }` | Fix the record, or set `value_key` to what the value is called |
+| D5 | A set output is not a list | Write a list: `[]` for none |
+| D6 | One record lists the same value twice | Fix what produced it. With `--lenient` the copies are kept once, and the warning says which confidence was kept |
+| C11 | A record marked as a duplicate has a correct route that does not suppress | Make the key agree with itself |
+| K9 | `estimate`: the person's key is the judge's key, the same file or the same content | The person's checks must be their own, made without seeing the judge's verdicts |
+| A8 | The run is its own answer key: one file, or two with the same records, read from the same fields | Set `key_field` on each output, or pass the right key |
+
+**Names.** An output, a group or a cluster field cannot be named after a property every JavaScript
+object has (`constructor`, `toString`, `__proto__`, `valueOf` and the like): the config stops,
+naming the key. A record field may be: give the group another name,
+`"groups": { "made_by": { "field": "constructor" } }`. As data (an id, a value, a label, a route, a
+segment, a group label) such a name is ordinary text.
+
+## Build gates
+
+`score --fail-on`, `compare --fail-if-worse`, `monitor --fail-on-alarm`, `estimate --fail-if-not-shown`
+and `score --grades --fail-on` exit with code 3 when they trip, and an unset gate never reads as a pass:
+
+| Exit code | Meaning |
+|---|---|
+| 0 | done |
+| 1 | a problem in the files or in an option's value, listed |
+| 2 | a bad command: an unknown command or option, an option with no value or an empty one, a single-value option given twice |
+| 3 | a gate tripped, or read nothing |
+
+**A gate that read nothing fails.** A gate exits 3 and says why when more than half of a run's records
+are failed model calls (with the count and the share; half or fewer warn, and the gate reads the
+rest), when every record was blocked or suppressed with no correct route or declining output to judge
+them, when no record was scored in any period the alarm counts, when every count in a counts file is
+zero in those periods, or when a grades file grades nothing. `compare` asks this of each run. Without a
+gate the report's first line says `NOTHING WAS EVALUATED`, and `nothing_evaluated` is in the JSON.
+
+No record out without review, on records really scored, is not that: the report warns, and the gate
+reads the omissions and safeguards it has. The same in `monitor`: records scored with none in the
+series' base, or a counts file with records out and none blocked, warn, and the gate reads no alarm.
+
+`--fail-on` reads silent errors, silent omissions and safeguard failures, each at its severity
+([Silent errors](SILENT_ERRORS.md)).
+
+**Output options.** `--json`, `--html`, `--out`, `--write-key` and `--write-rulings` refuse a path that
+is one of the command's inputs, a file the config names, or another output. Two paths are one file if
+they resolve to one path, through links and in any case on Windows, or if both exist and the system
+gives them the same device and file number, which catches a hard link. A disk that gives no file
+number is compared by path alone.
 
 ## What the workflow outputs
 
@@ -158,7 +245,7 @@ and not the output that is also the route. What is reported:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `thresholds.floor` | - | Values below it should never be applied. |
+| `thresholds.floor` | - | Values below it should never be applied. Checked on set outputs only; the report lists label outputs under not measured. |
 | `thresholds.provisional_below` | - | A label on values, not a gate; reported in calibration. |
 | `thresholds.auto_publish` | - | `{ output: threshold }`. Only listed outputs gate. A record may go out without review only if each gated output's lead value is at or above its threshold. A threshold may instead name a prediction field holding each record's own ([below](#each-records-own-threshold)). |
 | `thresholds.gate_uses` | `"lead"` | `lead`: the strongest applied value. `weakest`: every applied value (stricter; a weak but correct broader term holds back the record). |
@@ -262,7 +349,7 @@ reproduces the real routes (a record whose gate is unknown is listed as not chec
 |---|---|---|
 | `trap_field` | - | The answer key's field naming what each record is designed to test (text, or a list). Results are also broken down by trap. |
 | `min_per_trap` | - | Every trap type must have at least this many records; below it stops in strict mode. |
-| `duplicate_of_field` | - | The answer key's field giving the id of the primary a duplicate repeats. Enables SP-WRONG-PRIMARY and SO-PRIMARY-SUPPRESSED. |
+| `duplicate_of_field` | - | The answer key's field giving the id of the primary a duplicate repeats. With a correct route (`routing.gold_field`), enables SP-WRONG-PRIMARY and SO-PRIMARY-SUPPRESSED. |
 | `allowed_values` | - | `{ output: [values] }` or `{ output: { "file": "vocab.json", "field": "code" } }` (relative to the config). An applied value outside it is SP-INVALID. |
 | `severity` | see docs/SILENT_ERRORS.md | `{ "SP-DUPLICATE": "medium" }`: override any error type's severity. |
 
@@ -358,7 +445,10 @@ spend; it never looks itself.
 `whatif` read the tuning half only, show nothing of the held-out half and spend nothing. Each says
 in one line that the held-out half was not looked at, and what the next look would be (its number
 and its share of the 5%). `--held-out` looks: once a version is settled, check it on the held-out
-half. `--show-held-out` lists the held-out records too, and is a look as well (trap O25).
+half. `--show-held-out` lists the held-out records too, and is a look as well (trap O25). A run that
+evaluated nothing ([Build gates](#build-gates)), or a held-out half of nothing but failed calls, gets
+no look in `score`, `compare`, `variance` or `whatif`: none is spent, nothing of the half is shown,
+and the report and `split.not_looked` in the JSON say why (trap P41).
 
 **What each command does with it.** The split applies to these five commands only; `estimate`,
 `monitor`, `agree`, `grade` and `rate` score every record, whatever the config says (trap O1).
@@ -395,7 +485,7 @@ half. `--show-held-out` lists the held-out records too, and is a look as well (t
   key cannot be read, which half a record is in is not known, and no record is named at all.
 
 **Build gates.** `score --fail-on` and `compare --fail-if-worse` read the held-out half only with
-`--held-out`: then the held-out half's silent errors and safeguard failures, or its paired
+`--held-out`: then the held-out half's silent errors, silent omissions and safeguard failures, or its paired
 verdicts, stop a build too, counted, never named (an outcome the held-out half does not measure is
 checked on the tuning half only, with a note). Without it the gate is the tuning half's, and a note
 says so. A build that gates on the held-out half spends a look on every run that is not the same
@@ -824,10 +914,10 @@ order stop in strict mode, and `--lenient` takes the order given.
 | `--target <percent>` | none | The rate the silent error rate should be shown to be under |
 | `--acceptable <percent>` | half the target | The rate the workflow normally runs at |
 | `--alarming <percent>` | double the acceptable rate | The rise worth an alarm |
-| `--false-alarm-every <records>` | 2000 | On average at most one false alarm per this many records checked, at the acceptable rate, for periods of the median size so far (or `--period-size`) |
+| `--false-alarm-every <records>` | 2000 | On average at most one false alarm per this many records checked (at most 1,000,000,000,000), at the acceptable rate, for periods of the median size so far (or `--period-size`) |
 | `--period-size <records>` | the median so far | The period size the alarm level is set for, the same for every row. Without it, each row uses the median of the periods up to it, so a printed status never changes later |
 | `--since <period>` | the first period | Restart the alarm at this period, after an alarm was looked into and fixed. The bound keeps counting every period ([why](METRICS.md#is-it-shown-under-the-target-valid-however-often-you-look)) |
-| `--fail-on-alarm` | off | Exit with code 3 when the alarm is raised, for a scheduled job |
+| `--fail-on-alarm` | off | Exit with code 3 when the alarm is raised, or when no record was checked in any period the alarm counts, for a scheduled job |
 | `--watch <series>` | `silent-errors` | `silent-omissions` watches the records blocked or suppressed and the share of them wrongly left out (not score's silent omission rate); the settings above then apply to that share |
 | `--segment-by <field>` | none | Each value of the field (or of a counts file's column) gets its own alarm and bound, beside the whole's. The alarms share `--false-alarm-every` (the whole and each segment are each set for twice it, so the report in all keeps it; with one segment, and no record in two, nothing is shared; when records carry several segments, each segment's alarm is set for that times the memberships per record, trap L36). The whole and the segments are shown under the target as one family. `--period-size` pins the whole's level only. `--fail-on-alarm` counts every segment's alarm ([why](METRICS.md#each-segment---segment-by)) |
 | `--segments <a,b,...>` | none | The segments to watch, chosen before the first period counted: the family is those, "(other)" and "(none)", fixed, so a printed "shown" never changes. Without it, every "shown" is provisional, marked `shown*` (trap L31). A list chosen after seeing the numbers is chosen by them |
@@ -896,7 +986,7 @@ wfeval agree --grades grades-A.json grades-B.json grades-C.json
 | `--grades <file> <file> ...` | - | Or two or more grades files from the grading page; no `--config`. |
 | `--names a,b,c` | file names (grades: the reviewer's name in the file) | One name per file, in order. |
 | `--output <name>` | every output, and `route` when `routing.gold_field` is set | Compare only these (repeatable). For keys in which not every grader labelled every output. |
-| `--resamples <n>` | 2000 | Resamples for the likely range (100 to 100,000). |
+| `--resamples <n>` | 2000 | Resamples for the likely range (100 to 100,000, and at most 2,000,000,000 resamples times records). |
 | `--seed <n>` | 1 | The resampling seed: the same seed and files always give the same range. |
 | `--write-key <file>` | - | Keys only, every output (not with `--output`: a partial key is one the config refuses): also write a majority answer key the config reads back, JSON or JSON Lines by the same rule the loader uses (`input.key.format`, else the extension; CSV is refused), each output under its `key_field`, the route under `routing.gold_field`, inside `input.key.unwrap` / `records_at` if set. Per record and output, the value most graders gave, compared as agree compares them (the route by class, written as the name most of them used). A set is decided value by value: a value is in it when more than half of the graders who labelled the record list it. A majority set that is no grader's own set (empty though each said something, or a mix of theirs) is left for a person. A duplicate whose primary record was left out is left out too. The other fields scoring reads from the key (`trap_field`, the `groups` and `clusters` read from the key, `duplicate_of_field`) are carried over by the same majority; a field the graders split on is left off that record and listed, loudly, since per-trap and per-group tables would put the record in "(none)". A record with a tie on any output (a set value listed by exactly half the graders included), or labelled by one grader, is left out and listed: `score` stops on a prediction whose record has no answer (trap B4), so settle those records and add them, or score the others only. |
 | `--lenient`, `--json <file>` | - | As for `score`. |

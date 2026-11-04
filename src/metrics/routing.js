@@ -14,9 +14,9 @@
 //                            gate, the floor) should have held them. Counted apart from the
 //                            silent error rate: the content can be right and the process still broken.
 
-const { rate } = require('./stats.js');
+const { rate, pct } = require('./stats.js');
 const { SEVERITIES, DECLINED } = require('../config.js');
-const { declineOutputs } = require('./judge.js');
+const { declineOutputs, contentOutputs } = require('./judge.js');
 
 const ids = list => list.map(j => j.id);
 
@@ -31,19 +31,33 @@ function countTypes(list, pick, config) {
 }
 
 // Error types this run cannot measure, and why. Reported as "not measured", never as zero.
-function notMeasured(config) {
+// auto: the judgments of the records out without review: what could not be read on them (traps P9,
+// P10), which only the run can show.
+function notMeasured(config, auto) {
   const out = [];
   const gold = config.routing.gold_field !== null;
   if (!gold) {
     const omissions = declineOutputs(config).length ? 'silent omissions other than SO-DECLINED' : 'silent omissions';
-    out.push({ what: 'SP-FORBIDDEN, SP-SHOULD-REVIEW, SP-DUPLICATE, ' + omissions + ', block precision', why: 'the answer key has no correct route (routing.gold_field)' });
+    out.push({ what: 'SP-FORBIDDEN, SP-SHOULD-REVIEW, SP-DUPLICATE, SP-WRONG-PRIMARY, ' + omissions + ', block precision', why: 'the answer key has no correct route (routing.gold_field)' });
   } else if (!Object.values(config.routing.map).includes('block')) out.push({ what: 'block precision', why: 'no decision maps to block' });
   if (Object.keys(config.allowed_values).length === 0) out.push({ what: 'SP-INVALID', why: 'no allowed_values list' });
   if (!config.duplicate_of_field && Object.values(config.routing.map).includes('exclude')) {
     out.push({ what: 'SP-WRONG-PRIMARY, SO-PRIMARY-SUPPRESSED', why: 'no duplicate_of_field, so duplicate groups are unknown' });
   }
   if (!config.thresholds || Object.keys(config.thresholds.auto_publish).length === 0) out.push({ what: 'SG-GATE', why: 'no thresholds.auto_publish' });
+  else {
+    const unknown = auto.filter(j => j.gate_unknown).length;
+    if (unknown) out.push({ what: 'SG-GATE on ' + unknown + ' record' + (unknown === 1 ? '' : 's'), why: 'a value at the gate has no confidence, or the record has no threshold of its own, so the gate could not be checked' });
+  }
   if (!config.thresholds || config.thresholds.floor === null) out.push({ what: 'SG-FLOOR', why: 'no thresholds.floor' });
+  else {
+    const outputs = contentOutputs(config);
+    const labels = outputs.filter(([, o]) => o.type !== 'set').map(([name]) => name);
+    if (labels.length) out.push({ what: 'SG-FLOOR on ' + labels.join(', '), why: 'the floor is checked on set outputs only' });
+    if (auto.length && outputs.some(([, o]) => o.type === 'set') && !auto.some(j => j.floor_read)) {
+      out.push({ what: 'SG-FLOOR', why: 'no confidence on any value out without review, so the floor had nothing to compare' });
+    }
+  }
   return out;
 }
 
@@ -59,14 +73,35 @@ function shouldBeSeenFn(config, records) {
   return j => names.some(n => keyById.get(j.id)[n] !== DECLINED);
 }
 
+// A run mostly failed calls measures the failures: more than half, and a gate reads it as not evaluated
+// (trap P2). Half or fewer warn (I6). null when it is not so. where: a few words after the count.
+function failedShare(failed, all, where = '') {
+  if (failed * 2 <= all) return null;
+  return failed === all ? 'every model call failed (' + failed + ' of ' + all + ' records' + where + ')'
+    : 'most model calls failed (' + failed + ' of ' + all + ' records' + where + ', ' + pct(failed, all) + '%)';
+}
+// What a build gate read, in words, when it read nothing (trap P2): null when a record was really
+// judged. records: the paired records the gate reads. Every record left out, with no correct route or
+// declining output to say whether one should have been, leaves nothing judged either.
+function nothingEvaluated(records, config, where = '') {
+  if (records.length === 0) return 'the tuning half has no record';
+  let failed = 0;
+  for (const r of records) if (r.scored === false) failed++;
+  const most = failedShare(failed, records.length, where);
+  if (most) return most;
+  if (config.routing.gold_field !== null || declineOutputs(config).length > 0) return null;
+  if (!records.every(r => r.scored === false || r.route_class === 'block' || r.route_class === 'exclude')) return null;
+  return 'every record was blocked or suppressed (' + (records.length - failed) + ' of ' + records.length + where + '), with no correct route to judge them';
+}
+
 // records: the paired records, needed only to read the answer key without a correct route.
 function scoreRouting(judgments, config, records = []) {
   const gold = config.routing.gold_field !== null;
   const omissionsMeasured = gold || declineOutputs(config).length > 0;
   const total = judgments.length;
   const byClass = { auto: 0, review: 0, block: 0, exclude: 0 };
-  const byRoute = {};
-  for (const j of judgments) { byClass[j.route_class]++; byRoute[j.route] = (byRoute[j.route] || 0) + 1; }
+  const byRoute = new Map();
+  for (const j of judgments) { byClass[j.route_class]++; byRoute.set(j.route, (byRoute.get(j.route) || 0) + 1); }
 
   const auto = judgments.filter(j => j.route_class === 'auto');
   const silent = auto.filter(j => j.silent);
@@ -80,7 +115,7 @@ function scoreRouting(judgments, config, records = []) {
   return {
     total,
     by_class: byClass,
-    by_route: byRoute,
+    by_route: Object.fromEntries(byRoute),
     straight_through: rate(auto.length, total),
     silent_errors: {
       rate: rate(silent.length, auto.length),
@@ -121,8 +156,8 @@ function scoreRouting(judgments, config, records = []) {
       precision: rate(blocked.filter(j => j.gold_class === 'block').length, blocked.length),
       wrongly_blocked: ids(blocked.filter(j => j.gold_class !== 'block')),
     } : null,
-    not_measured: notMeasured(config),
+    not_measured: notMeasured(config, auto),
   };
 }
 
-module.exports = { scoreRouting };
+module.exports = { scoreRouting, nothingEvaluated, failedShare };

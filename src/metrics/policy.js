@@ -119,9 +119,10 @@ function pairedWith(before, after, omissions) {
 function policySweep(records, config, policies, { target = null, confidence = 0.95 } = {}) {
   if (target !== null) checkCertify(target, confidence);
   const canMove = movableFn(config);
-  const before = judgeAll(records, config);
-  const omissions = summarize(records, config, {}).silent_omissions !== null;
-  const asRun = summarize(records, config, { name: AS_RUN, exact: true, held: [], moved_by_gate: [], moved_in: [], moved_out: [], paired: null });
+  const findings = new WeakMap();
+  const before = judgeAll(records, config, findings);
+  const omissions = summarize(records, config, {}, findings).silent_omissions !== null;
+  const asRun = summarize(records, config, { name: AS_RUN, exact: true, held: [], moved_by_gate: [], moved_in: [], moved_out: [], paired: null }, findings);
   const rows = [asRun, ...policies.map(pol => {
     const { cfg, moved, held, byGate } = applyPolicy(records, config, pol, canMove);
     return summarize(moved, cfg, {
@@ -131,8 +132,8 @@ function policySweep(records, config, policies, { target = null, confidence = 0.
       moved_by_gate: byGate,
       moved_in: moved.filter((m, i) => m.route_class === 'auto' && records[i].route_class !== 'auto').map(m => m.id),
       moved_out: moved.filter((m, i) => m.route_class !== 'auto' && records[i].route_class === 'auto').map(m => m.id),
-      paired: pairedWith(before, judgeAll(moved, cfg), omissions),
-    });
+      paired: pairedWith(before, judgeAll(moved, cfg, findings), omissions),
+    }, findings);
   })];
   const changesGate = policies.some(p => p.auto_publish || p.auto_publish_cap);
   const gateAssumption = config.whatif ? 'records marked movable by ' + config.whatif.movable_field

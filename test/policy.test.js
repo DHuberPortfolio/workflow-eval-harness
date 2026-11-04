@@ -101,7 +101,7 @@ test('policies: hold-if alone is exact; a threshold change rests on the gate wha
 // every other judgment of every record stays as it was (EXPECTED.md, "Why hold-if is exact").
 test('policies: holding changes nothing but the held records\' route, and only fixes silent errors', () => {
   const before = judgeAll(paired, config);
-  const strip = j => { const { route, route_class, silent, safeguards, wasted_review, routed_correctly, ...rest } = j; return rest; };
+  const strip = j => { const { route, route_class, silent, safeguards, gate_unknown, floor_read, wasted_review, routed_correctly, ...rest } = j; return rest; };
   for (const pol of policies.filter(p => !p.auto_publish && !p.auto_publish_cap)) {
     const held = new Set(row(pol.name).held);
     const moved = paired.map(r => (held.has(r.id) ? { ...r, route_class: 'review', route: '(held)' } : r));
@@ -492,7 +492,7 @@ test('review: a workflow with no route to a person is warned that held records g
 // The exactness invariant beyond the 8-record fixture: on the compliance golden 500 (each policy
 // in its policies.json) and the tiny fixture (holding everything that states a value).
 test('review: hold-if is exact on the compliance golden 500 and the tiny fixture too', () => {
-  const strip = j => { const { route, route_class, silent, safeguards, wasted_review, routed_correctly, ...rest } = j; return rest; };
+  const strip = j => { const { route, route_class, silent, safeguards, gate_unknown, floor_read, wasted_review, routed_correctly, ...rest } = j; return rest; };
   const check = (records, cfg, pols) => {
     const before = judgeAll(records, cfg);
     for (const pol of pols) {

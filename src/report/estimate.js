@@ -1,7 +1,7 @@
 // Terminal text for `wfeval estimate` (src/estimate.js): the silent error rate from a judge's
 // answer key checked by a person. Wording from format.js and docs/READING_A_REPORT.md.
 
-const { pct, count, range, num, table } = require('./format.js');
+const { pct, count, range, num, table, nothingLine, shownPct } = require('./format.js');
 
 const f1 = x => x.toFixed(1) + '%';
 const records = n => n + ' record' + (n === 1 ? '' : 's');
@@ -34,6 +34,7 @@ const judgeCovers = e => (e.judge_records >= e.records ? 'every record'
 function renderEstimate(e) {
   const c = e.checked;
   const parts = [];
+  if (e.nothing_evaluated) parts.push(nothingLine(e.nothing_evaluated.why));
   parts.push('ESTIMATE  ' + e.inputs.predictions + '\n  judge\'s answer key: ' + e.inputs.judge_key + ' (' + judgeCovers(e) + ')\n  person\'s answer key: ' + e.inputs.person_key +
     ' (' + records(c.flagged.n + c.passed.n) + ' checked among the records out)\n\n' +
     e.records + ' records · ' + e.out + ' went out without review · ' + e.inputs.mode + ' mode');
@@ -81,11 +82,11 @@ function renderEstimate(e) {
   if (e.target) {
     const t = e.target;
     const lines = ['TARGET  under ' + t.target_pct + '%'];
-    if (t.shown) lines.push('  Shown: the whole likely range is under ' + t.target_pct + '% (its high end is ' + f1(t.high_pct) + ').');
+    if (t.shown) lines.push('  Shown: the whole likely range is under ' + t.target_pct + '% (its high end is ' + shownPct(t.high_pct) + ').');
     else if (e.estimate.pct === null) lines.push('  Not shown, and no estimate to plan from: check some records in every verdict group first.');
     else if (t.at_or_above) lines.push('  Not shown: the estimate itself is at or above ' + t.target_pct + '%. More checks cannot show it is under; the rate has to come down first.');
     else if (t.more) {
-      lines.push('  Not shown yet: the high end is ' + f1(t.high_pct) + '.', '  About ' + t.more.total + ' more checks would show it if each group\'s rate stayed where it is: ' +
+      lines.push('  Not shown yet: the high end is ' + shownPct(t.high_pct) + '.', '  About ' + t.more.total + ' more checks would show it if each group\'s rate stayed where it is: ' +
         t.more.flagged + ' more of the records the judge flags and ' + t.more.passed + ' more of the ones it passes (the split needing the fewest).',
       '  A break-even guide, not a plan: a fresh sample that size lands under the target only about half the time.');
     } else if (t.why === 'all_records_checked' && n === e.out) {

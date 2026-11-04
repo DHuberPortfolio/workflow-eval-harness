@@ -38,8 +38,8 @@ function scoreSet(pop, name) {
     for (const u of unfilled) { fn++; count(slotLabel(u.slot), 'fn'); }
     if (wrong.length === 0 && unfilled.length === 0) exact++;
   }
-  const by_value = {};
-  for (const v of [...byValue.keys()].sort()) { const c = byValue.get(v); by_value[v] = scores(c.tp, c.fp, c.fn); }
+  // Built from entries: a value named __proto__ is a key like any other (trap P14).
+  const by_value = Object.fromEntries([...byValue.keys()].sort().map(v => { const c = byValue.get(v); return [v, scores(c.tp, c.fp, c.fn)]; }));
   return { type: 'set', ...scores(tp, fp, fn), exact_match: rate(exact, pop.length), by_value };
 }
 
@@ -54,25 +54,27 @@ function scoreSet(pop, name) {
 function scoreLabel(pop, name, labels, decline = null) {
   const cols = decline ? [...labels, DECLINED] : labels;
   const rows = decline && decline.values.length ? cols : labels;   // the key can decline only through decline.values
-  const confusion = {};   // confusion[key label][predicted label] = count
-  for (const k of rows) { confusion[k] = {}; for (const p of cols) confusion[k][p] = 0; }
+  // confusion[key label][predicted label] = count. Labels are data (a label named __proto__ works:
+  // trap P14), so the counting tables have no prototype, and the results are built from entries.
+  const counts = Object.create(null);
+  for (const k of rows) { counts[k] = Object.create(null); for (const p of cols) counts[k][p] = 0; }
   let correct = 0;
   let answered = 0;
   for (const r of pop) {
     const predicted = r.pred[name] ? r.pred[name].value : null;
     if (predicted === null) continue;
-    confusion[r.key[name]][predicted]++;
+    counts[r.key[name]][predicted]++;
     if (predicted === DECLINED) continue;
     answered++;
     if (predicted === r.key[name]) correct++;
   }
-  const per_label = {};
-  for (const l of labels) {
-    const tp = confusion[l][l];
-    const fp = rows.reduce((s, k) => s + (k === l ? 0 : confusion[k][l]), 0);   // predicted l, key says otherwise
-    const fn = cols.reduce((s, p) => s + (p === l ? 0 : confusion[l][p]), 0);   // key says l, predicted otherwise
-    per_label[l] = scores(tp, fp, fn);
-  }
+  const per_label = Object.fromEntries(labels.map(l => {
+    const tp = counts[l][l];
+    const fp = rows.reduce((s, k) => s + (k === l ? 0 : counts[k][l]), 0);   // predicted l, key says otherwise
+    const fn = cols.reduce((s, p) => s + (p === l ? 0 : counts[l][p]), 0);   // key says l, predicted otherwise
+    return [l, scores(tp, fp, fn)];
+  }));
+  const confusion = Object.fromEntries(rows.map(k => [k, Object.fromEntries(cols.map(p => [p, counts[k][p]]))]));
   const out = { type: 'label', accuracy: rate(correct, decline ? answered : pop.length), per_label, confusion };
   if (decline) out.declines = scoreDeclines(pop, name, decline);
   return out;

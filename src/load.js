@@ -20,26 +20,26 @@
 // Anything that cannot be cleaned up safely is recorded as a problem (see problems.js)
 // and named after its trap in test/TRAPS.md. Checks that need both files at once
 // (duplicate ids, records missing from one side, unknown routes) are in align.js.
-const fs = require('fs');
 const nodePath = require('path');
+const { readText, ENCODING } = require('./text.js');
 const { problems, markId } = require('./problems.js');
 const { csvToRecords, decodeCsvRecords } = require('./csv.js');
 const { align } = require('./align.js');
 const { DECLINED, equivalentOf } = require('./config.js');
+const { isObj, isLabel, describe, own: ownOf } = require('./values.js');
 
-const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
-const describe = v => (v === null ? 'null' : v === undefined ? 'nothing' : Array.isArray(v) ? 'a list'
-  : typeof v === 'string' ? 'the text ' + JSON.stringify(v) : typeof v);
 // Only the record's own fields, never built-in JavaScript properties like "constructor".
 const has = (obj, k) => obj !== null && typeof obj === 'object' && Object.prototype.hasOwnProperty.call(obj, k);
 
 // Reads a field by name or dotted path: "output.subject" is "subject" inside "output".
 // A field literally named "output.subject" is used first, because spreadsheet-style
 // exports flatten nested fields into names like that (trap A9).
+const PATH_PARTS = new Map();   // a config names few paths and every record reads them all: each is split once
 function getPath(obj, path) {
   if (has(obj, path)) return obj[path];
+  if (!PATH_PARTS.has(path)) PATH_PARTS.set(path, path.split('.'));
   let cur = obj;
-  for (const part of path.split('.')) {
+  for (const part of PATH_PARTS.get(path)) {
     if (!has(cur, part)) return undefined;
     cur = cur[part];
   }
@@ -132,7 +132,7 @@ function parseRecords(text, source, p, input = {}) {
 
 function readRecords(path, p, input = {}) {
   let text;
-  try { text = fs.readFileSync(path, 'utf8'); } catch (e) { p.stop('A1', path, 'cannot read the file: ' + e.message); return []; }
+  try { text = readText(path); } catch (e) { p.stop(e.code === ENCODING ? e.trap : 'A1', path, (e.code === ENCODING ? '' : 'cannot read the file: ') + e.message); return []; }
   return parseRecords(text, path, p, input);
 }
 
@@ -360,7 +360,8 @@ function readSet(raw, name, o, where, p, isKey, gated, eq) {
 // F13: { "any_of": [...] } is for set outputs. A label has one answer per record, and its
 // confusion matrix needs one key label per row; two names for one label are "equivalents".
 // eq: the config's equivalents, applied before the label is checked (D23).
-function readLabel(raw, name, o, where, p, isKey, gated, extConf, extDeclined, eq) {
+// scored: false for a failed model call, which has no label to read (C10, trap P22).
+function readLabel(raw, name, o, where, p, isKey, gated, extConf, extDeclined, eq, scored = true) {
   const d = o.decline;
   if (isObj(raw) && has(raw, 'any_of')) {
     p.stop('F13', where, name + ': any_of is for set outputs. A ' + o.type + ' output holds one label; for two names of one label, use "equivalents" in the config');
@@ -374,6 +375,7 @@ function readLabel(raw, name, o, where, p, isKey, gated, extConf, extDeclined, e
   }
   if (raw === undefined || raw === null) {
     if (declinedByField) return { value: DECLINED, declined: true, set_aside: null, confidence: null, applied: false, inherited: false };
+    if (!scored) return null;
     // F6: a missing label is never read as a decline unless the config says how a decline looks.
     p.stop(isKey ? 'F4' : 'F3', where, name + ' has no label' + (!isKey && d && d.field ? ' and ' + d.field + ' is not true' : ''));
     return null;
@@ -434,22 +436,160 @@ function withRejected(value, raw, name, o, where, p) {
 }
 
 // scored: false for a record whose model call failed. It has no confidences to check (E1).
-function readOutputs(raw, config, where, p, isKey, eq, scored = true) {
+// absent: the outputs no record of this file has, reported once for the file (trap P1).
+function readOutputs(raw, config, where, p, isKey, eq, scored = true, absent = NO_OUTPUTS) {
   const gates = config.thresholds ? config.thresholds.auto_publish : {};
   const outputs = {};
   for (const [name, o] of Object.entries(config.outputs)) {
+    if (absent.has(name)) { outputs[name] = o.type === 'set' ? [] : null; continue; }
     let value = getPath(raw, isKey ? o.key_field : o.field);
-    const gated = scored && name in gates;
+    const gated = scored && Object.hasOwn(gates, name);
     if (o.type === 'set') {
       if (!isKey && o.rejected_field) value = withRejected(value, raw, name, o, where, p);
       outputs[name] = readSet(value, name, o, where, p, isKey, gated, eq);
     } else {
       const extConf = !isKey && o.confidence_field ? getPath(raw, o.confidence_field) : undefined;
       const extDeclined = !isKey && o.decline && o.decline.field ? getPath(raw, o.decline.field) : undefined;
-      outputs[name] = readLabel(value, name, o, where, p, isKey, gated, extConf, extDeclined, eq);
+      outputs[name] = readLabel(value, name, o, where, p, isKey, gated, extConf, extDeclined, eq, scored);
     }
   }
   return outputs;
+}
+
+// ---------- A field the config names and no record has (trap P1) ----------
+//
+// A misspelt path reads as nothing, and nothing is a value: every prediction an empty list, every
+// record its own cluster, no record movable. Each is what the file seems to say, so nothing downstream
+// can tell, and a run with every value wrong has scored 0%. The rule looks at the whole file once, at
+// the cost of the first record that has the field. null is no value: a broken n8n expression writes it
+// on every record.
+const NO_OUTPUTS = new Set();
+const anyHas = (raws, path, keep = () => true) => raws.some(r => keep(r) && getPath(r, path) != null);
+const notFailed = r => !isObj(r) || r.scored !== false;
+const noRecord = (path, at) => 'no record has "' + path + '" (' + at + ')';
+const EMPTY_LISTS = 'if the workflow leaves out empty lists, use --lenient. Otherwise every record would read as having none: check that setting against ';
+
+// One command's files read together (variance, compare, suspects, monitor). A workflow that leaves out
+// empty lists, as n8n does, writes a quiet period with no record holding the field; a typo leaves it
+// out of every file. A set output is judged on all of them, once all are read: a file that alone lacks
+// it warns, and only a field no file has is strict. A file of failed calls says nothing either way.
+function acrossFiles() {
+  const found = new Set();
+  const missing = new Map();   // output name -> { field, at, files }
+  return {
+    found(name) { found.add(name); },
+    missing(name, field, at, file) {
+      if (!missing.has(name)) missing.set(name, { field, at, files: new Set() });
+      missing.get(name).files.add(file);
+    },
+    report(p) {
+      for (const [name, { field, at, files }] of missing) {
+        const list = [...files];
+        if (found.has(name)) {
+          for (const f of list) p.warn('P1', f, noRecord(field, at) + ', though other files here do: every record reads as having none. That is a quiet period if the workflow leaves out empty lists');
+        } else if (list.length === 1) {
+          p.strict('P1', list[0], noRecord(field, at) + '; ' + EMPTY_LISTS + 'the file');
+        } else {
+          p.strict('P1', list[0], 'no record in any of the ' + list.length + ' files has "' + field + '" (' + at + '); ' + EMPTY_LISTS + 'the files');
+        }
+      }
+    },
+  };
+}
+
+// Outputs the predictions never hold. A failed model call holds nothing to read, so only records
+// scored count, and a run with none says so elsewhere (trap P2). Returns the labels with none: a
+// label cannot be read as empty, so each record would stop on its own, and one line says it for all.
+function outputsAbsentFromRun(raws, config, source, p, across = null) {
+  if (raws.every(r => !notFailed(r))) return NO_OUTPUTS;
+  const absent = new Set();
+  for (const [name, o] of Object.entries(config.outputs)) {
+    if (anyHas(raws, o.field, notFailed)) { if (across) across.found(name); continue; }
+    const at = 'outputs.' + name + '.field';
+    if (o.type === 'set') {
+      // Values set aside are values: the run has this output, only none it applied.
+      if (o.rejected_field && anyHas(raws, o.rejected_field, notFailed)) { if (across) across.found(name); continue; }
+      if (across) across.missing(name, o.field, at, source);
+      else p.strict('P1', source, noRecord(o.field, at) + '; ' + EMPTY_LISTS + 'the file');
+    } else if (!(o.decline && o.decline.field && anyHas(raws, o.decline.field, notFailed))) {
+      p.stop('F3', source, noRecord(o.field, at) + (o.decline && o.decline.field ? ' and ' + o.decline.field + ' is not true' : '') + ', so no record has a label. Check that setting against the file');
+      absent.add(name);
+    }
+  }
+  return absent;
+}
+
+// Outputs the answer key never holds: nothing to score against, in lenient mode too (D2, F4).
+function outputsAbsentFromKey(raws, config, source, p) {
+  const absent = new Set();
+  for (const [name, o] of Object.entries(config.outputs)) {
+    if (anyHas(raws, o.key_field)) continue;
+    p.stop(o.type === 'set' ? 'D2' : 'F4', source, noRecord(o.key_field, 'outputs.' + name + '.key_field') + '. Write [] on a record whose correct answer is "nothing"; check that setting against the file');
+    absent.add(name);
+  }
+  return absent;
+}
+
+// The other fields a config names, for the commands that read them (loadRun). Those that say what
+// a record is, a typo in which changes a table with no sign of it, are STRICT. Those that a run may
+// have nothing to put in only warn: values set aside, a label's confidence column, a decline flag.
+// A group or a cluster read from this side. Without one, a report's table has a single row, which
+// shows; a stop is for a command that needs it. needs: what the command reads, as for loadRun.
+function sideFieldsAbsent(raws, config, side, source, p, needs) {
+  for (const [name, g] of Object.entries(config.groups)) {
+    if (g.from !== side || anyHas(raws, g.field)) continue;
+    const say = needs.groups && needs.groups.includes(name) ? 'strict' : 'warn';
+    p[say]('P1', source, noRecord(g.field, 'groups.' + name + '.field') + ': every record would be grouped as "(none)"');
+  }
+  const c = config.clusters;
+  if (c && c.from === side && !anyHas(raws, c.field)) {
+    p[needs.clusters ? 'strict' : 'warn']('P1', source, noRecord(c.field, 'clusters.field') + ': every record would be a cluster of its own');
+  }
+}
+// A set output on almost no record: a typo in part of the workflow, or a workflow leaving out empty
+// lists. Each record is read as nothing found, which is right only in the second case. Counts the
+// records that are not failed calls; the usual file stops a tenth of the way in, at the cost of no more.
+function mostlyMissing(raws, field) {
+  let scored = 0, has = 0;
+  for (const r of raws) {
+    if (!notFailed(r)) continue;
+    scored++;
+    if (getPath(r, field) != null) has++;
+    if (has * 10 > raws.length) return null;
+  }
+  return has > 0 && has * 10 <= scored ? { missing: scored - has, scored } : null;
+}
+function runFieldsAbsent(raws, config, source, p, needs) {
+  const anyScored = raws.some(notFailed);
+  sideFieldsAbsent(raws, config, 'predictions', source, p, needs);
+  const w = config.whatif;
+  if (needs.movable && w && !anyHas(raws, w.movable_field)) p.strict('P1', source, noRecord(w.movable_field, 'whatif.movable_field') + ': no record could move, and a what-if would show the run as it was at every threshold');
+  if (!anyScored) return;
+  for (const [name, o] of Object.entries(config.outputs)) {
+    const few = o.type === 'set' && !o.rejected_field ? mostlyMissing(raws, o.field) : null;
+    if (few) p.warn('P1', source, few.missing + ' of ' + few.scored + ' records have no "' + o.field + '" (outputs.' + name + '.field): each is read as nothing found. Right if the workflow leaves out empty lists; otherwise check the field');
+    if (o.rejected_field && !anyHas(raws, o.rejected_field, notFailed)) p.warn('P1', source, noRecord(o.rejected_field, 'outputs.' + name + '.rejected_field') + ': nothing was set aside, or the setting is misspelt');
+    if (o.confidence_field && !anyHas(raws, o.confidence_field, notFailed)) p.warn('P1', source, noRecord(o.confidence_field, 'outputs.' + name + '.confidence_field') + ': no label has a confidence');
+    if (o.decline && o.decline.field && !anyHas(raws, o.decline.field, notFailed)) p.warn('P1', source, noRecord(o.decline.field, 'outputs.' + name + '.decline.field') + ': nothing was declined that way, or the setting is misspelt');
+  }
+}
+function keyFieldsAbsent(raws, config, source, p, needs) {
+  // One config can serve a key with trap labels and a key without (the compliance reviewer's 500 and
+  // its 40): absent, the trap table shows it, so a warning, unless the config asks for traps to be counted.
+  if (config.trap_field && !anyHas(raws, config.trap_field)) {
+    const words = noRecord(config.trap_field, 'trap_field') + ': every record is in the trap row "(none)"';
+    if (config.min_per_trap !== null) p.strict('P1', source, words + ', and min_per_trap would pass with nothing counted');
+    else p.warn('P1', source, words);
+  }
+  sideFieldsAbsent(raws, config, 'key', source, p, needs);
+  const d = config.duplicate_of_field;
+  if (d && !anyHas(raws, d)) {
+    // A set with no duplicates may leave the field out. One that suppresses records has a primary for each.
+    const gold = config.routing.gold_field;
+    const suppresses = gold !== null && raws.some(r => { const g = getPath(r, gold); return typeof g === 'string' && ownOf(config.routing.map, g.trim()) === 'exclude'; });
+    if (suppresses) p.strict('P1', source, noRecord(d, 'duplicate_of_field') + ', and the answer key suppresses records: none names its primary');
+    else p.warn('P1', source, noRecord(d, 'duplicate_of_field') + ': no duplicates, or the setting is misspelt');
+  }
 }
 
 // equivalents (config): every value of a group is read as the group's first, on both sides, as
@@ -458,11 +598,11 @@ function readOutputs(raw, config, where, p, isKey, eq, scored = true) {
 // per output and file, naming each value read as another and how often.
 function equivalentsReader(config) {
   const eqs = config.equivalents || {};
-  const as = Object.fromEntries(Object.keys(eqs).map(n => [n, equivalentOf(eqs, n)]));
+  const as = new Map(Object.keys(eqs).map(n => [n, equivalentOf(eqs, n)]));
   const read = new Map();   // output -> Map("from\0to" -> { from, to, n })
   return {
     read(name, v) {
-      const to = as[name] ? as[name](v) : v;
+      const to = as.has(name) ? as.get(name)(v) : v;
       if (to === v) return v;
       if (!read.has(name)) read.set(name, new Map());
       const k = v + '\0' + to;
@@ -507,9 +647,10 @@ function readFields(raw, config, where, p, ctx) {
   const paths = [...new Set([...own, ...(config.policy_fields || [])])];
   if (paths.length === 0) return null;
   const route = getPath(raw, config.routing.field);
-  const cls = typeof route === 'string' ? config.routing.map[route.trim()] : undefined;
+  const cls = typeof route === 'string' ? ownOf(config.routing.map, route.trim()) : undefined;
   const gated = ctx.scored && (cls === 'auto' || cls === 'review');
-  const out = {};
+  // Read by name wherever a threshold or a policy names a field: no built-in may answer (trap P43).
+  const out = Object.create(null);
   for (const f of paths) {
     let v = getPath(raw, f);
     if (own.includes(f)) {
@@ -572,8 +713,6 @@ function readGroups(raw, config, side, where, p) {
   return out;
 }
 
-// What a group label or a cluster may be: text, a number or true/false, each read as text.
-const isLabel = x => typeof x === 'string' || typeof x === 'boolean' || (typeof x === 'number' && Number.isFinite(x));
 // For an object where a label was expected: the first field inside it holding text, to suggest.
 const innerText = x => (isObj(x) ? Object.keys(x).find(k => typeof x[k] === 'string') : undefined);
 
@@ -614,6 +753,7 @@ function normalizePredictions(raws, config, source, p, opts = {}) {
     p.stop('A7', source, 'no record has "' + rf + '". Is this the answer key instead of the predictions?');
     return [];
   }
+  const absent = outputsAbsentFromRun(raws, config, source, p, opts.across);
 
   // Predictions that carry their answers beside them (a combined format): the config says so
   // by reading the key from different fields than the predictions.
@@ -638,7 +778,7 @@ function normalizePredictions(raws, config, source, p, opts = {}) {
       if (typeof raw.scored === 'boolean') scored = raw.scored;
       else p.stop('C10', where, '"scored" must be true or false without quotes, got ' + describe(raw.scored));
     }
-    const rec = { id, route: getPath(raw, rf), scored, movable: readMovable(raw, config), outputs: readOutputs(raw, config, where, p, false, eq, scored) };
+    const rec = { id, route: getPath(raw, rf), scored, movable: readMovable(raw, config), outputs: readOutputs(raw, config, where, p, false, eq, scored, absent) };
     const groups = readGroups(raw, config, 'predictions', where, p);
     if (groups) rec.groups = groups;
     const cluster = readCluster(raw, config, 'predictions', where, p);
@@ -658,6 +798,7 @@ function normalizePredictions(raws, config, source, p, opts = {}) {
 function normalizeKey(raws, config, source, p) {
   if (raws.length === 0) return [];
   if (!idsFound(raws, config.id_field, source, 'key', p)) return [];
+  const absent = outputsAbsentFromKey(raws, config, source, p);
 
   const out = [];
   const eq = equivalentsReader(config);
@@ -670,8 +811,8 @@ function normalizeKey(raws, config, source, p) {
     let traps = [];
     if (config.trap_field) {
       const t = getPath(raw, config.trap_field);
-      if (typeof t === 'string') traps = [t.trim()];
-      else if (Array.isArray(t) && t.every(x => typeof x === 'string')) traps = t.map(x => x.trim());
+      // Each trap once, and a blank one is no trap (trap P28): a record counts once in a row.
+      if (typeof t === 'string' || (Array.isArray(t) && t.every(x => typeof x === 'string'))) traps = [...new Set([].concat(t).map(x => x.trim()).filter(x => x !== ''))];
       else if (t !== undefined && t !== null) p.stop('H3', where, 'the trap field must be text or a list of text, got ' + describe(t));
     }
     const goldRoute = config.routing.gold_field ? getPath(raw, config.routing.gold_field) : null;
@@ -681,7 +822,7 @@ function normalizeKey(raws, config, source, p) {
       if (typeof d === 'string' || typeof d === 'number') duplicateOf = String(d).trim() || null;
       else if (d !== undefined && d !== null) p.stop('C9', where, config.duplicate_of_field + ' must be the id of another record, got ' + describe(d));
     }
-    const rec = { id, gold_route: goldRoute, traps, duplicate_of: duplicateOf, outputs: readOutputs(raw, config, where, p, true, eq) };
+    const rec = { id, gold_route: goldRoute, traps, duplicate_of: duplicateOf, outputs: readOutputs(raw, config, where, p, true, eq, true, absent) };
     const groups = readGroups(raw, config, 'key', where, p);
     if (groups) rec.groups = groups;
     const cluster = readCluster(raw, config, 'key', where, p);
@@ -692,27 +833,135 @@ function normalizeKey(raws, config, source, p) {
   return out;
 }
 
+// ---------- A8: a key that is the run (trap P20) ----------
+//
+// A run scored against itself reads 0%. It need not be the same file, or the same text: records in
+// another order, keys in another order, a note added. So the records are compared by id, on what a
+// scorer reads of them (the route and each output's fields), with each object's keys in one order.
+// Those alike with confidences beside them: no person writes those, so it is the run. Those alike
+// with none: a perfect run can look like that, so it stops only if the whole records are alike too.
+//
+// Every run pays for one record: the key's first against the run's record of that id, kept as a
+// sample, so a key read once for many runs is not kept in memory or read again. Only a run that
+// matches it is compared in full, and only then is a key another run read read again.
+
+// A value as text, whatever order its objects' keys were written in. undefined for one nested too
+// deep to write out (JSON.parse takes what stringify cannot): such a record is not compared.
+const sortKeys = (k, v) => (isObj(v) ? Object.fromEntries(Object.keys(v).sort().map(x => [x, v[x]])) : v);
+const inOneOrder = x => { try { return JSON.stringify(x, sortKeys); } catch { return undefined; } };
+const idText = (r, config) => {
+  const v = isObj(r) ? getPath(r, config.id_field) : undefined;
+  return typeof v === 'string' ? v.trim() : typeof v === 'number' ? String(v) : undefined;
+};
+const readPaths = config => [config.routing.field, ...Object.values(config.outputs).flatMap(o => [o.field, o.confidence_field, o.rejected_field])].filter(Boolean);
+const readsOf = (r, paths) => inOneOrder(paths.map(f => getPath(r, f)));
+// Every output reads the answer from the field the prediction is in: one list of records holds one
+// side only. A file with both sides, read from different fields, is a combined format (A10), not this.
+const answersReadAsOutputs = config => Object.values(config.outputs).every(o => o.key_field === o.field);
+const confidenceIn = (r, o, field) => {
+  if (o.confidence_field && getPath(r, o.confidence_field) != null) return true;
+  const v = getPath(r, field);
+  return (Array.isArray(v) ? v : [v]).some(x => isObj(x) && x[o.confidence_key] != null);
+};
+const anyConfidence = (r, config) => Object.values(config.outputs).some(o => confidenceIn(r, o, o.field));
+// What is kept of a key to test a run against; null when A8 cannot apply to this config.
+function keySample(keyRaws, config) {
+  if (!answersReadAsOutputs(config)) return null;
+  const first = keyRaws.find(isObj);
+  const id = idText(first, config);
+  return id === undefined ? null : { id, reads: readsOf(first, readPaths(config)) };
+}
+// sample: keySample's. keyRaws: a function giving the key's records, called only for a run that matches.
+function keyIsRun(predRaws, sample, keyRaws, config) {
+  if (sample === null || sample.reads === undefined) return false;
+  const paths = readPaths(config);
+  const twin = predRaws.find(r => idText(r, config) === sample.id);
+  if (twin === undefined || readsOf(twin, paths) !== sample.reads) return false;
+  const key = keyRaws();
+  if (key.length !== predRaws.length) return false;
+  const byId = new Map(key.map(r => [idText(r, config), r]));
+  let whole = true, confident = false;
+  for (const r of predRaws) {
+    const k = byId.get(idText(r, config));
+    if (k === undefined) return false;
+    const reads = readsOf(r, paths);
+    if (reads === undefined || reads !== readsOf(k, paths)) return false;
+    whole = whole && inOneOrder(r) === inOneOrder(k);
+    confident = confident || anyConfidence(r, config);
+  }
+  return whole || confident;
+}
+// A key's values with confidences, as a model's have and a person's do not: asked of the first record
+// with a value, since a copied run has them throughout. Not the same run, if it got past keyIsRun, but
+// beside a run that matches it exactly it is a run all the same (align.js warns).
+function keyHasConfidences(raws, config) {
+  const filled = r => Object.values(config.outputs).some(o => { const v = getPath(r, o.key_field); return Array.isArray(v) ? v.length > 0 : v != null; });
+  const first = raws.find(r => isObj(r) && filled(r));
+  return first !== undefined && Object.values(config.outputs).some(o => confidenceIn(first, o, o.key_field));
+}
+
 // Loads both files and pairs them up (align.js). Throws, listing every problem, if
 // anything must stop scoring. Returns the clean records of each file and the pairs.
 // The predictions and key may be the same file (A10); it is then read once.
 // Pass `p` to collect problems into an existing list (score.js adds its own checks after).
-function loadRun({ config, predPath, keyPath, mode = 'strict', p = problems(mode) }) {
+// keys: a Map one command keeps across the runs it scores against one key, with the config and mode
+// the same. Each key is then read once, and later runs get what it said again, at the same places:
+// a run's problems are as if it had read the key itself. Nothing changes the key's records after
+// this (a ruling copies a record before changing it), so the runs can share them. A run that reads
+// its predictions and key as one file reads it as ever, since only one read is said, for the
+// predictions; the key it read is kept when that read said nothing, so a later read would not.
+// liveRecords: a period of live checks (monitor): the golden set's traps, groups and the like are not
+// read there, so a period without them is not asked for them (trap P1).
+// across: acrossFiles(), for a command that reads several runs: their outputs are judged together.
+// needs: what this command reads of the fields only some commands use (trap P1): { movable: whatif's
+// movable_field; clusters: true; groups: names of groups }. Any other field in those settings warns.
+function loadRun({ config, predPath, keyPath, mode = 'strict', p = problems(mode), keys = null, liveRecords = false, across = null, needs = {} }) {
   const sameFile = nodePath.resolve(predPath) === nodePath.resolve(keyPath);
   const sameInput = JSON.stringify(config.input.predictions) === JSON.stringify(config.input.key);
+  const oneRead = sameFile && sameInput;
+  const known = keys && !oneRead ? keys.get(keyPath) : undefined;
+  const said = {};
+  const keyStep = (step, read) => {
+    if (known) {
+      for (const item of known.said[step]) p.items.push(item);   // one by one: a messy key can say more than a spread can take
+      return known[step];
+    }
+    const at = p.items.length;
+    const out = read();
+    said[step] = p.items.slice(at);
+    return out;
+  };
   let predRaws = readRecords(predPath, p, config.input.predictions);
-  let keyRaws = sameFile && sameInput ? predRaws : readRecords(keyPath, p, config.input.key);
+  const quietRead = p.items.length === 0;
+  let keyRaws = keyStep('read', () => (oneRead ? predRaws : readRecords(keyPath, p, config.input.key)));
   // CSV cells are text until decoded. Decoding depends on which side is read (a combined
   // file has prediction columns and key columns), so it happens once per side.
   if (formatOf(predPath, config.input.predictions) === 'csv') predRaws = decodeCsvRecords(predRaws, config, 'predictions', config.input.predictions, predPath, p);
-  if (formatOf(keyPath, config.input.key) === 'csv') keyRaws = decodeCsvRecords(keyRaws, config, 'key', config.input.key, keyPath, p);
-  const predictions = normalizePredictions(predRaws, config, predPath, p, { sameFile });
-  const key = normalizeKey(keyRaws, config, keyPath, p);
+  keyRaws = keyStep('decode', () => (formatOf(keyPath, config.input.key) === 'csv' ? decodeCsvRecords(keyRaws, config, 'key', config.input.key, keyPath, p) : keyRaws));
+  // A8 goes by what the files hold, not their names (trap P20).
+  const sample = known ? known.sample : keySample(keyRaws, config);
+  const sameContent = !sameFile && keyIsRun(predRaws, sample, () => (known ? readKeyAgain(keyPath, config) : keyRaws), config);
+  const keyConfident = known ? known.confident : keyHasConfidences(keyRaws, config);
+  const predictions = normalizePredictions(predRaws, config, predPath, p, { sameFile, across });
+  if (!liveRecords && predRaws.length) runFieldsAbsent(predRaws, config, predPath, p, needs);
+  const key = keyStep('key', () => {
+    if (!liveRecords && keyRaws.length) keyFieldsAbsent(keyRaws, config, keyPath, p, needs);
+    return normalizeKey(keyRaws, config, keyPath, p);
+  });
   // Matching half-read files would only add noise (every unread record "missing"),
   // so reading problems are reported on their own first.
   p.throwIfStopped();
-  const records = align(predictions, key, config, p, { sameFile, predSource: predPath, keySource: keyPath });
+  if (keys && !known && (!oneRead || quietRead)) keys.set(keyPath, { key, said, sample, confident: keyConfident });
+  const records = align(predictions, key, config, p, { sameFile: sameFile || sameContent, sameContent, keyConfident, predSource: predPath, keySource: keyPath });
   p.throwIfStopped();
   return { predictions, key, records, problems: p.items };
+}
+
+// The key's records again, for a run that matched a key another run read (above).
+function readKeyAgain(keyPath, config) {
+  const quiet = problems('lenient');
+  const raws = readRecords(keyPath, quiet, config.input.key);
+  return formatOf(keyPath, config.input.key) === 'csv' ? decodeCsvRecords(raws, config, 'key', config.input.key, keyPath, quiet) : raws;
 }
 
 // The answer key alone, read as loadRun reads it. compare --after-key checks that two keys
@@ -726,4 +975,4 @@ function loadKey({ config, keyPath, mode = 'strict' }) {
   return key;
 }
 
-module.exports = { getPath, formatOf, parseRecords, readRecords, readId, normalizePredictions, normalizeKey, loadRun, loadKey };
+module.exports = { getPath, formatOf, parseRecords, readRecords, readId, normalizePredictions, normalizeKey, loadRun, loadKey, keySample, keyIsRun, acrossFiles };

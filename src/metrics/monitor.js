@@ -18,7 +18,7 @@
 // omissions among them. And each segment of the traffic (--segment-by) gets its own CUSUM and bound
 // beside the whole's (monitorSegments, at the end).
 
-const { rate } = require('./stats.js');
+const { rate, boundPct, pctOf } = require('./stats.js');
 const { targetCheck } = require('./target.js');
 
 // ---------- 1. The CUSUM ----------
@@ -66,32 +66,43 @@ function binomialChances(n, p) {
 
 // The most steps an alarm level may take: past this the chain is too big to follow.
 const MAX_LEVEL = 4000000;
+// The steps one alarm level may take to set, counted, not timed, so the same settings stop on every
+// machine: about 7 seconds at this limit (trap P32).
+const MAX_WORK = 4e9;
+// The most records per false alarm a level can be said to keep (src/monitor.js).
+const MAX_EVERY = 1e12;
+const tooFar = (records, n) => new Error('monitor cannot set the alarm level for one false alarm per ' + records + ' records in periods of ' + n +
+  ': the acceptable and alarming rates are too low or too close. Widen the gap between --acceptable and --alarming, ask for fewer records per false alarm (--false-alarm-every), or give a larger --period-size');
 
 // Average periods until the alarm, from S = 0, with n records checked a period at a true rate p
 // and the alarm at S >= H (a Markov chain: Brook & Evans 1972). Follows the chance of each value
 // of S period by period (the states 0..H-1; the rest has alarmed) and adds up the chance of no
 // alarm yet. Once the chance left shrinks by the same factor every period, the rest of the sum is
 // a geometric series.
-function chainArl(scores, H, n, p) {
+// work: { left: steps allowed }, shared by the calls that set one level; running out returns null.
+function chainArl(scores, H, n, p, work = { left: Infinity }) {
   const { up: m, down: K } = scores;
   const { from: y0, probs } = binomialChances(n, p);
+  const jumps = probs.map((_, j) => (y0 + j) * m - (n - y0 - j) * K);   // what each count of silent errors adds to S
   let dist = new Float64Array(H), next = new Float64Array(H);
   dist[0] = 1;
   let total = 0, mass = 1, lastRatio = 0, steady = 0;
   for (let t = 0; t < 10000000; t++) {
+    work.left -= H * (1 + probs.length / 8);
+    if (work.left < 0) return null;
     total += mass;
     next.fill(0);
     for (let s = 0; s < H; s++) {
       const d = dist[s];
       if (d === 0) continue;
       for (let j = 0; j < probs.length; j++) {
-        const y = y0 + j;
-        const to = s + y * m - (n - y) * K;
+        const to = s + jumps[j];
         if (to >= H) break;
         next[to < 0 ? 0 : to] += d * probs[j];
       }
     }
-    const now = next.reduce((a, b) => a + b, 0);
+    let now = 0;
+    for (let s = 0; s < H; s++) now += next[s];
     const ratio = now / mass;
     [dist, next] = [next, dist];
     mass = now;
@@ -118,18 +129,24 @@ function cusumArl(p0, p1, H, p, n = 1) {
 // search; it is not used itself because it flags a real rise much later
 // (scripts/monitor-sim.js). Smaller periods false-alarm more often at the same H (n = 1, a check
 // after every record, most often of all), which is why the size matters.
-function cusumThreshold(p0, p1, records, n = 1) {
+function cusumThreshold(p0, p1, records, n = 1, maxWork = MAX_WORK) {
   if (!(records > n)) throw new RangeError('records per false alarm must be more than the records in one period');
   const scores = cusumScores(p0, p1);
   let lo = 1, hi = Math.max(2, Math.ceil(Math.log(records / n) / scores.step));
+  const work = { left: maxWork };
+  // How many records per false alarm a level gives, or a stop: the chain's arrays are the size of the
+  // level, so the size is checked before they are made.
+  const arlAt = H => {
+    if (H > MAX_LEVEL) throw tooFar(records, n);
+    const periods = chainArl(scores, H, n, p0, work);
+    if (periods === null) throw tooFar(records, n);
+    return n * periods;
+  };
   // Lorden's bound is for the exact logs; whole steps can fall a little short of it, so make sure.
-  while (n * chainArl(scores, hi, n, p0) < records) {
-    hi *= 2;
-    if (hi > MAX_LEVEL) throw new Error('could not set the alarm level for one false alarm per ' + records + ' records in periods of ' + n + ': ask for fewer records per false alarm (--false-alarm-every)');
-  }
+  while (arlAt(hi) < records) hi *= 2;
   while (lo < hi) {
     const mid = Math.floor((lo + hi) / 2);
-    if (n * chainArl(scores, mid, n, p0) >= records) hi = mid; else lo = mid + 1;
+    if (arlAt(mid) >= records) hi = mid; else lo = mid + 1;
   }
   return lo;
 }
@@ -184,7 +201,6 @@ function mixtureUpper(S, F, alpha = 0.05) {
 
 const ALPHA = 0.05;   // 95%, as everywhere in this tool
 const round1 = x => Number(x.toFixed(1));
-const pctOf = x => Number((x * 100).toPrecision(12));   // 0.025 -> 2.5, without 2.5000000000000004
 const median = xs => { const s = [...xs].sort((a, b) => a - b); const h = Math.floor(s.length / 2); return s.length % 2 ? s[h] : (s[h - 1] + s[h]) / 2; };
 
 // Records out without review, none of them a silent error, the bound needs to show `target`.
@@ -199,14 +215,6 @@ function perfectRunAnytime(target, bar = 1 / ALPHA) {
   return hi;
 }
 
-
-// An upper bound as a percentage: one decimal, or more when one decimal would print the target
-// itself (4.98% is under 5%; "upper bound 5.0%" beside "shown under 5%" reads as a contradiction).
-function boundPct(upper, target) {
-  let d = 1;
-  while (d < 4 && target !== null && Number((upper * 100).toFixed(d)) === pctOf(target)) d++;
-  return Number((upper * 100).toFixed(d));
-}
 
 // periods: [{ period, out, silent }] in time order: records out without review checked, and
 // silent errors among them. acceptable, alarming, target: proportions (target may be null).
@@ -259,18 +267,13 @@ function monitorSeries(periods, { acceptable, alarming, target = null, falseAlar
   for (let i = rows.length - 1; i >= 0 && rows[i].shown; i--) since = rows[i].period;
   const everShown = rows.filter(r => r.shown);
   if (H === null) H = levelFor(size, everyAt(periods.length - 1));
-  if (light) {
-    return {
-      settings: { alarm_at: H, period_size: size },
-      periods: rows,
-      detector: {
-        status: alarmAt === null ? 'in control' : 'alarm',
-        alarm_since: alarmAt === null ? null : periods[alarmAt].period,
-        rise_started: rise === null ? null : periods[rise].period,
-        steps: S, level_pct: round1((100 * S) / H),
-      },
-    };
-  }
+  const detector = {
+    status: alarmAt === null ? 'in control' : 'alarm',
+    alarm_since: alarmAt === null ? null : periods[alarmAt].period,
+    rise_started: rise === null ? null : periods[rise].period,
+    steps: S, level_pct: round1((100 * S) / H),
+  };
+  if (light) return { settings: { alarm_at: H, period_size: size }, periods: rows, detector };
   const arl = p => cusumArl(acceptable, alarming, H, p, size);
   const detect = arl(alarming);
   // Above this rate the CUSUM drifts up on average: up x rate = down x (1 - rate).
@@ -285,12 +288,7 @@ function monitorSeries(periods, { acceptable, alarming, target = null, falseAlar
       since: from > 0 ? periods[from].period : null,
     },
     periods: rows,
-    detector: {
-      status: alarmAt === null ? 'in control' : 'alarm',
-      alarm_since: alarmAt === null ? null : periods[alarmAt].period,
-      rise_started: rise === null ? null : periods[rise].period,
-      steps: S, level_pct: round1((100 * S) / H),
-    },
+    detector,
     bound: target === null ? null : {
       target_pct: pctOf(target), shown: Boolean(last && last.shown), shown_since: since,
       last_shown: everShown.length ? everShown[everShown.length - 1].period : null,
@@ -483,16 +481,16 @@ const cum0 = rows => rows.reduce((t, x) => ({ out: t.out + x.rate.d, silent: t.s
 // not score's silent omission rate, whose base is the records that should have been seen.
 const SERIES = {
   'silent-errors': {
-    rate: 'silent error rate', header: 'silent errors of the records out without review checked', base: 'records out without review',
+    rate: 'silent error rate', header: 'silent errors of the records out without review checked', base: 'records out without review', one: 'record out without review',
     hit: 'silent error', hits: 'silent errors', column: 'out', hitColumn: 'silent', none: 'none out', fixedTest: 'score --target',
   },
   'silent-omissions': {
     rate: 'share wrongly left out',
     header: 'wrongly left out: of the blocked or suppressed records a person checked, the share that should have gone out or to a person (not score\'s silent omission rate)',
-    base: 'records blocked or suppressed', hit: 'record wrongly left out', hits: 'records wrongly left out', column: 'left out', hitColumn: 'wrongly', none: 'none left',
+    base: 'records blocked or suppressed', one: 'record blocked or suppressed', hit: 'record wrongly left out', hits: 'records wrongly left out', column: 'left out', hitColumn: 'wrongly', none: 'none left',
     // score --target tests only the silent error rate; rate --target takes any count.
     fixedTest: 'rate --target',
   },
 };
 
-module.exports = { cusumScores, cusumStep, cusumArl, cusumThreshold, mixtureLogE, mixtureUpper, monitorSeries, monitorSegments, closedBars, familyBars, overlapEvery, perfectRunAnytime, SERIES, ALPHA };
+module.exports = { MAX_EVERY, MAX_WORK, cusumScores, cusumStep, cusumArl, cusumThreshold, mixtureLogE, mixtureUpper, monitorSeries, monitorSegments, closedBars, familyBars, overlapEvery, perfectRunAnytime, SERIES, ALPHA };

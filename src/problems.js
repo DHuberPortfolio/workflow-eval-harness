@@ -15,24 +15,36 @@
 // taken for record 12. The marks never reach a report: a problem is kept without them, with where
 // its ids were in a property no report or JSON file reads (marks).
 
+const { escapeControls } = require('./text.js');
+
 const OPEN = '';
 const MID = '';
 const CLOSE = '';
+// An id may hold the mark characters themselves (they are private-use characters, and data is data:
+// trap P21). Inside a mark they are written as ESCAPE and a digit, so a mark can be read back exactly.
+const ESCAPE = '\uE003';
+const MARK_CHARS = /[\uE000-\uE003]/g;
+const sealed = s => s.replace(MARK_CHARS, c => ESCAPE + (c.charCodeAt(0) - 0xE000));
+const opened = s => (s.includes(ESCAPE) ? s.replace(/\uE003([0-3])/g, (_, d) => String.fromCharCode(0xE000 + Number(d))) : s);
 // A record's id as written into a problem. shown: the text written, when not the id itself (an id
 // before its spaces are trimmed, or in another case).
-const markId = (id, shown) => OPEN + String(shown === undefined ? id : shown) + (shown === undefined ? '' : MID + String(id)) + CLOSE;
+const markId = (id, shown) => OPEN + sealed(String(shown === undefined ? id : shown)) + (shown === undefined ? '' : MID + sealed(String(id))) + CLOSE;
 
-// The text without marks, and each marked id's place in it: [{ id, start, end }].
+// The text without marks, and each marked id's place in it: [{ id, start, end }]. Only a close with
+// an open before it is a mark: a value written into a message can hold either character alone, and it
+// stays as written. Each pass moves past a close, so this always ends.
 function unmark(text) {
   if (typeof text !== 'string' || !text.includes(OPEN)) return { text, ids: [] };
   let out = '';
   const ids = [];
   let i = 0;
-  for (let a = text.indexOf(OPEN); a !== -1; a = text.indexOf(OPEN, i)) {
-    const b = text.indexOf(CLOSE, a);
+  for (let b = text.indexOf(CLOSE); b !== -1; b = text.indexOf(CLOSE, i)) {
+    const a = text.lastIndexOf(OPEN, b);
+    if (a < i) { out += text.slice(i, b + 1); i = b + 1; continue; }
     out += text.slice(i, a);
-    const [shown, id] = text.slice(a + 1, b).split(MID);
-    ids.push({ id: id === undefined ? shown : id, start: out.length, end: out.length + shown.length });
+    const [written, id] = text.slice(a + 1, b).split(MID);
+    const shown = opened(written);
+    ids.push({ id: id === undefined ? shown : opened(id), start: out.length, end: out.length + shown.length });
     out += shown;
     i = b + 1;
   }
@@ -41,7 +53,7 @@ function unmark(text) {
 
 // The stops, as the error that stops scoring says them.
 function stopsText(stops) {
-  const lines = stops.map(i => (i.strict ? '* ' : '') + '[' + i.trap + '] ' + i.where + ': ' + i.message);
+  const lines = stops.map(i => (i.strict ? '* ' : '') + '[' + i.trap + '] ' + escapeControls(i.where, false) + ': ' + escapeControls(i.message, false));
   const hint = stops.some(i => i.strict) ? '\n(* strict mode only: --lenient would report these as warnings)' : '';
   return stops.length + ' problem(s) stop scoring (details in test/TRAPS.md):\n  - ' + lines.join('\n  - ') + hint;
 }
@@ -83,4 +95,13 @@ function problems(mode = 'strict') {
   };
 }
 
-module.exports = { problems, markId, unmark, stopsText, withMarks, MARKS: { OPEN, MID, CLOSE } };
+// Adds to a list of problems the ones it does not hold yet, each once.
+function addNew(list, items) {
+  const key = i => i.trap + i.where + i.message;
+  const seen = new Set(list.map(key));
+  for (const i of items) {
+    if (!seen.has(key(i))) { seen.add(key(i)); list.push(i); }
+  }
+}
+
+module.exports = { problems, addNew, markId, unmark, stopsText, withMarks, MARKS: { OPEN, MID, CLOSE } };

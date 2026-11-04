@@ -3,11 +3,14 @@
 
 const {
   pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines,
-  groupSource, GROUP_RANGES, severalLabels, rulingsWords, pendingLine, rulingStatus, clusterLine, CLUSTER_GROUP_NOTE, CLUSTER_TARGET_NOTE, mixLines, thousands,
+  groupSource, GROUP_RANGES, severalLabels, rulingsWords, pendingLine, rulingStatus, clusterLine, CLUSTER_GROUP_NOTE, CLUSTER_TARGET_NOTE, mixLines, thousands, sized, shownPct, figure, nothingLine,
 } = require('./format.js');
 const { withKeyLabels } = require('./format.js');
 // The tuning half and the held-out half (config.split): its own module, hooked in below.
 const SPLIT = require('./split.js');
+
+// An id in a column of 8: a longer one keeps a space after it (trap P29).
+const idCell = id => id.padEnd(7) + ' ';
 
 // Words wrapped to 100 columns, every line indented; a word longer than that (a long path) stays whole.
 function wrapWords(text, indent) {
@@ -117,7 +120,7 @@ function silentSection(title, what, block, showDiffs, keyed = (id, d) => d) {
   const sev = Object.entries(block.by_severity || {}).filter(([, n]) => n > 0).map(([s, n]) => s + ' ' + n).join(' · ');
   const lines = [title + '  ' + block.records.length + ' record(s)' + (sev ? '  (' + sev + ')' : '') + ': ' + what];
   for (const x of block.records) {
-    lines.push('  ' + x.id.padEnd(8) + x.severity.padEnd(10) + x.types.join(', ') + (x.traps.length ? '   [' + x.traps.join(', ') + ']' : ''));
+    lines.push('  ' + idCell(x.id) + x.severity.padEnd(10) + x.types.join(', ') + (x.traps.length ? '   [' + x.traps.join(', ') + ']' : ''));
     lines.push('  ' + ''.padEnd(8) + 'went: ' + x.route + (x.gold_route === null ? '' : '   answer key: ' + x.gold_route));
     if (showDiffs) for (const d of differenceLines(keyed(x.id, x.differences))) lines.push('  ' + ''.padEnd(8) + d);
     if (x.declined) for (const d of differenceLines({ declined: x.declined })) lines.push('  ' + ''.padEnd(8) + d);
@@ -237,6 +240,7 @@ function renderTerminal(results) {
   const r = results.routing;
   const parts = [];
   parts.push('SCORE  ' + results.inputs.predictions + '  vs  ' + results.inputs.key);
+  if (results.nothing_evaluated) parts.push(nothingLine(results.nothing_evaluated.why));
   parts.push(r.total + ' records · ' + results.inputs.mode + ' mode · a record needed a person if ' + WRONG_WHEN[results.inputs.wrong_when]);
   if (results.split) parts.push(SPLIT.splitLine(results.split));   // config.split only
   if (results.rulings) parts.push(rulingsSection(results.rulings));
@@ -280,9 +284,9 @@ function renderTerminal(results) {
 
 // ---------- Across runs ----------
 
-const fmt = (v, unit) => (v === null ? 'n/a' : unit === 'points' ? v.toFixed(1) + '%' : unit === 'records' ? String(v) : v.toFixed(3));
+const fmt = (v, unit) => (v === null ? 'n/a' : unit === 'points' ? shownPct(v) : unit === 'records' ? String(v) : v.toFixed(3));
 const fmtDelta = (v, unit) => (v === null ? 'n/a' : (v > 0 ? '+' : '') + (unit === 'points' ? v.toFixed(1) + ' pts' : unit === 'records' ? String(v) : v.toFixed(3)));
-const fmtSpread = (v, unit) => (v === null ? 'n/a' : unit === 'points' ? v.toFixed(1) + ' pts' : unit === 'records' ? v.toFixed(1) : v.toFixed(3));
+const fmtSpread = (v, unit) => (v === null ? 'n/a' : unit === 'points' ? figure(v) + ' pts' : unit === 'records' ? v.toFixed(1) : v.toFixed(3));
 
 function renderVariance(v) {
   const parts = ['VARIANCE  ' + v.runs.length + ' runs against ' + v.inputs.key];
@@ -295,7 +299,7 @@ function renderVariance(v) {
   }
   parts.push(table(rows, rows[0].map((_, i) => i).filter(i => i > 0)));
   const silent = v.metrics.find(m => m.name === 'silent error rate');
-  if (silent && silent.range === 0) {
+  if (silent && silent.min === silent.max) {
     parts.push('Every run gave the same silent error rate, ' + fmt(silent.min, 'points') + '. ' + v.runs.length +
       ' runs are a small sample: that makes a steady rate likely, not certain.');
   } else if (silent && silent.range !== null) {
@@ -323,10 +327,10 @@ function renderVariance(v) {
   }
   const rc = v.records.route_changed;
   parts.push('RECORDS THAT CHANGED ROUTE  ' + (rc.length ? '' : 'none') +
-    rc.map(r => '\n  ' + r.id.padEnd(8) + r.routes.join(' / ') + (r.should ? '   (should: ' + r.should + ')' : '')).join(''));
+    rc.map(r => '\n  ' + idCell(r.id) + r.routes.join(' / ') + (r.should ? '   (should: ' + r.should + ')' : '')).join(''));
   const sc = v.records.silent_changed;
   parts.push('RECORDS THAT WERE SILENT ERRORS IN SOME RUNS ONLY  ' + (sc.length ? '' : 'none') +
-    sc.map(r => '\n  ' + r.id.padEnd(8) + r.silent.map(s => (s ? 'silent' : 'ok')).join(' / ')).join(''));
+    sc.map(r => '\n  ' + idCell(r.id) + r.silent.map(s => (s ? 'silent' : 'ok')).join(' / ')).join(''));
   const gaps = v.records.key_gap_candidates;
   const every = gaps.filter(g => g.runs === g.of);
   const rejected = v.records.key_gaps_rejected || 0;
@@ -336,7 +340,7 @@ function renderVariance(v) {
   const conf = c => (c === null ? '' : ' · confidence ' + (c.min === c.max ? c.min.toFixed(2) : c.min.toFixed(2) + '-' + c.max.toFixed(2)));
   // With a rulings file, each gap shows its ruling (trap I11); without one, nothing changes.
   const status = g => (g.ruling === undefined ? '' : '   ' + rulingStatus(g));
-  for (const g of every) lines.push('  ' + g.id.padEnd(8) + g.output + '  ' + g.value + '   applied in ' + g.applied + ' of ' + g.of + conf(g.confidence) + status(g));
+  for (const g of every) lines.push('  ' + idCell(g.id) + g.output + '  ' + g.value + '   applied in ' + g.applied + ' of ' + g.of + conf(g.confidence) + status(g));
   const some = gaps.length - every.length;
   if (some) lines.push('  ' + some + ' more stated in some runs only (listed in --json)');
   if (rejected) lines.push('  ' + rejected + ' ruled not a gap in ' + v.rulings.file + ', not listed');
@@ -367,6 +371,7 @@ function renderCompare(c) {
   const i = c.inputs;
   const twoKeys = i.after_key !== undefined;
   const parts = ['COMPARE  ' + (twoKeys ? i.before + ' against ' + i.key + '  ->  ' + i.after + ' against ' + i.after_key : i.before + '  ->  ' + i.after)];
+  for (const x of c.nothing_evaluated || []) parts.push(nothingLine(x.why + ' in ' + x.file));
   if (c.split) parts.push(SPLIT.splitLine(c.split));   // config.split only
   if (c.rulings) {
     // Rulings apply to each key; when the two keys take them alike, say it once.
@@ -386,11 +391,11 @@ function renderCompare(c) {
   if (c.split) parts.push(SPLIT.heldOutCompareSection(c));   // config.split only
   const r = c.records;
   const lines = ['RECORDS THAT CHANGED  routes fixed ' + c.summary.routes_fixed + ' · routes broken ' + c.summary.routes_broken];
-  for (const x of r.route_changed) lines.push('  ' + x.id.padEnd(8) + x.before + ' -> ' + x.after + (x.should ? '   should: ' + x.should + (x.outcome ? '   ' + x.outcome : '') : ''));
-  for (const x of r.became_silent) lines.push('  ' + x.id.padEnd(8) + 'became a silent error (' + x.types.join(', ') + ')');
-  for (const x of r.no_longer_silent) lines.push('  ' + x.id.padEnd(8) + 'no longer a silent error (was ' + x.types.join(', ') + ')');
-  for (const x of r.became_omission) lines.push('  ' + x.id.padEnd(8) + 'became a silent omission (' + x.types.join(', ') + ')');
-  for (const x of r.no_longer_omission) lines.push('  ' + x.id.padEnd(8) + 'no longer a silent omission');
+  for (const x of r.route_changed) lines.push('  ' + idCell(x.id) + x.before + ' -> ' + x.after + (x.should ? '   should: ' + x.should + (x.outcome ? '   ' + x.outcome : '') : ''));
+  for (const x of r.became_silent) lines.push('  ' + idCell(x.id) + 'became a silent error (' + x.types.join(', ') + ')');
+  for (const x of r.no_longer_silent) lines.push('  ' + idCell(x.id) + 'no longer a silent error (was ' + x.types.join(', ') + ')');
+  for (const x of r.became_omission) lines.push('  ' + idCell(x.id) + 'became a silent omission (' + x.types.join(', ') + ')');
+  for (const x of r.no_longer_omission) lines.push('  ' + idCell(x.id) + 'no longer a silent omission');
   if (r.values_changed.length) lines.push('  values changed on: ' + list(r.values_changed.map(x => x.id)));
   if (lines.length === 1) lines.push('  none');
   parts.push(lines.join('\n'));
@@ -404,10 +409,12 @@ function renderCompare(c) {
 
 // ---------- A bare count (wfeval rate) ----------
 
+// What one record of d moves a rate by, in points: two figures where one decimal would read 0.
+const stepOf = d => (100 / d < 0.05 ? String(Number((100 / d).toPrecision(2))) : (100 / d).toFixed(1));
 function renderRate(x) {
   const parts = ['RATE  ' + pct(x.rate) + '  ' + count(x.rate) + '  likely ' + range(x.rate) + ' (95%)\n' +
     '  The likely range is where the true rate on records like these probably sits.' +
-    (x.rate.d > 1 ? ' With ' + x.rate.d + ' records, each record moves it by ' + (100 / x.rate.d).toFixed(1) + ' points.' : '')];
+    (x.rate.d > 1 ? ' With ' + x.rate.d + ' records, each record moves it by ' + stepOf(x.rate.d) + ' points.' : '')];
   if (x.target) parts.push(targetSection(x.target, TARGET_WORDS.count));
   return parts.join('\n\n') + '\n';
 }
@@ -435,8 +442,8 @@ function certificationSection(c, w = GATE_WORDS) {
     const note = w.bestNote ? w.bestNote(b) : null;
     if (note) lines.push(note);
   } else {
-    lines.push('No ' + w.one + ' tried is certified under ' + under + '. Among ' + gates + ', a ' + w.one + ' needs at least ' + thousands(c.least_records_out) +
-      ' records out without review, with no silent error among them, to be certified (more if it has any).');
+    lines.push('No ' + w.one + ' tried is certified under ' + under + '. Among ' + gates + ', a ' + w.one + ' needs at least ' + sized(c.least_records_out, 'records out without review') +
+      ', with no silent error among them, to be certified (more if it has any).');
   }
   const a = c.looks_under_alone;
   if (a && !a.certified) {
@@ -580,6 +587,7 @@ function renderWhatif(w) {
 
 function renderGrades(g) {
   const parts = ['GRADES  ' + g.inputs.grades + (g.reviewer ? '  (' + g.reviewer + ')' : '') + (g.title ? '  ' + g.title : '')];
+  if (g.nothing_evaluated) parts.push(nothingLine(g.nothing_evaluated.why));
   parts.push(g.overall.graded + ' fields graded by a person against the source · ' + g.inputs.mode + ' mode · scored as labels: faithful, invented or missing');
   const row = (name, r, what) => [name, pct(r), count(r), range(r), what];
   const head = [['', 'rate', 'count', 'likely range', 'what it counts']];
@@ -596,7 +604,7 @@ function renderGrades(g) {
 
   const lines = ['INVENTED  ' + (g.invented.length ? g.invented.length + ' field(s), high: the form says something the source does not' : 'none')];
   for (const x of g.invented) {
-    lines.push('  ' + x.form.padEnd(8) + x.field + (x.kinds.length ? '   [' + x.kinds.join(', ') + ']' : ''));
+    lines.push('  ' + idCell(x.form) + x.field + (x.kinds.length ? '   [' + x.kinds.join(', ') + ']' : ''));
     if (x.note) lines.push('  ' + ''.padEnd(8) + x.note);
   }
   const kinds = Object.entries(g.kinds.counts).filter(([, n]) => n > 0);
@@ -604,7 +612,7 @@ function renderGrades(g) {
   parts.push(lines.join('\n'));
   const miss = ['MISSING  ' + (g.missing.length ? g.missing.length + ' field(s), medium: the form leaves out something the source says' : 'none')];
   for (const x of g.missing) {
-    miss.push('  ' + x.form.padEnd(8) + x.field);
+    miss.push('  ' + idCell(x.form) + x.field);
     if (x.note) miss.push('  ' + ''.padEnd(8) + x.note);
   }
   parts.push(miss.join('\n'));
@@ -622,7 +630,7 @@ function renderGrades(g) {
     ], [1, 2]));
     al.push('  Kappa is 1 for perfect agreement, 0 for agreement no better than chance.' + (a.graded_by_one_only ? ' ' + a.graded_by_one_only + ' field(s) graded by only one reviewer are left out.' : ''));
     al.push('  disagreements' + (a.disagreements.length ? ', for a person to settle:' : ': none'));
-    for (const d of a.disagreements) al.push('    ' + d.form.padEnd(8) + d.field.padEnd(16) + (d.first + ' / ' + d.second).padEnd(22) + (d.first_note || d.second_note ? '   ' + [d.first_note, d.second_note].filter(Boolean).join(' / ') : ''));
+    for (const d of a.disagreements) al.push('    ' + idCell(d.form) + d.field.padEnd(16) + (d.first + ' / ' + d.second).padEnd(22) + (d.first_note || d.second_note ? '   ' + [d.first_note, d.second_note].filter(Boolean).join(' / ') : ''));
     parts.push(al.join('\n'));
   }
   const notes = g.problems.filter(i => i.level !== 'stop');

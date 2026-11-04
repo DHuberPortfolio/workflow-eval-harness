@@ -298,8 +298,10 @@ test('per group: branch is read from the predictions, as text; its rows add up t
   assert.deepEqual(sum(x => x.silent_omissions.rate), [h.silent_omissions.rate.n, h.silent_omissions.rate.d]);
 });
 
-test('per group: a field no record has puts every record in "(none)", and that row is the headline', () => {
+test('per group: a field no record has warns (trap P1), stops if the command needs it, and every record is in "(none)", that row the headline', () => {
+  assert.throws(() => scoreRun({ config: withGroups({ nothing: { field: 'not.there' } }), predPath: before, keyPath, needs: { groups: ['nothing'] } }), /\[P1\].*groups\.nothing\.field/);
   const r = scoreRun({ config: withGroups({ nothing: { field: 'not.there' } }), predPath: before, keyPath });
+  assert.ok(r.problems.some(i => i.trap === 'P1' && i.level === 'warn' && /groups\.nothing\.field/.test(i.message)));
   const [row] = r.groups.find(g => g.name === 'nothing').rows;
   assert.equal(row.label, '(none)');
   assert.equal(row.records, 10);

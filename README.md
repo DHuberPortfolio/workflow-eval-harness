@@ -219,15 +219,20 @@ Every config option: [docs/CONFIG.md](docs/CONFIG.md). The two real workflows in
 ## Built not to miscount
 
 An evaluation tool that quietly miscounts is worse than none. Every way the harness itself
-could compute a wrong number is listed in [`test/TRAPS.md`](test/TRAPS.md) (265 of them),
+could compute a wrong number is listed in [`test/TRAPS.md`](test/TRAPS.md) (310 of them),
 with what it does about each: stop and name the offending record, fix and report it, or
 follow a stated rule. On a golden set it stops on anything suspicious; `--lenient` turns
 those stops into warnings for samples of production output.
 
-723 tests check the numbers against answers worked out by hand before the code existed.
+948 tests check the numbers against answers worked out by hand before the code existed.
 GitHub Actions runs them on Linux and Windows with Node 18, 22 and 24 on every push, along
 with the commands this README shows, and checks that the sample reports match what the tool
 produces today. Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+Passing its own tests proves little for a tool that grades, so it is also checked from outside them:
+by breaking the code on purpose, by rules that must hold whatever the answer is, and by a second
+implementation in Python written only from these docs. [docs/ENGINEERING.md](docs/ENGINEERING.md)
+says what each check can and cannot show, and how to run it.
 
 ## Limits
 
@@ -238,6 +243,18 @@ produces today. Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
   whose route could depend on those are marked "needs replay" rather than guessed.
 - Every rate is only as strong as the golden set is large. The likely ranges say how strong
   that is.
+- A build gate reads what was evaluated. `--fail-on` reads silent errors, silent omissions and
+  safeguard failures; a gate that read nothing (more than half the model calls failed, every record
+  blocked with nothing to judge them by, no record scored in any period, a grades file grading
+  nothing) exits 3 with the reason, and without a gate the report says so at the top. No record out
+  without review, on records really scored, is a warning: nothing went out to be wrong
+  ([docs/CONFIG.md](docs/CONFIG.md#build-gates)).
+- A config is trusted input, treated as code: it can name files anywhere. Input files must be UTF-8.
+- Terminal reports show control characters in the data as text, so model text cannot clear the screen
+  or forge a line. Marks that change text direction are printed as they are, so a line holding
+  them can read out of order.
+- `monitor` follows at most 10,000,000 records checked in all, and its alarm stops rather than guess
+  when the rates are too low or too close to set a level for.
 - A likely range covers chance only. It does not make a golden set like real traffic: a set
   built from traps gives a stress-test rate. `score --mix` reweights it to a real mix of
   traffic, group by group, but only reweights the records tested: a kind of record never tested
@@ -295,5 +312,6 @@ produces today. Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | [Silent errors](docs/SILENT_ERRORS.md) | Every error type, how it is detected, and its severity |
 | [Config](docs/CONFIG.md) | Every config option |
 | [How it is built](docs/ARCHITECTURE.md) | Architecture, the refuse-to-guess rules, testing |
+| [How it is checked](docs/ENGINEERING.md) | Why passing tests are not proof, each check and how to run it, the rules going forward |
 
 MIT licence.

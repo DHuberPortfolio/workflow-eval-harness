@@ -31,7 +31,7 @@
 // The rate is the rate of records like these: a fresh record's chance of being a silent error,
 // not only these records' share. So the share the judge flags has a range of its own too.
 
-const { Z, wilson, chanceAtMost } = require('./stats.js');
+const { Z, wilson, chanceAtMost, pct1, boundPct } = require('./stats.js');
 
 // The exact (Clopper and Pearson 1934) low end for x errors in n: the rate at which x or more
 // errors would turn up only 2.5% of the time. Found by halving: the chance of x or more rises
@@ -129,7 +129,6 @@ function worthOf(estimate, low, high, z = Z) {
   return Math.sqrt(lo * hi);
 }
 
-const pct1 = x => (x === null ? null : Number((x * 100).toFixed(1)));
 
 // --target: shown when the whole likely range is under it. If not, a break-even guide: about how
 // many extra checks, and in which verdict group, would clear the target if each group's rate stayed
@@ -162,7 +161,7 @@ function targetOf(counts, est, targetPct) {
   const target = targetPct / 100;
   const shown = est.high < target;
   const atOrAbove = est.estimate !== null && est.estimate >= target;
-  const out = { target_pct: targetPct, shown, high_pct: pct1(est.high), at_or_above: atOrAbove, more: null, why: null };
+  const out = { target_pct: targetPct, shown, high_pct: est.high === null ? null : boundPct(est.high, target), at_or_above: atOrAbove, more: null, why: null };
   if (shown || atOrAbove || est.estimate === null) return out;
   const c = counts.checked;
   const left = { flagged: counts.flagged - c.flagged.n, passed: counts.out - counts.flagged - c.passed.n };

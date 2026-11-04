@@ -48,7 +48,7 @@ button.primary { background: var(--series); border-color: var(--series); color: 
 .how dd { margin: 0; color: var(--ink-2); }
 .formnav { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 14px; }
 .formnav a { color: var(--series); }
-.form { margin-top: 32px; }
+.form { margin-top: 32px; content-visibility: auto; contain-intrinsic-size: auto 900px; }
 .cols { display: grid; grid-template-columns: 1fr; gap: 16px; }
 #reviewer { width: 11em; }
 @media (min-width: 900px) {
@@ -82,6 +82,9 @@ const PAGE_JS = `
   const progress = document.getElementById('progress');
   const status = document.getElementById('status');
   const reviewer = document.getElementById('reviewer');
+  // Fields with a grade. Kept one field at a time, so a click does not re-read every field.
+  const graded = new Set();
+  const fieldAt = new Map(fieldsets.map(fs => [fs.dataset.form + ':' + fs.dataset.field, fs]));
   let dirty = false;
 
   const say = text => { status.textContent = text; };
@@ -90,17 +93,24 @@ const PAGE_JS = `
   function refresh(fs) {
     const g = gradeOf(fs);
     fs.classList.toggle('graded', g !== null);
+    if (g !== null) graded.add(fs); else graded.delete(fs);
     const kinds = fs.querySelector('.kinds');
     if (kinds) kinds.hidden = g !== 'invented';
   }
   function update() {
-    const done = fieldsets.filter(fs => gradeOf(fs) !== null).length;
-    progress.textContent = done + ' of ' + fieldsets.length + ' fields graded';
+    progress.textContent = graded.size + ' of ' + fieldsets.length + ' fields graded';
   }
 
   fieldsets.forEach(fs => {
     fs.addEventListener('change', () => { dirty = true; refresh(fs); update(); });
     fs.addEventListener('input', () => { dirty = true; });
+  });
+
+  // A browser may restore a reloaded page's choices after this script runs: counted once then.
+  window.addEventListener('pageshow', () => {
+    graded.clear();
+    fieldsets.forEach(fs => { if (gradeOf(fs) !== null) graded.add(fs); });
+    update();
   });
 
   // F, I and M grade the field that has focus; N goes to the next ungraded field. Never while typing.
@@ -124,7 +134,7 @@ const PAGE_JS = `
     const active = document.activeElement && document.activeElement.closest ? document.activeElement.closest('fieldset.field') : null;
     const start = active ? fieldsets.indexOf(active) + 1 : 0;
     const order = fieldsets.slice(start).concat(fieldsets.slice(0, start));
-    const next = order.find(fs => gradeOf(fs) === null);
+    const next = order.find(fs => !graded.has(fs));
     if (!next) { say('Every field is graded.'); return; }
     next.scrollIntoView({ block: 'center' });
     next.querySelector('input[type=radio]').focus();
@@ -182,10 +192,10 @@ const PAGE_JS = `
       if (!saved || saved.format !== data.format) { say('Not loaded: ' + file.name + ' is not a grades file.'); return; }
       if (saved.fingerprint !== data.fingerprint) { say('Not loaded: ' + file.name + ' grades different forms (or forms whose text has changed).'); return; }
       let applied = 0;
+      const formAt = new Map(data.forms.map((f, i) => [f, i]));
+      const nameAt = new Map(data.fields.map((f, i) => [f.name, i]));
       (saved.grades || []).forEach(g => {
-        const fi = data.forms.indexOf(String(g.form));
-        const ki = data.fields.findIndex(f => f.name === g.field);
-        const fs = fieldsets.find(x => Number(x.dataset.form) === fi && Number(x.dataset.field) === ki);
+        const fs = fieldAt.get(formAt.get(String(g.form)) + ':' + nameAt.get(g.field));
         const radio = fs && fs.querySelector('input[type=radio][value="' + (g.grade === 'faithful' || g.grade === 'invented' || g.grade === 'missing' ? g.grade : 'none') + '"]');
         if (!radio) return;
         radio.checked = true;

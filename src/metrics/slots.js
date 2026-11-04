@@ -12,7 +12,14 @@ const slotValues = s => (typeof s === 'string' ? [s] : s.any_of);
 
 // Every value the key accepts, in any slot: "is this value right?". An applied value is right
 // exactly when it is in here (it then fills its slot); a proposed one too (calibration).
-const accepted = key => new Set(key.flatMap(slotValues));
+function accepted(key) {
+  const ok = new Set();
+  for (const s of key) {
+    if (typeof s === 'string') ok.add(s);
+    else for (const v of s.any_of) ok.add(v);
+  }
+  return ok;
+}
 
 // How an unfilled slot is named: "ep-12", or "one of ep-10, ep-11".
 function slotLabel(slot) {
@@ -35,10 +42,17 @@ function unfilledLabel(u) {
 //               the slot's values that were proposed but not applied (missing_rejected if any)
 function resolveSet(pred, key) {
   const ok = accepted(key);
-  const applied = [...new Set(pred.filter(v => v.applied).map(v => v.value))];
-  const proposed = new Set(pred.map(v => v.value));
-  const unfilled = key.filter(s => !slotValues(s).some(v => applied.includes(v)))
-    .map(slot => ({ slot, set_aside: slotValues(slot).filter(v => proposed.has(v)) }));
+  const chosen = new Set();
+  for (const v of pred) if (v.applied) chosen.add(v.value);
+  const applied = [...chosen];
+  const filled = s => (typeof s === 'string' ? chosen.has(s) : s.any_of.some(v => chosen.has(v)));
+  // Most records leave no slot unfilled, so what was proposed is gathered only for one that does.
+  let proposed = null;
+  const wasProposed = v => {
+    if (proposed === null) { proposed = new Set(); for (const p of pred) proposed.add(p.value); }
+    return proposed.has(v);
+  };
+  const unfilled = key.filter(s => !filled(s)).map(slot => ({ slot, set_aside: slotValues(slot).filter(wasProposed) }));
   return { applied, right: applied.filter(v => ok.has(v)), wrong: applied.filter(v => !ok.has(v)), unfilled };
 }
 

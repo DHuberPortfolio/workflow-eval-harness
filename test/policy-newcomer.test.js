@@ -19,9 +19,9 @@ const raw = JSON.parse(fs.readFileSync(files.config, 'utf8'));
 const baseConfig = loadConfig(files.config);
 const fixturePolicies = JSON.parse(fs.readFileSync(path.join(dir, 'policies.json'), 'utf8')).policies;
 const read = (pols, cfg = baseConfig) => readPolicies({ policies: pols }, cfg, 'policies.json');
-const run = (cfg, pols, opts) => {
+const run = (cfg, pols, opts, mode = 'strict') => {
   const c = policyFields(cfg, pols);
-  const { paired } = scoreRun({ config: c, predPath: files.pred, keyPath: files.key });
+  const { paired } = scoreRun({ config: c, predPath: files.pred, keyPath: files.key, mode });
   return { c, paired, w: policySweep(paired, c, pols, opts) };
 };
 const withPreds = (change, fn) => {
@@ -45,7 +45,7 @@ test('newcomer 2: a field a key-side group also reads is the prediction\'s own w
   const grouped = validateConfig({ ...raw, groups: { client: { field: 'client' } } }).config;
   const pols = read([{ name: 'south', hold_if: [{ field: 'client', equals: 'south' }] }], grouped);
   assert.deepEqual(parseHoldIf('field:client=south', grouped), { field: 'client', in: ['south'] });
-  const { c, paired, w } = run(grouped, pols);
+  const { c, paired, w } = run(grouped, pols, undefined, 'lenient');   // the key has no client column: trap P1 warns
   const p = problems('strict');
   checkPolicyData(pols, paired, c, p);
   assert.deepEqual(p.items, []);
@@ -55,7 +55,7 @@ test('newcomer 2: a field a key-side group also reads is the prediction\'s own w
 test('newcomer 2: a field only the answer key has stops (E17), naming groups.<name>.from "predictions"', () => {
   const grouped = validateConfig({ ...raw, groups: { region: { field: 'region' } } }).config;
   const pols = read([{ name: 'r', hold_if: [{ field: 'region', equals: 'east' }] }], grouped);
-  const { c, paired } = run(grouped, pols);
+  const { c, paired } = run(grouped, pols, undefined, 'lenient');
   const p = problems('lenient');
   checkPolicyData(pols, paired, c, p);
   assert.deepEqual(p.items.map(i => [i.trap, i.level]), [['E17', 'stop']]);

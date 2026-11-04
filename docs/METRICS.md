@@ -398,9 +398,14 @@ all records, at the run's straight-through rate):
 
 - **The plan.** If the real rate is the one this run saw, how many records give an 80% chance
   (`--chance 0.9` or `0.95` for more) that a fresh test shows it. The chance is added up
-  exactly from the binomial distribution, not estimated.
+  exactly from the binomial distribution, not estimated, and because whole-number counts make it
+  zigzag as records are added, the plan is the size from which the chance never drops back under
+  what was asked. Above about 5,000 records it is the textbook estimate alone (`exact: false` in
+  `--json`), and the report says "a textbook estimate". It runs a little short of the exact size:
+  on 38 generated cases, 0.1% to 6.7% under (median 0.9%, `python verify/check_stats.py`), so add
+  a margin when a plan that size matters.
 - **The hard minimum.** A perfect run: how many records with no silent error at all. At 5%,
-  73; at 1%, 381. No test can show less.
+  73; at 1%, 381. No test can show less, and the figure has no cap: at 0.0001%, 3,841,597.
 
 When the rate seen is already at or above the target, no number of records can show it is
 under; the report says the rate has to come down first.
@@ -434,8 +439,13 @@ Records sent to a person that could have gone out are listed as **unnecessary re
 So are records sent to a person that the answer key blocks or suppresses: an email the key
 files, a duplicate the key drops. Such a record must not go out (letting it out unseen is a
 silent error), but it needs no person either: the workflow should leave it out on its own.
-The report lists these apart, as "the answer key blocks or suppresses them", whatever their
-values.
+The report lists these apart, as "the answer key blocks or suppresses them" (`key_leaves_out` in
+`--json`, of the records sent to a person), whatever their values.
+
+That is the rule where the key's route counts (`wrong_when` `either` or `gold_route`). With
+`any_mismatch` only the values decide, so nothing is left out this way: a record the key blocks,
+sent to a person with its values right, is a plain unnecessary review, and with a value wrong it
+needed the person.
 
 ## Block precision
 
@@ -1570,7 +1580,7 @@ searching the text, so a number in a sentence ("12 records", "rulings[7]") is ne
 record whatever the ids look like; when the answer key cannot be read, the halves are unknown and
 no record is named at all. `--show-held-out` lists them anyway, for when it is worth it, and the log
 records which records it listed (below). With `--held-out` the build gates read both halves: `score
---fail-on` counts the held-out silent errors and safeguard failures, and `compare --fail-if-worse`
+--fail-on` counts the held-out silent errors, silent omissions and safeguard failures, and `compare --fail-if-worse`
 the held-out paired verdicts, by number only; without it they read the tuning half, and say so
 (trap O19).
 

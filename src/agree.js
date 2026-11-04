@@ -18,6 +18,8 @@
 const fs = require('fs');
 const nodePath = require('path');
 const { problems } = require('./problems.js');
+const { own } = require('./values.js');
+const { pct1 } = require('./metrics/stats.js');
 const { readRecords, normalizeKey, formatOf, getPath } = require('./load.js');
 const { decodeCsvRecords } = require('./csv.js');
 const { routeClass } = require('./align.js');
@@ -39,8 +41,14 @@ const DOMINANT = 0.8;
 // always means few rare values, so this also covers very small sets. Krippendorff's bootstrap (used
 // for names when every compared record has exactly two values) held 95.7-98.1% with under 15: not flagged.
 const FEW_RARE = 20;
+// Trap P34: each resample walks every record, so the two together set the work. 3,000 records at
+// 100,000 resamples, 300 million, took 20 seconds here: this ceiling is about two minutes.
+const MAX_RESAMPLE_WORK = 2e9;
+function checkResamples(resamples, records) {
+  if (resamples * records <= MAX_RESAMPLE_WORK) return;
+  throw new Error('--resamples ' + resamples + ' on ' + records + ' records would take too long: use --resamples ' + Math.floor(MAX_RESAMPLE_WORK / records) + ' or fewer');
+}
 
-const pctOf = x => (x === null ? null : Number((x * 100).toFixed(1)));
 
 // ---------- Files and graders (M1-M4) ----------
 
@@ -93,7 +101,7 @@ function compareOutput({ name, type, metric, order = null, ids, grid, graders, s
   const pairs = [];
   for (let x = 0; x < graders.length; x++) for (let y = x + 1; y < graders.length; y++) {
     const r = krippendorffAlpha(units.map(u => [u[x], u[y]]), opts);
-    pairs.push({ graders: [graders[x], graders[y]], alpha: r.alpha, units: r.units, agreement: r.agreement, agreement_pct: pctOf(r.agreement) });
+    pairs.push({ graders: [graders[x], graders[y]], alpha: r.alpha, units: r.units, agreement: r.agreement, agreement_pct: pct1(r.agreement) });
   }
   // Alpha without each grader (with 3 or more), like Cronbach's alpha-if-item-deleted: the grader
   // whose removal raises alpha most labels most differently from the rest. It shows who differs,
@@ -107,7 +115,7 @@ function compareOutput({ name, type, metric, order = null, ids, grid, graders, s
       oddOne = best ? best.grader : null;
     }
   }
-  const dominant = a.top === null ? null : { value: show(a.top.value), share: a.top.share, pct: pctOf(a.top.share) };
+  const dominant = a.top === null ? null : { value: show(a.top.value), share: a.top.share, pct: pct1(a.top.share) };
   const out = {
     name, type, metric,
     alpha: a.alpha,
@@ -118,8 +126,8 @@ function compareOutput({ name, type, metric, order = null, ids, grid, graders, s
     graded_by_one: gradedByOne,
     observed: a.observed,
     expected: a.expected,
-    raw_agreement: { share: a.agreement, pct: pctOf(a.agreement) },
-    chance_agreement: { share: a.chance_agreement, pct: pctOf(a.chance_agreement) },
+    raw_agreement: { share: a.agreement, pct: pct1(a.agreement) },
+    chance_agreement: { share: a.chance_agreement, pct: pct1(a.chance_agreement) },
     dominant,
     // Only when alpha is short of reliable: a reliable alpha needs no explaining (review 7).
     prevalence_warning: a.alpha !== null && a.alpha < THRESHOLDS.reliable && dominant !== null && dominant.share >= DOMINANT,
@@ -151,12 +159,13 @@ const slotShow = k => (k.startsWith('v:') ? k.slice(2) : slotLabel({ any_of: JSO
 // majority: true also works out the majority answer key (--write-key; majorityOf below).
 function agreeKeys({ config, keyPaths, names = null, outputs = null, mode = 'strict', resamples = 2000, seed = 1, majority = false }) {
   const p = problems(mode);
+  if (config.split) p.warn('P31', 'config', 'the config has a split: agree ignores it and reads every record, the held-out half too, and split.log does not count that look. Keep the held-out half out of the files given here');
   const graders = graderList(keyPaths, names, p, baseName);
   p.throwIfStopped();
 
   const hasRoute = Boolean(config.routing && config.routing.gold_field);
   // The gold route is compared under the name "route"; an output of that name would be shadowed.
-  if (hasRoute && config.outputs[ROUTE]) p.stop('M11', 'config', 'has an output named "route", the name agree gives the routing gold field ("' + config.routing.gold_field + '"); rename the output so --output and the report can tell them apart');
+  if (hasRoute && own(config.outputs, ROUTE)) p.stop('M11', 'config', 'has an output named "route", the name agree gives the routing gold field ("' + config.routing.gold_field + '"); rename the output so --output and the report can tell them apart');
   p.throwIfStopped();
   const all = [...Object.keys(config.outputs), ...(hasRoute ? [ROUTE] : [])];
   const chosen = outputs || all;
@@ -217,9 +226,8 @@ function agreeKeys({ config, keyPaths, names = null, outputs = null, mode = 'str
   }
 
   // The records, in the order they first appear; each grader's records.
-  const ids = [];
+  const ids = [...new Set(keys.flatMap(key => key.map(r => r.id)))];
   const byGrader = keys.map(key => new Map(key.map(r => [r.id, r])));
-  for (const key of keys) for (const r of key) if (!ids.includes(r.id)) ids.push(r.id);
   // M6: graders who labelled different records. Allowed (alpha is built for missing values, and
   // double-labelling a sample is common), but said, with what each grader lacks.
   const lacks = byGrader.map(m => ids.filter(id => !m.has(id)).length);
@@ -230,6 +238,7 @@ function agreeKeys({ config, keyPaths, names = null, outputs = null, mode = 'str
   // M7: nothing labelled by two people.
   if (!ids.some(id => byGrader.filter(m => m.has(id)).length >= 2)) p.stop('M7', keyPaths.join(', '), 'no record is in two graders\' keys: there is nothing to compare');
   p.throwIfStopped();
+  checkResamples(resamples, ids.length);
 
   const results = chosen.map(name => {
     const base = { ids, graders, resamples, seed };
@@ -305,7 +314,7 @@ function majorityOf({ config, cfg, chosen, ids, byGrader, rawsOf }) {
         continue;
       }
       const vals = given.map(r => (isRoute ? String(r.gold_route).trim() : r.outputs[name]));
-      const keyOf = isRoute ? v => config.routing.map[v] : cfg.outputs[name].type === 'set' ? v => JSON.stringify(v.map(slotKey).sort()) : v => String(v);
+      const keyOf = isRoute ? v => own(config.routing.map, v) : cfg.outputs[name].type === 'set' ? v => JSON.stringify(v.map(slotKey).sort()) : v => String(v);
       const groups = new Map();
       for (const v of vals) { const k = keyOf(v); groups.set(k, [...(groups.get(k) || []), v]); }
       const ranked = [...groups.values()].sort((x, y) => y.length - x.length);
@@ -357,7 +366,18 @@ function majorityKeyText(config, majority, outPath = 'key.json') {
   const input = config.input.key || {};
   const format = formatOf(outPath, input);
   if (format === 'csv') throw new Error('--write-key writes JSON or JSON Lines, not CSV (' + (input.format ? 'the config reads its key as CSV: input.key.format' : outPath + ' would be read back as CSV') + '). Write it to a .json or .jsonl file, with a config that reads that');
-  const setPath = (obj, path, v) => { const parts = path.split('.'); let o = obj; parts.slice(0, -1).forEach(k => { o = o[k] = o[k] || {}; }); o[parts[parts.length - 1]] = v; return obj; };
+  // Writes only to objects it made: a path part named constructor is a field here, not the object's
+  // own constructor (trap P15; a config path never holds __proto__).
+  const setPath = (obj, path, v) => {
+    const parts = path.split('.');
+    let o = obj;
+    for (const k of parts.slice(0, -1)) {
+      if (!Object.hasOwn(o, k)) o[k] = {};
+      o = o[k];
+    }
+    o[parts[parts.length - 1]] = v;
+    return obj;
+  };
   const records = majority.written.map(r => {
     const rec = setPath({}, config.id_field, r.id);
     for (const [field, v] of Object.entries(r.fields || {})) setPath(rec, field, v);
@@ -392,6 +412,7 @@ function agreeGrades({ gradePaths, names = null, mode = 'strict', resamples = 20
 
   const cells = first.forms.flatMap(form => first.fields.map(f => [form, f.name]));
   const ids = cells.map(([form, field]) => form + ' ' + field);
+  checkResamples(resamples, ids.length);
   const gradeOf = g => cells.map(([form, field]) => { const x = g.grades.get(form + '\u0000' + field); return x ? x.grade : null; });
   const grid = files.map(gradeOf);
   if (!ids.some((_, i) => grid.filter(g => g[i] !== null).length >= 2)) p.stop('M7', gradePaths.join(', '), 'no field is graded by two reviewers: there is nothing to compare');
@@ -412,4 +433,4 @@ function agreeGrades({ gradePaths, names = null, mode = 'strict', resamples = 20
   };
 }
 
-module.exports = { agreeKeys, agreeGrades, majorityKeyText };
+module.exports = { agreeKeys, agreeGrades, majorityKeyText, MAX_RESAMPLE_WORK };

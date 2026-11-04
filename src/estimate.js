@@ -15,23 +15,33 @@
 const fs = require('fs');
 const nodePath = require('path');
 const { problems } = require('./problems.js');
-const { readRecords, formatOf, normalizePredictions, normalizeKey } = require('./load.js');
+const { own } = require('./values.js');
+const { readText } = require('./text.js');
+const { readRecords, formatOf, normalizePredictions, normalizeKey, keySample, keyIsRun } = require('./load.js');
 const { decodeCsvRecords } = require('./csv.js');
 const { align } = require('./align.js');
 const { judgeAll, judgeRecord, buildContext } = require('./metrics/judge.js');
-const { rate, cohensKappa, pct } = require('./metrics/stats.js');
+const { rate, cohensKappa, pct, pct1 } = require('./metrics/stats.js');
 const { estimateRange, worthOf, targetOf, allocate } = require('./metrics/estimate.js');
+const { failedShare } = require('./metrics/routing.js');
 
 const GROUPS = ['flagged', 'passed'];
-const pct1 = x => (x === null ? null : Number((x * 100).toFixed(1)));
 const list = ids => ids.slice(0, 20).map(id => '"' + id + '"').join(', ') + (ids.length > 20 ? ' and ' + (ids.length - 20) + ' more' : '');
 
 // One side's records, read as loadRun reads them (load.js), without pairing.
-function readSide(config, file, which, p) {
+// kept.raws: the records as read, for the A8 check.
+function readSide(config, file, which, p, kept = {}) {
   const input = config.input[which];
   let raws = readRecords(file, p, input);
   if (formatOf(file, input) === 'csv') raws = decodeCsvRecords(raws, config, which === 'predictions' ? 'predictions' : 'key', input, file, p);
+  kept.raws = raws;
   return which === 'predictions' ? normalizePredictions(raws, config, file, p) : normalizeKey(raws, config, file, p);
+}
+
+// A8 here as in score (trap P20): a key that holds what the run holds, read from the same fields.
+function selfScored(config, run, key, predPath, keyPath, p) {
+  if (!keyIsRun(run.raws, keySample(key.raws, config), () => key.raws, config)) return;
+  p.stop('A8', predPath, predPath + ' and ' + keyPath + ' hold the same records and the same fields, so every record would be scored against itself. Set key_field on each output to where the answers are.');
 }
 
 // K8: an output one key never fills on the checked records while the other fills it on some. The
@@ -61,7 +71,7 @@ function differentOutputs(config, judgeKey, personKey, judgePath, personPath, p)
 // known before pairing. The run's other records still pair, so every route is checked as in score:
 // a record with no verdict gets an empty stand-in for the pairing, and nothing found on a stand-in
 // is reported (it is not the judge's).
-const isOutRoute = (r, config) => typeof r.route === 'string' && config.routing.map[r.route.trim()] === 'auto';
+const isOutRoute = (r, config) => typeof r.route === 'string' && own(config.routing.map, r.route.trim()) === 'auto';
 function judgeRun(config, predictions, judgeKey, predPath, judgeKeyPath, p) {
   const judgeIds = new Set(judgeKey.map(k => k.id));
   const unjudged = predictions.filter(r => isOutRoute(r, config) && !judgeIds.has(r.id)).map(r => r.id);
@@ -114,7 +124,7 @@ function bunched(outInOrder, verdictOf, checkedIds, p, predPath) {
 // Returns { file, seed, n, exact } for the report, or null after a stop.
 function picksCheck(picksPath, checkedIds, personKeyPath, predPath, p) {
   let raw;
-  try { raw = JSON.parse(fs.readFileSync(picksPath, 'utf8').replace(/^﻿/, '')); } catch (e) {
+  try { raw = JSON.parse(readText(picksPath).replace(/^﻿/, '')); } catch (e) {
     p.stop('K14', picksPath, (e.code ? 'cannot read the picks file: ' : 'not valid JSON: ') + e.message);
     return null;
   }
@@ -138,6 +148,7 @@ function picksCheck(picksPath, checkedIds, personKeyPath, predPath, p) {
 
 function estimateRun({ config, predPath, judgeKeyPath, personKeyPath, mode = 'strict', target = null, picksPath = null }) {
   const p = problems(mode);
+  if (config.split) p.warn('P31', 'config', 'the config has a split: estimate ignores it and reads every record, the held-out half too, and split.log does not count that look. Keep the held-out half out of the files given here');
   // K9: one file as both keys: the person "agrees" with the judge everywhere, and proves nothing.
   // A copy of the judge's key under another name is the same thing.
   const sameContent = () => { try { return fs.readFileSync(judgeKeyPath).equals(fs.readFileSync(personKeyPath)); } catch (e) { return false; } };
@@ -145,9 +156,12 @@ function estimateRun({ config, predPath, judgeKeyPath, personKeyPath, mode = 'st
     p.stop('K9', personKeyPath, 'is also the judge\'s key (the same file, or exactly the same content): the person\'s checks must be their own answer key, written without seeing the judge\'s verdicts');
     p.throwIfStopped();
   }
-  const predictions = readSide(config, predPath, 'predictions', p);
-  const judgeKey = readSide(config, judgeKeyPath, 'key', p);
-  const personKey = readSide(config, personKeyPath, 'key', p);
+  const run = {}, judge = {}, person = {};
+  const predictions = readSide(config, predPath, 'predictions', p, run);
+  const judgeKey = readSide(config, judgeKeyPath, 'key', p, judge);
+  const personKey = readSide(config, personKeyPath, 'key', p, person);
+  selfScored(config, run, judge, predPath, judgeKeyPath, p);
+  selfScored(config, run, person, predPath, personKeyPath, p);
   p.throwIfStopped();
 
   const runIds = new Set(predictions.map(r => r.id));
@@ -189,9 +203,12 @@ function estimateRun({ config, predPath, judgeKeyPath, personKeyPath, mode = 'st
 
   const outIds = predictions.map(r => r.id).filter(id => judgeOf.get(id).route_class === 'auto');
   const out = outIds.length;
+  // Trap P2: every model call failed. A report says so at the top; a gate fails on it (bin/wfeval.js).
+  const failed = predictions.filter(r => !r.scored).length;
+  const nothing = failedShare(failed, predictions.length);
   if (out === 0) {
     p.stop('K5', predPath, 'no record went out without review: there is no silent error rate to estimate');
-    p.throwIfStopped();
+    try { p.throwIfStopped(); } catch (e) { e.nothing_evaluated = nothing; throw e; }
   }
   const isOut = new Set(outIds);
   const flaggedOf = new Map(outIds.map(id => [id, Boolean(judgeOf.get(id).silent)]));
@@ -254,6 +271,7 @@ function estimateRun({ config, predPath, judgeKeyPath, personKeyPath, mode = 'st
   return {
     kind: 'estimate',
     inputs: { predictions: predPath, judge_key: judgeKeyPath, person_key: personKeyPath, mode, wrong_when: config.wrong_when, ...(picksPath ? { picks: picksPath } : {}) },
+    ...(nothing ? { nothing_evaluated: { why: nothing } } : {}),
     judge_records: judgeKey.length,
     records: predictions.length,
     out,
@@ -318,8 +336,11 @@ function pickRun({ config, predPath, judgeKeyPath, n, seed = 1, mode = 'strict',
   if (!Number.isInteger(n) || n < 1) throw new Error('[K10] --pick must be a whole number of 1 or more, got ' + JSON.stringify(n));
   if (!Number.isInteger(seed) || seed < 0 || seed > 4294967295) throw new Error('[K12] --seed must be a whole number from 0 to 4294967295 (larger ones repeat smaller ones), got ' + JSON.stringify(seed));
   const p = problems(mode);
-  const predictions = readSide(config, predPath, 'predictions', p);
-  const judgeKey = readSide(config, judgeKeyPath, 'key', p);
+  if (config.split) p.warn('P31', 'config', 'the config has a split: estimate ignores it and reads every record, the held-out half too, and split.log does not count that look. Keep the held-out half out of the files given here');
+  const run = {}, judge = {};
+  const predictions = readSide(config, predPath, 'predictions', p, run);
+  const judgeKey = readSide(config, judgeKeyPath, 'key', p, judge);
+  selfScored(config, run, judge, predPath, judgeKeyPath, p);
   p.throwIfStopped();
   const judged = judgeRun(config, predictions, judgeKey, predPath, judgeKeyPath, p);
   const judgeOf = new Map(judgeAll(judged, config).map(j => [j.id, j]));
