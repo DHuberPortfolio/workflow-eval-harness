@@ -3,7 +3,7 @@
 
 const {
   pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines,
-  groupSource, GROUP_RANGES, severalLabels, rulingsWords, pendingLine, rulingStatus, clusterLine, CLUSTER_GROUP_NOTE, CLUSTER_TARGET_NOTE, mixLines, thousands, sized, shownPct, figure, nothingLine,
+  groupSource, GROUP_RANGES, severalLabels, rulingsWords, pendingLine, judgesLine, rulingStatus, clusterLine, CLUSTER_GROUP_NOTE, CLUSTER_TARGET_NOTE, mixLines, thousands, sized, shownPct, figure, nothingLine,
 } = require('./format.js');
 const { withKeyLabels } = require('./format.js');
 // The tuning half and the held-out half (config.split): its own module, hooked in below.
@@ -37,7 +37,7 @@ function keyGapSection(results) {
   const n = g.candidates.length;
   const ruled = results.rulings || null;
   const lines = ['POSSIBLE KEY GAPS  ' + (n
-    ? n + ' applied value' + (n === 1 ? '' : 's') + ' the answer key does not list. Each is a mistake, or a value the answer key is missing: a person rules on ' + (n === 1 ? 'it' : 'each') + '.'
+    ? n + ' applied value' + (n === 1 ? '' : 's') + ' the answer key does not list. Each is a mistake, or a value the answer key is missing: a reviewer rules on ' + (n === 1 ? 'it' : 'each') + '.'
     : g.rejected ? 'none left to rule on: every other applied value is in the answer key' : 'none: every applied value is in the answer key')];
   const classOf = new Map(results.records.map(x => [x.id, x.route_class]));
   const where = c => (c.silent_error
@@ -98,6 +98,8 @@ function headline(results) {
   // Trap I15: the rate with pending rulings counted wrong (above), and counted as added.
   const b = results.rulings && results.rulings.if_pending_added;
   if (b && se.rate.d > 0) lines.push('  ' + pendingLine(b, se.rate));
+  const judged = results.rulings && results.rulings.by_judges;
+  if (judged && se.rate.d > 0) lines.push('  ' + judgesLine(judged, se.rate));
   if (se.one_record_moves_pct !== null && se.rate.d > 1) {
     lines.push('  The likely range is where the true rate on records like these probably sits (95%). With ' + se.rate.d +
       ' records out without review, each one moves the silent error rate by ' + se.one_record_moves_pct.toFixed(1) + ' points.');
@@ -583,12 +585,12 @@ function renderWhatif(w) {
   return parts.join('\n\n') + '\n';
 }
 
-// ---------- Free text, graded by a person ----------
+// ---------- Free text, graded by a reviewer ----------
 
 function renderGrades(g) {
   const parts = ['GRADES  ' + g.inputs.grades + (g.reviewer ? '  (' + g.reviewer + ')' : '') + (g.title ? '  ' + g.title : '')];
   if (g.nothing_evaluated) parts.push(nothingLine(g.nothing_evaluated.why));
-  parts.push(g.overall.graded + ' fields graded by a person against the source · ' + g.inputs.mode + ' mode · scored as labels: faithful, invented or missing');
+  parts.push(g.overall.graded + ' fields graded by ' + (g.reviewer_kind === 'judge' ? 'an AI judge' : 'a reviewer') + ' against the source · ' + g.inputs.mode + ' mode · scored as labels: faithful, invented or missing');
   const row = (name, r, what) => [name, pct(r), count(r), range(r), what];
   const head = [['', 'rate', 'count', 'likely range', 'what it counts']];
   parts.push('HEADLINE\n' + table([...head,
@@ -621,7 +623,7 @@ function renderGrades(g) {
   const a = g.agreement;
   if (a) {
     const k = v => (v === null ? 'not measurable (chance agreement is already 100%)' : v.toFixed(3));
-    const al = ['AGREEMENT  ' + (a.first || g.inputs.grades) + ' and ' + (a.second || g.inputs.second) + ', ' + a.compared + ' fields graded by both'];
+    const al = ['AGREEMENT  ' + (a.first || g.inputs.grades) + ' and ' + (a.second || g.inputs.second) + (g.second_reviewer_kind === 'judge' ? ' (an AI judge)' : '') + ', ' + a.compared + ' fields graded by both'];
     al.push(table([['', 'value', 'count', 'likely range'],
       ['Observed agreement', pct(a.observed), count(a.observed), range(a.observed)],
       ["Cohen's kappa", k(a.kappa), '', ''],
@@ -629,7 +631,7 @@ function renderGrades(g) {
       ["  Cohen's kappa", k(a.invented_kappa), '', ''],
     ], [1, 2]));
     al.push('  Kappa is 1 for perfect agreement, 0 for agreement no better than chance.' + (a.graded_by_one_only ? ' ' + a.graded_by_one_only + ' field(s) graded by only one reviewer are left out.' : ''));
-    al.push('  disagreements' + (a.disagreements.length ? ', for a person to settle:' : ': none'));
+    al.push('  disagreements' + (a.disagreements.length ? ', for a reviewer to settle:' : ': none'));
     for (const d of a.disagreements) al.push('    ' + idCell(d.form) + d.field.padEnd(16) + (d.first + ' / ' + d.second).padEnd(22) + (d.first_note || d.second_note ? '   ' + [d.first_note, d.second_note].filter(Boolean).join(' / ') : ''));
     parts.push(al.join('\n'));
   }

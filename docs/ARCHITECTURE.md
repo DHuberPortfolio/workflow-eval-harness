@@ -14,7 +14,7 @@ answer key  ──>  (csv.js)   (pairs by id)  (one judgment   classification.js
                                            (whatif --policies: policy.js reads the rules, metrics/policy.js replays them)
 
 free text:  grading config + forms ──> grading.js ──> grading-page.js ──> one HTML page
-            a person grades each field, the page saves a grades file
+            a reviewer grades each field, the page saves a grades file
             grades file ──> grading.js ──> metrics/grades.js ──> terminal / JSON
 
 after launch, with no full answer key:
@@ -39,8 +39,11 @@ the answer key's own mistakes:
   and per-group tables and the what-ifs are counts over these judgments, so they cannot disagree.
 - **Metrics are pure functions.** Records in, numbers out; no files, no printing. That
   is what makes them testable with a few lines of data.
-- **A person's rulings, never the tool's.** `rulings.js` reads a rulings file (`--rulings`):
-  a person's add, reject and pending decisions on possible key gaps. Adds join the paired
+- **A reviewer's rulings, never the tool's.** `rulings.js` reads a rulings file (`--rulings`):
+  a reviewer's add, reject and pending decisions on possible key gaps. A reviewer is a person or an
+  AI judge. The harness calls no model: `judges.js` writes questions and reads answers, whatever
+  ran the judges is outside it (`.claude/skills/wfeval`), and every report counts an AI judge's
+  rulings apart and gives the rate without them. Adds join the paired
   records' answer key in memory, before judging, so every metric counts them alike; the key
   file is never written, and every report names the values added.
 - **One results object, three renderings.** Terminal, JSON and HTML all draw from it, and

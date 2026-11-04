@@ -151,6 +151,11 @@ function readGrades(file, p) {
     p.stop('J1', file, 'is not a grades file from the grading page (expected "format": "' + GRADES_FORMAT + '", got ' + describe(isObj(data) ? data.format : data) + ')');
     return null;
   }
+  // Left out, the reviewer is a person; an AI judge's grades say so (Q6).
+  if (data.reviewer_kind !== undefined && !['person', 'judge'].includes(data.reviewer_kind)) {
+    p.stop('J1', file, 'reviewer_kind is ' + describe(data.reviewer_kind) + '; it must be person or judge (left out, it means person)');
+    return null;
+  }
   const lists = ['fields', 'forms', 'grades', 'kinds'];
   for (const k of lists) if (!Array.isArray(data[k])) { p.stop('J1', file, '"' + k + '" must be a list'); return null; }
   if (!isName(data.fingerprint)) { p.stop('J1', file, 'has no "fingerprint" saying which forms were graded'); return null; }
@@ -210,7 +215,7 @@ function readGrades(file, p) {
     p.strict('J5', file, ungraded.length + ' field(s) not graded: ' + shown + (ungraded.length > 10 ? ' and ' + (ungraded.length - 10) + ' more' : ''));
   }
   return {
-    file, reviewer: isName(data.reviewer) ? data.reviewer.trim() : null, fingerprint: data.fingerprint,
+    file, reviewer: isName(data.reviewer) ? data.reviewer.trim() : null, ...(data.reviewer_kind === 'judge' ? { reviewer_kind: 'judge' } : {}), fingerprint: data.fingerprint,
     title: isName(data.title) ? data.title : null, fields, kinds, forms, grades, ungraded,
   };
 }

@@ -465,6 +465,28 @@ of its rules. Tests: `test/audit-judge.test.js`, `test/audit-names.test.js`, `te
 | P44 | A figure added up in the records' order | Decimals added in another order differ in the last digit, so the same run with its key reordered rounded a bucket's stated confidence or gap differently (0.9437 or 0.9438 on real runs) | RULE: added in order of size, so no number depends on the order of a file (test/metamorphic.test.js) |
 | P45 | The same figure in every run, averaged | Adding and dividing left a spread of 1.7e-14 in `--json` for runs with no spread at all | RULE: the same value in every run has a spread of exactly 0 (test/metamorphic.test.js) |
 
+## Q. A reviewer may be an AI judge
+
+Tests: `test/judges.test.js`, each named after its row.
+
+| # | Trap | Why it's dangerous | Action |
+|---|---|---|---|
+| Q1 | A ruling that does not say what kind of reviewer made it, or says something else | A misspelled kind would count as a person's | RULE: left out means person; anything but person or judge STOPS (I12) |
+| Q2 | A file with no AI ruling | New fields would change every old report | RULE: nothing about judges appears unless one ruled |
+| Q3 | A score resting on AI rulings, unlabelled | An AI's opinion reads as a person's, and moves the number the same way | RULE: `by_judges` counts them and gives the rate without them; a pending ruling has decided nothing |
+| Q4 | The same, in a report | JSON alone is not read | RULE: terminal and page both name them and give both rates |
+| Q5 | Commands that read rulings but give one rate | `variance` and `compare` could hide them | RULE: every rulings sentence counts them |
+| Q6 | Free text graded by an AI judge | Read as graded by a person | RULE: `reviewer_kind` in a grades file; the report says who graded; a misspelling STOPS (J1) |
+| Q7 | Reports that assume a person | Wrong once a judge can rule | RULE: a reviewer rules, whoever that is |
+| Q8 | A judge shown who proposed a value, or the ranking | A reader told what others think comes to agree with them | RULE: questions show the case and what the key lists, sorted by record; a label's question shows none of the key |
+| Q9 | A panel that does not agree | A majority of AI readers with a shared blind spot is no safer | RULE: only a unanimous panel decides |
+| Q10 | A split, or a judge who gave no answer | Silence read as a vote | RULE: the ruling stays pending, with a note saying why |
+| Q11 | What a panel writes | Unreadable output is a decision lost | RULE: it reads back as a rulings file and scores |
+| Q12 | Answers that cannot be trusted: an unasked question, the same one twice, no yes or no, a label not in the list, one judge, one judge twice | Each could change a key | STOP (Q2, Q3) |
+| Q13 | A panel's file written over a reviewer's | Rulings lost | STOP (Q4): new files only; nothing pending is nothing to ask (Q1) |
+| Q14 | Judges started on a login that bills per token | Spends someone's money unasked | RULE: `route.js` allows only a login shown to be a plan, or an account a person confirmed. Keys, cloud routes and API logins stop, and outrank anything remembered. Anything else asks |
+| Q15 | Judges creeping into scoring | The harness's promise is that it calls no model | RULE: nothing under `src` or `bin` starts a program or reaches the network |
+
 ## Note on duplicates
 
 "Duplicate" means a record that repeats one already kept, not necessarily an identical

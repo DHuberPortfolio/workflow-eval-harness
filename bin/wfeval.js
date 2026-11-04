@@ -29,7 +29,7 @@ commands:
             silent error rate that mix would see, beside this golden set's: a reweighting,
             not a measurement (the group comes from --group-by or the config's groups).
             Lists the possible key gaps: applied values the answer key does not list.
-            --rulings reads a person's rulings on them (add, reject or pending; and remove,
+            --rulings reads a reviewer's rulings on them (add, reject or pending; and remove,
             keep or replace for what suspects lists): adds, removes and replaces change the
             key for scoring (the key file is never changed), rejected gaps are no longer
             listed, and with pending rulings the silent error rate is also given as if they
@@ -37,13 +37,13 @@ commands:
 
   score     --grades <file> [--second-reviewer <file>] [--lenient]
             [--json <file>] [--quiet] [--fail-on <severity>]
-            score a person's grades of free-text fields (saved by the page wfeval grade
+            score a reviewer's grades of free-text fields (saved by the page wfeval grade
             writes): invented and missing rates per field, per section and per form, and
             two reviewers' agreement. --fail-on high trips on an invented field, medium
             on a missing one too
 
   grade     --config <grading config> --pred <file> --out <page.html>
-            write one self-contained HTML page in which a person grades each free-text
+            write one self-contained HTML page in which a reviewer grades each free-text
             field faithful, invented or missing against its source, and saves the grades
 
   variance  --config <file> --key <file> <run> <run> [<run> ...] [--lenient] [--json <file>]
@@ -161,13 +161,22 @@ commands:
   suspects  --config <file> --key <file> <run> [<run> ...] [--rulings <file>] [--top <n>]
             [--write-rulings <new file>] [--show-held-out] [--lenient] [--json <file>]
             the answer-key entries one or more runs disagree with, the likeliest key errors
-            first, for a person to rule on: values the key may be missing, values it may list
+            first, for a reviewer to rule on: values the key may be missing, values it may list
             wrongly, and labels it may have wrong. Each comes with why, in the numbers the
             ranking used, measured on the key's other records. --top 20 (the default) lists
             that many; --json has them all. --rulings reads earlier rulings: ruled entries are
             not listed again, pending ones show their status. --write-rulings writes a new
             rulings file (never over an existing one): the --rulings file's rulings, then the
             listed suspects as pending, with by and on to fill in
+
+  judges    --config <file> --key <file> --rulings <file> --write-cases <new file>
+  judges    --config <file> --rulings <file> --write-rulings <new file> [--on <date>]
+            <answers> <answers> [<answers> ...]
+            the questions a rulings file leaves open, for AI judges, and their answers
+            turned back into rulings. --write-cases writes the pending rulings as questions,
+            showing what the key lists and nothing of who proposed what. --write-rulings reads one answers file per
+            judge: a unanimous panel decides, marked as an AI judge's, and a split stays
+            pending. The harness calls no model: whatever ran the judges is outside it
 
   with a split in the config (docs/CONFIG.md, "A tuning half and a held-out half"): score,
             compare, variance and whatif report the tuning half only, and say what a look at the
@@ -914,7 +923,46 @@ function suspects(args) {
   return 0;
 }
 
-const COMMANDS = { check, score, variance, compare, whatif, grade, rate: rateCmd, estimate, monitor, agree, suspects };
+// judges: questions for AI judges, and their answers as rulings (traps Q8-Q13).
+function judges(args) {
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
+    config: { type: 'string' }, key: { type: 'string' }, rulings: { type: 'string' }, 'write-cases': { type: 'string' }, 'write-rulings': { type: 'string' }, on: { type: 'string' },
+  } });
+  need(values, ['config', 'rulings'], 'judges');
+  const asking = values['write-cases'];
+  const out = asking || values['write-rulings'];
+  if (!out || (asking && values['write-rulings'])) throw new Error('[Q4] judges needs one of --write-cases (the questions) or --write-rulings (the answers, as rulings)');
+  if (asking && positionals.length) throw new Error('[Q4] --write-cases takes no answers files: it writes the questions');
+  if (asking) need(values, ['key'], 'judges --write-cases');
+  const date = values.on === undefined ? new Date().toISOString().slice(0, 10) : values.on;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('[Q4] --on must be a date like 2026-11-04, got ' + JSON.stringify(values.on));
+  const path = require('node:path');
+  const folder = path.dirname(path.resolve(out));
+  if (!fs.existsSync(folder) || !fs.statSync(folder).isDirectory()) throw new Error('[Q4] the folder ' + folder + ' does not exist; name a file in a folder that does');
+  if (fs.existsSync(out)) throw new Error('[Q4] ' + out + ' already exists: it may hold a reviewer\'s rulings. Name a new file');
+  const outputs = { [asking ? '--write-cases' : '--write-rulings']: out };
+  apart(outputs, { '--config': values.config, '--key': values.key, '--rulings': values.rulings, 'an answers file': positionals });
+  const config = configFor(values.config, outputs);
+  const { loadRulings } = require('../src/rulings.js');
+  const { casesFrom, mergeAnswers } = require('../src/judges.js');
+  const rulings = loadRulings(values.rulings, config, 'strict');
+  if (asking) {
+    const cases = casesFrom(rulings, config, require('../src/load.js').loadKey({ config, keyPath: values.key }));
+    fs.writeFileSync(out, JSON.stringify({ cases }, null, 1) + '\n', { flag: 'wx' });
+    line(cases.length + ' question(s) written to ' + out);
+    return 0;
+  }
+  const { readText } = require('../src/text.js');
+  const files = positionals.map(file => {
+    try { return { file, data: JSON.parse(readText(file).replace(/^\uFEFF/, '')) }; } catch (e) { throw new Error('[Q2] cannot read ' + file + ' as JSON: ' + e.message); }
+  });
+  const { text, counts } = mergeAnswers(rulings, config, files, { on: date });
+  fs.writeFileSync(out, text, { flag: 'wx' });
+  line(counts.judges + ' AI judges, ' + counts.cases + ' cases: ' + counts.decided + ' decided (all agreed), ' + counts.split + ' split, ' + counts.unanswered + ' unanswered. Wrote ' + out);
+  return 0;
+}
+
+const COMMANDS = { check, score, variance, compare, whatif, grade, rate: rateCmd, estimate, monitor, agree, suspects, judges };
 
 // What the language says at the edge of its limits, in words about this run (trap P35). What is
 // listed here has a limit of its own, so a person is told what to change, never to read a stack.

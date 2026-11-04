@@ -175,6 +175,13 @@ const typesIn = records => [...new Set(records.flatMap(x => x.types))];
 const some = (items, max = 12) => items.slice(0, max).join(', ') + (items.length > max ? ', +' + (items.length - max) + ' more' : '');
 const ruledValue = x => x.id + ' ' + x.output + ' ' + x.value;
 
+// How many rulings an AI judge made, as a sentence, or nothing: a file with none reads as before (Q2).
+function judgesSentence(r) {
+  const n = require('../rulings.js').judgeDecided(r).length;
+  if (n === 0) return [];
+  return [n + ' of the decided rulings ' + (n === 1 ? 'was made by an AI judge' : 'were made by AI judges') + ', not a person.'];
+}
+
 // What a rulings file did to the answer key (results.rulings), as sentences (trap I11). The key
 // in use is not the key file alone, so every report says so, and names the values it added.
 // against: which key, when a report has two (" (key-v2.json)").
@@ -188,7 +195,7 @@ function rulingsWords(r, against = '') {
   const also = [r.rejected.length + ' ruled not a gap', r.pending.length + ' pending (counted wrong)'];
   if (r.set_aside.length) also.push(r.set_aside.length + ' set aside (see the warnings)');
   words.push('Also in the file: ' + also.join(', ') + '.');
-  return words;
+  return [...words, ...judgesSentence(r)];
 }
 
 // The same for a file that uses suspects' verbs (remove, keep, replace; traps N11-N14): every
@@ -208,7 +215,14 @@ function rulingsWordsAll(r, against) {
     r.pending.length + ' pending (scored as the answer key stands)'];
   if (r.set_aside.length) also.push(r.set_aside.length + ' set aside (see the warnings)');
   words.push('Also in the file: ' + also.join(', ') + '.');
-  return words;
+  return [...words, ...judgesSentence(r)];
+}
+
+// The silent error rate with what AI judges decided taken back out (results.rulings.by_judges; Q3).
+function judgesLine(j, strict) {
+  const n = j.decided;
+  return 'Without the ' + n + ' ruling' + (n === 1 ? ' made by an AI judge' : 's made by AI judges') + ': ' + pct(j.silent_errors) +
+    ' (' + count(j.silent_errors) + ', likely ' + range(j.silent_errors) + '), against ' + pct(strict) + ' with ' + (n === 1 ? 'it' : 'them') + '.';
 }
 
 // The bracket for pending rulings (results.rulings.if_pending_added; trap I15), beside the strict
@@ -277,6 +291,6 @@ function withKeyLabels(results) {
 module.exports = {
   nothingLine, shownPct,
   withKeyLabels, plural, pct, count, range, num, signed, list, table, CLASS_LABELS, WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines,
-  groupSource, GROUP_RANGES, severalLabels, some, ruledValue, rulingsWords, pendingLine, rulingStatus, clusterLine, CLUSTER_GROUP_NOTE, CLUSTER_TARGET_NOTE,
+  groupSource, GROUP_RANGES, severalLabels, some, ruledValue, rulingsWords, pendingLine, judgesLine, rulingStatus, clusterLine, CLUSTER_GROUP_NOTE, CLUSTER_TARGET_NOTE,
   mixLines, thousands, sized, shownPct, figure,
 };

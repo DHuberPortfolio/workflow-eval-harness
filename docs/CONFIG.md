@@ -631,6 +631,7 @@ key and is read with it; the key file itself is never changed. A real one:
 | `output` | A set output from the config. Labels have one answer per record, so a key cannot be missing one. |
 | `value` | The value ruled on. Trimmed, and read through the config's `equivalents`, so a ruling written with an alias rules on the value it stands for. |
 | `ruling` | `add`, `reject` or `pending` (below). |
+| `reviewer_kind` | `person` (left out, it means this) or `judge`, for a ruling an AI judge made. Reports count those apart and give the silent error rate without them. |
 | `by`, `on` | Who decided, and when. Required for a decided ruling (every verb but `pending`): an untraceable ruling is what the file replaces. Missing, scoring stops (strict mode) or warns (`--lenient`). A `pending` ruling decides nothing yet and reads without them. |
 | `note` | Optional: why. |
 
@@ -715,6 +716,44 @@ or a decline) was made on another version of the key: a warning, and it is set a
 `wfeval suspects` then lists its suspect as "set aside", and `--write-rulings` puts the new pending
 ruling in its place, with a note saying what it replaces. A file with none of these verbs reads and
 reports exactly as before.
+
+## AI judges (`wfeval judges`)
+
+A reviewer is a person or an AI judge. `wfeval judges` turns the questions a rulings file leaves open
+into cases for a panel of AI judges, and their answers back into rulings. **The harness calls no
+model:** it writes the questions and reads the answers. In Claude Code the `wfeval` skill
+(`.claude/skills/wfeval`) runs the panel, on a Claude plan with no stop. It stops first if the judges
+would be billed per token, and the person decides.
+
+```
+wfeval suspects --config c.json --key key.json run.json --write-rulings pending.json
+wfeval judges --config c.json --key key.json --rulings pending.json --write-cases cases.json
+  (each judge answers, in a file of its own)
+wfeval judges --config c.json --rulings pending.json --write-rulings judged.json a.json b.json c.json
+wfeval score --config c.json --pred run.json --key key.json --rulings judged.json
+```
+
+`--write-cases` lists each pending ruling as a question. It shows what the key already lists for the
+record (`listed`), because whether a value repeats one already there cannot be judged without it, and
+nothing of who proposed what, the runs or the ranking. Questions come sorted by record. A label's
+question gives the labels and nothing of the key's.
+
+An answers file is `{ "judge": "name", "answers": [...] }`: for a value `{ "id", "output", "value",
+"belongs": true or false, "why" }`, for a label `{ "id", "output", "label", "why" }`.
+
+`--write-rulings` needs at least 2 judges. Only a unanimous panel decides, with `reviewer_kind` set to
+`judge`, `by` saying how many judges, and `on` today's date (`--on` sets it). What belonging means follows
+the question: a value the key lacks is added or rejected, one it lists is kept or removed, and a label is
+kept or replaced. A split, or a judge who gave no answer, stays pending with a note saying so. Rulings
+already decided are carried over as written. An answer to a question nobody asked, a repeated answer or
+an answer that says nothing stops the run (Q3), and an output file that exists is never overwritten (Q4).
+
+A panel's agreement is not evidence that it is right. In a blind test on the 25 real rulings of the
+[compliance example](../examples/compliance-reviewer/KEY_GAPS.md), unanimous Sonnet judges matched the
+person on 14 of 24 decisions (58.3%, likely 38.8-75.5%) and unanimous Haiku judges on 15 of 21 (71.4%,
+likely 50.0-86.2%); answering no every time would have matched 16 of 25 (64.0%). Those were borderline
+cases, and their F1 scores landed nearer the person's than the untouched key did, by errors that offset.
+So treat judged numbers as advice beside the key's own: never run a gate on them.
 
 ## A judge's answer key checked by a person (`wfeval estimate`)
 
@@ -932,7 +971,7 @@ rate, and the alarming rate above the acceptable rate too (trap L4). Why these d
 
 ## Grading free text (`wfeval grade`)
 
-Free-text outputs have no answer key; a person grades them. `wfeval grade` takes a separate,
+Free-text outputs have no answer key; a reviewer grades them. `wfeval grade` takes a separate,
 smaller config that says where each form's fields and source text are:
 
 ```json

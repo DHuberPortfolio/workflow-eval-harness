@@ -172,7 +172,7 @@ function renderSuspects(r, top = 20) {
     const kinds = [[c.key_lacks, 'value', 'values', 'the answer key may be missing'], [c.key_lists, 'value', 'values', 'it may list wrongly'],
       [c.label, 'label', 'labels', 'it may have wrong']].filter(([k]) => k > 0).map(([k, one, many, what]) => k + ' ' + (k === 1 ? one : many) + ' ' + what);
     lines.push(wrap(c.total + ' suspect' + (c.total === 1 ? '' : 's') + ': ' + kinds.join(', ') + '. Each is a mistake by the workflow or by the answer key: ' +
-      'a person reads the record and rules.', '  '));
+      'a reviewer reads the record and rules.', '  '));
     const shown = r.suspects.slice(0, top);
     const rows = [['#', 'record', 'output', 'the answer key', 'the run' + (n === 1 ? '' : 's')]];
     // Two spaces between columns, not three: long values and confidence ranges fit in 100.

@@ -56,4 +56,4 @@ function resolveSet(pred, key) {
   return { applied, right: applied.filter(v => ok.has(v)), wrong: applied.filter(v => !ok.has(v)), unfilled };
 }
 
-module.exports = { accepted, resolveSet, slotLabel, unfilledLabel };
+module.exports = { accepted, resolveSet, slotLabel, slotValues, unfilledLabel };

@@ -296,7 +296,7 @@ is written.
   of the runs: how many records the workflow can get wrong unseen at least sometimes. That
   count only grows as runs are added, so read it with the number of runs it names. It also
   lists the records that changed route between runs, and **possible key gaps**:
-  values stated in every run that the answer key does not list, for a person to rule on (with
+  values stated in every run that the answer key does not list, for a reviewer to rule on (with
   `--rulings`, each shows its ruling, and rejected ones are only counted).
 - **`wfeval compare`**: what changed between two runs, judged two ways, each asking its own
   question.
@@ -589,3 +589,10 @@ two sets are apart, given for comparison ([why Jaccard is the one used](METRICS.
 
 Why each number exists: [METRICS.md](METRICS.md). Every error code in full:
 [SILENT_ERRORS.md](SILENT_ERRORS.md).
+
+## Rulings made by AI judges
+
+A ruling can come from an AI judge (`"reviewer_kind": "judge"`, written by `wfeval judges`). A report using
+such rulings says how many there are, and `score` gives the silent error rate without them (`by_judges` in
+`--json`), so you can see what they moved. A file with no AI ruling reads as it always did. See
+[CONFIG.md](CONFIG.md#ai-judges-wfeval-judges) for how far to trust them.

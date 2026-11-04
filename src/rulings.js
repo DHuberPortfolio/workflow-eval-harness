@@ -1,6 +1,7 @@
-// A person's rulings on possible key gaps (trap I7): values a workflow states that the answer
+// A reviewer's rulings on possible key gaps (trap I7): values a workflow states that the answer
 // key does not list. Each is the same mistake made every time, or a value the key is missing,
-// and only a person can tell which. Kept in a file, each ruling is made once, with who made it
+// and the numbers alone cannot tell which: a reviewer does, a person or an AI judge
+// (reviewer_kind, section Q of test/TRAPS.md). Kept in a file, each ruling is made once, with who made it
 // and when, instead of in a notes table and again on every run (traps I11-I14).
 //
 //   { "rulings": [{ "id": "R2", "output": "SUBJECT", "value": "SUBJ-ANTI", "ruling": "reject",
@@ -31,7 +32,10 @@ const { accepted } = require('./metrics/slots.js');
 const { isObj, describe, own, addAll } = require('./values.js');
 
 const RULINGS = ['add', 'reject', 'pending', 'remove', 'keep', 'replace'];
-const KEYS = ['id', 'output', 'value', 'ruling', 'by', 'on', 'note', 'with', 'proposed'];
+const KEYS = ['id', 'output', 'value', 'ruling', 'by', 'on', 'note', 'with', 'proposed', 'reviewer_kind'];
+// Left out, a ruling is a person's. An AI judge's is marked, so that every report can count it
+// apart and take it back out (Q1-Q5).
+const REVIEWER_KINDS = ['person', 'judge'];
 // The verbs that fit each kind of output (N11): a set value the key lacks, add or reject; one it
 // lists, remove or keep; a label, replace or keep. pending for any.
 const LABEL_RULINGS = ['replace', 'keep', 'pending'];
@@ -67,6 +71,7 @@ function readRuling(r, at, config, p) {
     bad('ruling is ' + describe(r.ruling) + '; it must be one of: ' + RULINGS.join(', ') + (near ? ' (did you mean "' + near + '"?)' : ''));
   }
   for (const k of ['by', 'on', 'note', 'with', 'proposed']) if (r[k] !== undefined && r[k] !== null && typeof r[k] !== 'string') bad('"' + k + '" must be text, got ' + describe(r[k]));
+  if (r.reviewer_kind !== undefined && !REVIEWER_KINDS.includes(r.reviewer_kind)) bad('reviewer_kind is ' + describe(r.reviewer_kind) + '; it must be one of: ' + REVIEWER_KINDS.join(', ') + ' (left out, it means person)');
   const label = o && o.type !== 'set' && o.field !== config.routing.field;
   const read = equivalentOf(config.equivalents, typeof r.output === 'string' ? r.output : '');
   // N11: what --write-rulings writes, with "pending" changed to the ruling and nothing else, leaves
@@ -130,7 +135,8 @@ function readRuling(r, at, config, p) {
     if (r.ruling !== 'pending' && text(k) === null) p.strict('I13', at, named({ id, output: r.output, value: as }) + ' has no "' + k + '": say ' + what + ', so the ruling can be traced');
   }
   return { id, output: r.output, value: as, ruling: r.ruling, by: text('by'), on: text('on'), note: text('note'), at, label,
-    ...(withValue !== undefined ? { with: withValue } : {}), ...(r.proposed !== undefined && !dropProposed ? { proposed: r.proposed } : {}) };
+    ...(withValue !== undefined ? { with: withValue } : {}), ...(r.proposed !== undefined && !dropProposed ? { proposed: r.proposed } : {}),
+    ...(r.reviewer_kind === 'judge' ? { reviewer_kind: 'judge' } : {}) };
 }
 
 // Reads and checks a rulings file against the config. Throws one error listing every stop
@@ -175,7 +181,8 @@ function loadRulings(file, config, mode = 'strict') {
 }
 
 const entry = x => ({ id: x.id, output: x.output, value: x.value, by: x.by, on: x.on, note: x.note,
-  ...(x.with !== undefined ? { with: x.with } : {}), ...(x.proposed !== undefined ? { proposed: x.proposed } : {}) });
+  ...(x.with !== undefined ? { with: x.with } : {}), ...(x.proposed !== undefined ? { proposed: x.proposed } : {}),
+  ...(x.reviewer_kind ? { reviewer_kind: x.reviewer_kind } : {}) });
 // A pending ruling's question: a value the key may be missing (add), one it may hold wrongly
 // (remove), or a label it may have wrong (replace).
 const pendingKind = x => (x.with !== undefined ? 'replace' : x.proposed === 'remove' ? 'remove' : 'add');
@@ -315,4 +322,12 @@ function annotateGaps(candidates, ruled) {
   };
 }
 
-module.exports = { loadRulings, applyRulings, addToKey, applyToKey, annotateGaps, pendingKind, RULINGS };
+// What AI judges decided in results.rulings, and the same rulings with those taken back out. A
+// pending ruling has decided nothing, whoever wrote it.
+const isJudge = x => x.reviewer_kind === 'judge';
+const keyChanges = r => [...r.added, ...(r.removed || []), ...(r.replaced || [])];
+const judgeDecided = r => [...keyChanges(r), ...r.rejected, ...(r.kept || [])].filter(isJudge);
+const judgeChanges = r => keyChanges(r).filter(isJudge);
+const withoutJudges = r => ({ ...r, added: r.added.filter(x => !isJudge(x)), removed: (r.removed || []).filter(x => !isJudge(x)), replaced: (r.replaced || []).filter(x => !isJudge(x)) });
+
+module.exports = { loadRulings, applyRulings, addToKey, applyToKey, annotateGaps, pendingKind, judgeDecided, judgeChanges, withoutJudges, RULINGS };

@@ -4,7 +4,7 @@
 // and data must never be able to run as code in the report.
 
 const {
-  WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines, groupSource, GROUP_RANGES, severalLabels, rulingsWords, pendingLine,
+  WRONG_WHEN, TYPE_LABELS, TARGET_WORDS, typesIn, omissionWhat, declineRows, targetLines, groupSource, GROUP_RANGES, severalLabels, rulingsWords, pendingLine, judgesLine,
   clusterLine, CLUSTER_GROUP_NOTE, CLUSTER_TARGET_NOTE, mixLines,
 } = require('./format.js');
 const { withKeyLabels, num, shownPct } = require('./format.js');
@@ -225,6 +225,8 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
     '<div class="hero-note">' + heroNote(se.rate, se.one_record_moves_pct) + '</div></section>');
   const pending = results.rulings && results.rulings.if_pending_added;
   if (pending && se.rate.d > 0) s.push('<p>' + esc(pendingLine(pending, se.rate)) + '</p>');   // trap I15
+  const judged = results.rulings && results.rulings.by_judges;
+  if (judged && se.rate.d > 0) s.push('<p>' + esc(judgesLine(judged, se.rate)) + '</p>');   // Q4
   // Trap G14: the range counting clusters. Only with clusters: a report without them is unchanged.
   if (results.clusters) s.push('<p>' + esc(clusterLine(results.clusters)) + '</p>');
   // Trap G18: the rate weighted to a real mix. Only with --mix: a report without it is unchanged.

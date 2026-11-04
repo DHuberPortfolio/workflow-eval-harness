@@ -533,7 +533,7 @@ medium silent omission ([SILENT_ERRORS.md](SILENT_ERRORS.md#declines)).
 
 A free-text field (a paragraph of an assessment form filled from a visit transcript) has no
 answer key to compare against, and its failure is a form that reads plausibly and says
-something the person never said. So a person grades it: `wfeval grade` writes a page that
+something the person never said. So a reviewer grades it: `wfeval grade` writes a page that
 shows each field beside its source, and the reviewer gives each field one grade.
 
 | Grade | Means | Severity |

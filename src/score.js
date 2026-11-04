@@ -4,7 +4,7 @@
 
 const { problems, addNew } = require('./problems.js');
 const { loadRun, loadKey, acrossFiles } = require('./load.js');
-const { applyRulings, addToKey, applyToKey, annotateGaps, pendingKind } = require('./rulings.js');
+const { applyRulings, addToKey, applyToKey, annotateGaps, pendingKind, judgeDecided, judgeChanges, withoutJudges } = require('./rulings.js');
 const { judgeAll, judgeRecord, buildContext } = require('./metrics/judge.js');
 const { scoreQuality } = require('./metrics/classification.js');
 const { scoreRouting, nothingEvaluated } = require('./metrics/routing.js');
@@ -113,7 +113,7 @@ function scoreRun({ config, predPath, keyPath, mode = 'strict', target = null, c
   // ---- split: rulings on held-out records are counted, never listed; the bracket is the tuning half's (O18).
   // A ruling on a record in neither half (not in the key) is listed as without a split.
   const shownRulings = ruled && halves ? rulingsWithout(ruled, sp.hidden) : ruled;
-  if (ruled) results.rulings = { ...shownRulings, ...(parts === 'all' ? { if_pending_added: pendingAdded(records, results, config, shownRulings) } : {}) };
+  if (ruled) results.rulings = { ...shownRulings, ...(parts === 'all' ? { if_pending_added: pendingAdded(records, results, config, shownRulings), ...judgedPart(run.records, records, config, ruled, shownRulings) } : {}) };
   // Asked to look, the gate reads both halves. A look at a run that evaluated nothing, or at a half of
   // failed calls, would spend the half's share and show nothing: none is spent, and nothing of the
   // half is shown, so a look not counted is never a look (trap P41).
@@ -223,6 +223,17 @@ function pendingAdded(records, results, config, ruled) {
     became: [...now].filter(id => !was.has(id)),
     ...(bracket ? {} : { however_ruled: range.exact ? { lowest: rate(range.low, strict.d), highest: rate(range.high, strict.d), exact: true } : { exact: false, records: range.too_many } }),
   };
+}
+
+// Rulings made by AI judges, and the silent error rate with them taken back out (Q3): the same
+// records against the key with a person's rulings alone. Only when there are any, so results with
+// no AI ruling read as before.
+function judgedPart(all, records, config, ruled, shown) {
+  const decided = judgeDecided(shown).length;
+  if (decided === 0) return {};
+  const ids = new Set(records.map(r => r.id));
+  const alone = applyToKey(all, withoutJudges(ruled)).filter(r => ids.has(r.id));
+  return { by_judges: { decided, changed_key: judgeChanges(shown).length, silent_errors: scoreRecords(alone, config).routing.silent_errors.rate } };
 }
 
 // The most combinations of rulings tried on one record; past it the range is not worked out.
@@ -455,6 +466,7 @@ function scoreGradesRun({ gradesPath, secondPath = null, mode = 'strict' }) {
     agreement = agreementOf(first, second);
   }
   return { kind: 'grades', inputs: { grades: gradesPath, second: secondPath, mode }, ...scoreGrades(first), agreement, problems: p.items,
+    ...(first.reviewer_kind ? { reviewer_kind: first.reviewer_kind } : {}), ...(second && second.reviewer_kind ? { second_reviewer_kind: second.reviewer_kind } : {}),
     ...(first.grades.size === 0 ? { nothing_evaluated: { why: 'no field was graded' } } : {}) };
 }
 
