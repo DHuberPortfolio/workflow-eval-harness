@@ -43,6 +43,19 @@ function toolFindings(r, config) {
       if (bad) add('TU-ARGS', tool, tool + ' got ' + field + ' ' + JSON.stringify(bad.args[field]) + '; the key says ' + JSON.stringify(value));
     }
   }
+  for (const [tool, fields] of Object.entries(want.args_any_of || {})) {
+    for (const [field, values] of Object.entries(fields)) {
+      const bad = calls.filter(c => c.name === tool).find(c => !values.some(v => isDeepStrictEqual(Object.hasOwn(c.args, field) ? c.args[field] : undefined, v)));
+      if (bad) add('TU-ARGS', tool, tool + ' got ' + field + ' ' + JSON.stringify(bad.args[field]) + '; the key allows ' + values.map(v => JSON.stringify(v)).join(' or '));
+    }
+  }
+  // A field given as null is a field not set: some agents write every field, empty ones as null.
+  for (const [tool, fields] of Object.entries(want.args_not_set || {})) {
+    for (const field of fields) {
+      const bad = calls.filter(c => c.name === tool).find(c => Object.hasOwn(c.args, field) && c.args[field] !== null && c.args[field] !== undefined);
+      if (bad) add('TU-ARGS', tool, tool + ' set ' + field + ' to ' + JSON.stringify(bad.args[field]) + '; the key says it must not be set or changed');
+    }
+  }
 
   const limit = want.max_calls ?? t.max_calls;
   if (limit !== null && calls.length > limit) add('TU-REPEAT', null, calls.length + ' calls; the limit is ' + limit);

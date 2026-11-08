@@ -750,12 +750,17 @@ more, each part optional:
   "forbidden": ["book_meeting"],
   "order": ["lookup_contact", "send_email"],
   "args": { "send_email": { "to": "a@example.com" } },
+  "args_any_of": { "pay": { "payee": ["Acme Ltd", "GB00ACME0000000001"] } },
+  "args_not_set": { "update_payment": ["payee"] },
   "max_calls": 3
 }
 ```
 
 `order` is checked among the tools that ran; one that did not run is TU-MISSING if it was required. `args` lists the
-fields that matter: every call of that tool must have them, exactly, and other fields are not compared. A record the
+fields that matter: every call of that tool must have them, exactly, and other fields are not compared. `args_any_of`
+is the same with several right values, for one thing written two ways (a payee by name or by account number).
+`args_not_set` names fields a call must not set at all, for a task that changes one field and must leave the others
+alone: a call that sets one is TU-ARGS (a field written as null counts as not set). A record the
 key says nothing about is still checked against `never`, `side_effects` and `max_calls`, and is counted under not
 measured for the rest.
 

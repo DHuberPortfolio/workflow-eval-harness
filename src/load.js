@@ -772,7 +772,9 @@ function readToolCalls(raw, t, where, p) {
 }
 // What the key expects of a record: a list is what must run; an object says more. Nothing said is
 // not the same as nothing required: it is reported as not measured.
-const EXPECT_KEYS = ['required', 'forbidden', 'order', 'args', 'max_calls'];
+// args_any_of: per tool, the values a field may take (one payee by name or by account number).
+// args_not_set: per tool, fields a call must not set at all (a task that changes only an amount).
+const EXPECT_KEYS = ['required', 'forbidden', 'order', 'args', 'args_any_of', 'args_not_set', 'max_calls'];
 function readToolExpect(raw, t, where, p) {
   const v = getPath(raw, t.key_field);
   if (v === undefined || v === null) return undefined;
@@ -783,6 +785,13 @@ function readToolExpect(raw, t, where, p) {
   for (const k of Object.keys(v)) if (!EXPECT_KEYS.includes(k)) return bad('unknown key "' + k + '" (allowed: ' + EXPECT_KEYS.join(', ') + ')');
   for (const k of ['required', 'forbidden', 'order']) if (v[k] !== undefined && !list(v[k])) return bad(k + ' must be a list of tool names');
   if (v.args !== undefined && !(isObj(v.args) && Object.values(v.args).every(isObj))) return bad('args must say, per tool, the fields a call must have');
+  const lists = x => isObj(x) && Object.values(x).every(l => Array.isArray(l) && l.length > 0);
+  if (v.args_any_of !== undefined && !(isObj(v.args_any_of) && Object.values(v.args_any_of).every(lists))) {
+    return bad('args_any_of must say, per tool, each field\'s allowed values as a list of one or more');
+  }
+  if (v.args_not_set !== undefined && !(isObj(v.args_not_set) && Object.values(v.args_not_set).every(l => Array.isArray(l) && l.length > 0 && l.every(isToolName)))) {
+    return bad('args_not_set must list, per tool, one or more field names a call must not set');
+  }
   if (v.max_calls !== undefined && !(Number.isInteger(v.max_calls) && v.max_calls >= 1)) return bad('max_calls must be a whole number of 1 or more');
   return v;
 }

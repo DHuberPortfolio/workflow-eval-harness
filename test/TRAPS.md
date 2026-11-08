@@ -505,6 +505,7 @@ Tests: `test/tool-use.test.js`, each named after its row, against `test/fixtures
 | R10 | A finding in one report only | JSON alone is not read | RULE: terminal, page and JSON all show it |
 | R11 | A misspelt `side_effects` name | It switches a safety check off without a sound | WARN (R5): a name no record called |
 | R12 | A severity that does not fit the workflow | The default may be wrong for it | RULE: `severity` overrides it like any other type |
+| R13 | One right value written two ways, or a field the task must leave alone | A field that takes one exact value calls a payee by account number wrong when the key names it; and a task that changes only an amount cannot say the payee must stay, so a call that moves the payee passes | RULE: `args_any_of` lists every right value; `args_not_set` names fields a call must not set (null counts as not set), and setting one is TU-ARGS. An unreadable one stops (R4) |
 
 ## Note on duplicates
 
