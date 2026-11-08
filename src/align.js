@@ -60,6 +60,23 @@ function routeClass(value, map, where, p, label, missingTrap, unknownTrap) {
   return null;
 }
 
+// A number within its output's tolerance of the key's is the key's number from here on, so every count agrees on it
+// (F15). The number as given is kept beside it for the report.
+function withinTolerance(rec, config) {
+  for (const [name, o] of Object.entries(config.outputs)) {
+    if (o.type !== 'number' || !o.tolerance) continue;
+    const given = rec.pred[name];
+    const right = rec.key[name];
+    if (!given || right === null || right === undefined || given.value === right) continue;
+    const a = Number(given.value);
+    const b = Number(right);
+    // The small allowance keeps 27.615 within 0.005 of 27.61, which floating point puts a hair outside.
+    if (Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) <= o.tolerance + 1e-9 * Math.max(1, Math.abs(b))) {
+      rec.pred = { ...rec.pred, [name]: { ...given, value: right, as_given: given.value } };
+    }
+  }
+}
+
 // True if a prediction's applied values are exactly the key's, for every output: for a set,
 // nothing wrong and no slot unfilled (slots.js).
 function sameAsKey(pred, key, config) {
@@ -149,6 +166,7 @@ function align(predictions, key, config, p, opts = {}) {
     if (k.tool_expect) rec.tool_expect = k.tool_expect;
     // Prediction fields kept for a record's own gate threshold or a policy what-if (load.js readFields).
     if (pr.fields) rec.fields = pr.fields;
+    withinTolerance(rec, config);
     records.push(rec);
   }
 

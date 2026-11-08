@@ -11,7 +11,7 @@
 // "unknown", when nothing was right (G4); it is null only when there was nothing at all (G3).
 
 const { rate } = require('./stats.js');
-const { DECLINED } = require('../config.js');
+const { DECLINED, FREE_TYPES } = require('../config.js');
 const { resolveSet, slotLabel } = require('./slots.js');
 
 const f1 = (tp, fp, fn) => (2 * tp + fp + fn === 0 ? null : Number(((2 * tp) / (2 * tp + fp + fn)).toFixed(3)));
@@ -139,12 +139,29 @@ function scoreOrdinal(pop, name, labels) {
   };
 }
 
+// A free answer (a number within its tolerance, or tidied text): right or wrong, with no confusion matrix, since
+// every distinct answer would be its own row (F15). within_tolerance counts the right numbers that were not exact.
+function scoreAnswer(pop, name, o) {
+  let correct = 0;
+  let within = 0;
+  for (const r of pop) {
+    const given = r.pred[name];
+    if (!given || given.value !== r.key[name]) continue;
+    correct++;
+    if (given.as_given !== undefined) within++;
+  }
+  const out = { type: o.type, accuracy: rate(correct, pop.length) };
+  if (o.type === 'number') Object.assign(out, { tolerance: o.tolerance, within_tolerance: within });
+  return out;
+}
+
 function scoreQuality(records, config) {
   const pop = scorePopulation(records);
   const outputs = {};
   let tp = 0, fp = 0, fn = 0, anySet = false;
   for (const [name, o] of Object.entries(config.outputs)) {
-    outputs[name] = o.type === 'set' ? scoreSet(pop, name) : o.type === 'ordinal' ? scoreOrdinal(pop, name, o.labels) : scoreLabel(pop, name, o.labels, o.decline);
+    outputs[name] = o.type === 'set' ? scoreSet(pop, name) : o.type === 'ordinal' ? scoreOrdinal(pop, name, o.labels)
+      : FREE_TYPES.includes(o.type) ? scoreAnswer(pop, name, o) : scoreLabel(pop, name, o.labels, o.decline);
     if (o.type === 'set') { anySet = true; tp += outputs[name].tp; fp += outputs[name].fp; fn += outputs[name].fn; }
   }
   return {

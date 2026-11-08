@@ -25,7 +25,22 @@ const { readText, ENCODING } = require('./text.js');
 const { problems, markId } = require('./problems.js');
 const { csvToRecords, decodeCsvRecords } = require('./csv.js');
 const { align } = require('./align.js');
-const { DECLINED, equivalentOf } = require('./config.js');
+const { DECLINED, equivalentOf, FREE_TYPES } = require('./config.js');
+
+// A free text answer as it is compared: case and runs of spaces do not matter, nor the quotes, brackets and commas
+// around it, so ('Alan Payne',) as a database row prints it is Alan Payne (F15). Inner punctuation is kept.
+const EDGES = /^[\s"'`‘’“”()[\]{},]+|[\s"'`‘’“”()[\]{},]+$/g;
+const tidyText = s => String(s).normalize('NFC').replace(EDGES, '').replace(/\s+/g, ' ').toLowerCase();
+// A number as it is compared: 27.610 and 27.61 are one number. Text that is not plainly a number is not read as one
+// (no thousands commas, no units): a wrong answer, never a guess.
+const NUMBER = /^[+-]?(\d+(\.\d*)?|\.\d+)(e[+-]?\d+)?$/;
+function readAnswer(type, given) {
+  const t = tidyText(given);
+  if (type === 'text') return t;
+  if (!NUMBER.test(t)) return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? String(n) : null;
+}
 const { isObj, isLabel, describe, own: ownOf } = require('./values.js');
 
 // Only the record's own fields, never built-in JavaScript properties like "constructor".
@@ -386,11 +401,21 @@ function readLabel(raw, name, o, where, p, isKey, gated, extConf, extDeclined, e
   if (Array.isArray(raw)) { p.stop('F2', where, name + ' must be one label, got a list'); return null; }
   const v = readValue(raw, o, where + ' ' + name, p, isKey);
   if (v === null) return null;
-  const label = eq.read(name, isKey ? v : v.value);
+  if (FREE_TYPES.includes(o.type)) {
+    // A free answer (F15): read as its tidied text or its number, from no fixed list.
+    const given = isKey ? v : v.value;
+    const answer = readAnswer(o.type, given);
+    if (answer === null || answer === '') {
+      if (isKey) { p.stop('F15', where, name + ' is ' + JSON.stringify(given) + ', which is not ' + (o.type === 'number' ? 'a number' : 'an answer')); return null; }
+      v.value = tidyText(given);   // an answer that is not a number is a wrong answer, kept (tidied) for the report
+    } else if (isKey) return answer;
+    else v.value = answer;
+  }
+  const label = FREE_TYPES.includes(o.type) ? v.value : eq.read(name, isKey ? v : v.value);
   if (!isKey) v.value = label;
   const declineValues = d ? d.values : [];
   const isDeclineValue = declineValues.includes(label);
-  if (!o.labels.includes(label) && !isDeclineValue) {
+  if (!FREE_TYPES.includes(o.type) && !o.labels.includes(label) && !isDeclineValue) {
     const known = [...o.labels, ...declineValues];
     const near = known.find(l => l.toLowerCase() === label.toLowerCase());
     p.stop('F1', where, name + ' is ' + JSON.stringify(label) + ', which is not one of: ' + o.labels.join(', ') +

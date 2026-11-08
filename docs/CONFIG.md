@@ -137,8 +137,9 @@ number is compared by path alone.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `type` | required | `set`: zero or more values per record (tags, violation codes). `label`: exactly one value from `labels`. `ordinal`: one value from `labels` in order (bands 1-5), where a near miss counts less than a far one. |
+| `type` | required | `set`: zero or more values per record (tags, violation codes). `label`: exactly one value from `labels`. `ordinal`: one value from `labels` in order (bands 1-5), where a near miss counts less than a far one. `number`: one number from no list (a question's answer), right within `tolerance`; an answer that is not plainly a number is a wrong answer. `text`: one answer from no list, right once case, runs of spaces and the quotes, brackets and commas around it are tidied away (`('Alan Payne',)` is `Alan Payne`). Number and text outputs report accuracy only, with no confusion matrix; rulings, suspects, `equivalents`, `allowed_values` and `decline` do not cover them. |
 | `labels` | - | Label and ordinal outputs: every allowed label (for ordinal, lowest to highest). Numbers are accepted and compared as text. |
+| `tolerance` | `0` | Number: how far off an answer may be and still be right. `0` still reads `27.610` and `27.61` as one number. |
 | `near_miss_steps` | `1` | Ordinal: a miss by this many steps or fewer is SP-NEAR-MISS (low severity) instead of SP-WRONG. `0` makes every miss a full miss. |
 | `field` | the output's name | Where the workflow's values are. |
 | `key_field` | same as `field` | Where the answer key's values are. Different when predictions and answers share one file. |

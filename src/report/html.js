@@ -293,6 +293,13 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
     s.push(table(['Output', 'Precision', 'Recall', 'F1', 'Exact match', 'TP / FP / FN'], rows, [1, 2, 3, 4, 5]));
   }
   for (const [n, o] of Object.entries(q.outputs).filter(([, x]) => x.type !== 'set')) {
+    // A free answer has no list of labels to cross, so no table: right or wrong is the whole of it (F15).
+    if (o.type === 'number' || o.type === 'text') {
+      s.push('<h3>' + esc(n) + ': accuracy ' + pct(o.accuracy) + ' (' + cnt(o.accuracy) + ')</h3>');
+      s.push('<p>' + (o.type === 'number' ? 'A number counts as right within ' + esc(String(o.tolerance)) + ' of the answer key; ' + o.within_tolerance + ' right answers were not exact.'
+        : 'Compared after case, spaces and the quotes, brackets and commas around an answer are tidied away.') + '</p>');
+      continue;
+    }
     // Rows are the answer key's labels, columns the workflow's; with declines, both can include "(declined)".
     const keys = Object.keys(o.confusion);
     const labels = Object.keys(o.confusion[keys[0]]);

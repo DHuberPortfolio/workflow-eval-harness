@@ -137,6 +137,7 @@ Nothing is specific to a platform; where things are is declared in the config's
 | F3 | Label missing on a prediction | No verdict was made | STOP |
 | F4 | Label missing on the key | No right answer | STOP |
 | F13 | `{ "any_of": [...] }` as a label (either side) | A label has one answer per record, and the confusion matrix needs one key label per row: which row would "pass or elevate" go in? | STOP: any_of is for set outputs. Two names for one label are `equivalents` (D23) |
+| F15 | A free answer compared as exact text: `27.615` against `27.61`, `('Alan Payne',)` against `Alan Payne` | A question's answer comes from no list, so a label cannot hold it, and exact text calls a right answer wrong: an agent that answered 18 of 20 right reads as one that answers most wrong | RULE: `number` (right within `tolerance`) and `text` (right once case, spaces and the quotes, brackets and commas around it are tidied) outputs; accuracy only, no confusion matrix. A key that is not a number on a `number` output: STOP (F15). An answer that is not a number is a wrong answer. Rulings on them are refused, not guessed |
 
 **Declines** (`outputs.<name>.decline`: the workflow may decline to answer)
 

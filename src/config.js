@@ -10,7 +10,10 @@ const { isObj, isText, isName, isPath, isProb, isReserved, own } = require('./va
 const { readText } = require('./text.js');
 
 const ROUTE_CLASSES = ['auto', 'review', 'block', 'exclude'];
-const OUTPUT_TYPES = ['set', 'label', 'ordinal'];
+const OUTPUT_TYPES = ['set', 'label', 'ordinal', 'number', 'text'];
+// Free answers: one value per record, from no fixed list (a question's answer). A number is right within its
+// tolerance; text is right once case, spaces and the quotes, brackets and commas around it are tidied away (F15).
+const FREE_TYPES = ['number', 'text'];
 const WRONG_WHEN = ['either', 'gold_route', 'any_mismatch'];
 const GATE_USES = ['lead', 'weakest'];
 const FORMATS = ['json', 'jsonl', 'csv'];
@@ -35,7 +38,7 @@ const ERROR_TYPES = {
   // How an agent used its tools (`tools` in the config; src/metrics/tooluse.js).
   'TU-ACTED': 'critical', 'TU-FORBIDDEN': 'critical', 'TU-ARGS': 'high', 'TU-REPEAT': 'high', 'TU-MISSING': 'medium', 'TU-ORDER': 'medium',
 };
-const OUTPUT_KEYS = ['type', 'field', 'key_field', 'labels', 'value_key', 'confidence_key', 'rejected_field', 'confidence_field', 'near_miss_steps', 'decline'];
+const OUTPUT_KEYS = ['type', 'field', 'key_field', 'labels', 'value_key', 'confidence_key', 'rejected_field', 'confidence_field', 'near_miss_steps', 'decline', 'tolerance'];
 const ROUTING_KEYS = ['field', 'gold_field', 'map'];
 const INPUT_KEYS = ['format', 'records_at', 'unwrap', 'delimiter', 'list_separator', 'confidence_separator', 'any_of_separator', 'any_of_outputs'];
 
@@ -187,6 +190,7 @@ function validateEquivalents(raw, outputs, rawRouting, errors) {
       continue;
     }
     if (o.type !== 'set' && o.field === routeField) errors.push(at + ': outputs.' + name + ' is also the route (routing.field), and routing.map already says what each of its values does');
+    if (FREE_TYPES.includes(o.type)) { errors.push(at + ': a free ' + o.type + ' answer has no names to make equivalent; its tolerance or tidying does that'); continue; }
     const groupOf = new Map();   // value -> the group it is in
     groups.forEach((g, i) => {
       const gat = at + '[' + i + ']';
@@ -323,6 +327,9 @@ function validateConfig(raw) {
   // (tags, violation codes); "label" = exactly one value from a fixed list (pass/elevate/fail);
   // "ordinal" = one value from an ORDERED list (bands 1-5, low/medium/high), where a miss by one
   // step is nearer than a miss across the scale.
+  // "number" = one number, from no list (a question's answer), right within its tolerance.
+  // "text" = one answer as text, from no list, right once case, spaces and the quotes, brackets
+  // and commas around it are tidied away.
   //   field          - where the workflow's values are (default: the output's name)
   //   key_field      - where the answer key's values are (default: same as field). Differs when
   //                    predictions and answers share one file, e.g. "output.x" vs "expected.x"
@@ -332,6 +339,8 @@ function validateConfig(raw) {
   //                    not apply; read as applied: false
   //   confidence_field - (labels) a separate field holding the label's confidence, e.g. a
   //                    "confidence" column next to a "verdict" column
+  //   tolerance      - (number) how far off an answer may be and still be right (default 0: the
+  //                    same number, however it is written)
   //   near_miss_steps - (ordinal) a miss by this many steps or fewer is a near miss: its own,
   //                    low-severity error type (SP-NEAR-MISS). Default 1; 0 makes every miss a full miss.
   //   decline        - (labels) the workflow may decline to answer, and a decline is its own
@@ -366,6 +375,10 @@ function validateConfig(raw) {
         if (o.type !== 'ordinal') errors.push(at + '.near_miss_steps only applies to type "ordinal"');
         else if (!(Number.isInteger(o.near_miss_steps) && o.near_miss_steps >= 0)) errors.push(at + '.near_miss_steps must be a whole number of 0 or more');
       }
+      if (o.tolerance !== undefined) {
+        if (o.type !== 'number') errors.push(at + '.tolerance only applies to type "number"');
+        else if (!(typeof o.tolerance === 'number' && Number.isFinite(o.tolerance) && o.tolerance >= 0)) errors.push(at + '.tolerance must be a number of 0 or more');
+      }
       if (o.confidence_field !== undefined) {
         if (!isPath(o.confidence_field)) errors.push(at + '.confidence_field ' + PATH_RULE);
         if (o.type === 'set') errors.push(at + '.confidence_field only applies to type "label" or "ordinal"');
@@ -381,6 +394,10 @@ function validateConfig(raw) {
       }
       const decline = o.decline === undefined ? null : validateDecline(o.decline, o, name, at, raw.routing, errors);
       const field = o.field || name;
+      // A route is one of routing.map's names: a free answer cannot be one.
+      if (FREE_TYPES.includes(o.type) && isObj(raw.routing) && field === (raw.routing.field === undefined ? 'route' : raw.routing.field)) {
+        errors.push(at + ' is also the route (routing.field): a route is one of the names in routing.map, not a free ' + o.type);
+      }
       outputs[name] = {
         type: o.type,
         field,
@@ -393,6 +410,8 @@ function validateConfig(raw) {
         confidence_field: o.confidence_field || null,
         decline,
       };
+      // Only on a number, so every other output is the same object as before.
+      if (o.type === 'number') outputs[name].tolerance = o.tolerance ?? 0;
     }
   }
 
@@ -520,6 +539,7 @@ function validateConfig(raw) {
       for (const [name, v] of Object.entries(raw.allowed_values)) {
         const at = 'allowed_values.' + name;
         if (!own(outputs, name)) errors.push(at + ' is not a declared output');
+        else if (FREE_TYPES.includes(outputs[name].type)) errors.push(at + ': a free ' + outputs[name].type + ' answer has no list of allowed values');
         if (Array.isArray(v) && v.length > 0 && v.every(isName)) allowed[name] = v;
         else if (isObj(v) && isName(v.file) && (v.field === undefined || isName(v.field)) && Object.keys(v).every(k => k === 'file' || k === 'field')) allowed[name] = { file: v.file, field: v.field || null };
         else errors.push(at + ' must be a list of values, or { "file": "...", "field": "..." }');
@@ -630,4 +650,4 @@ function loadConfig(configPath) {
   return resolveAllowedValues(config, configPath);
 }
 
-module.exports = { validateConfig, loadConfig, addGroupBy, addClusterBy, equivalentOf, ROUTE_CLASSES, ERROR_TYPES, SEVERITIES, DECLINED };
+module.exports = { validateConfig, loadConfig, addGroupBy, addClusterBy, equivalentOf, ROUTE_CLASSES, ERROR_TYPES, SEVERITIES, DECLINED, FREE_TYPES };

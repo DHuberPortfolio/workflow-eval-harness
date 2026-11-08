@@ -27,7 +27,7 @@
 
 const { problems, markId } = require('./problems.js');
 const { readText } = require('./text.js');
-const { equivalentOf, DECLINED } = require('./config.js');
+const { equivalentOf, DECLINED, FREE_TYPES } = require('./config.js');
 const { accepted } = require('./metrics/slots.js');
 const { isObj, describe, own, addAll } = require('./values.js');
 
@@ -62,6 +62,9 @@ function readRuling(r, at, config, p) {
   // A label that is also the route is judged as the route; no ruling changes where a record should go (N16).
   else if (o.type !== 'set' && o.field === config.routing.field) {
     bad(r.output + ' is the route (routing.field): a wrong route is judged by the routing types, and no ruling changes the answer key\'s route');
+  } else if (FREE_TYPES.includes(o.type)) {
+    // A ruling names a label or a set value; a free answer (F15) has neither, so none is guessed at.
+    bad(r.output + ' is a free ' + o.type + ' answer: rulings do not cover number or text outputs yet; correct the answer key itself');
   }
   const value = typeof r.value === 'string' ? r.value.trim() : '';
   if (value === '') bad('needs "value": the value ruled on, as text');

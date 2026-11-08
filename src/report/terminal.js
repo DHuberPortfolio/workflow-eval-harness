@@ -147,6 +147,9 @@ function quality(results) {
   }
   for (const [name, o] of Object.entries(q.outputs).filter(([, x]) => x.type !== 'set')) {
     lines.push('  ' + name + ' (' + o.type + '): accuracy ' + (o.declines ? 'when answered ' : '') + pct(o.accuracy) + ' (' + count(o.accuracy) + ')');
+    // A free answer has no list of labels to cross, so no table: right or wrong is the whole of it (F15).
+    if (o.type === 'number') { lines.push('    a number counts as right within ' + o.tolerance + ' of the answer key; ' + o.within_tolerance + ' right answers were not exact'); continue; }
+    if (o.type === 'text') { lines.push('    compared after case, spaces and the quotes, brackets and commas around an answer are tidied away'); continue; }
     if (o.type === 'ordinal') {
       const lean = o.mean_signed === null || o.mean_signed === 0 ? 'no lean' : o.mean_signed > 0 ? 'leans higher than the answer key' : 'leans lower than the answer key';
       lines.push('    within one step ' + pct(o.within_one) + ' · average distance ' + num(o.mean_distance, 2) + ' steps · closeness ' + num(o.closeness) +

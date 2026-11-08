@@ -26,7 +26,7 @@
 // One scale for the three, the odds that the key is wrong, if every key entry is equally likely to
 // be wrong. Ties: the stronger answer from the runs first, then the key's record order (N7).
 
-const { DECLINED } = require('../config.js');
+const { DECLINED, FREE_TYPES } = require('../config.js');
 const { minOf, maxOf } = require('../values.js');
 
 // Confidence bins: never stated, below 0.50, 0.50-0.59, ..., 0.80-0.89, 0.90 or more.
@@ -100,7 +100,8 @@ function collect(runs, config) {
   for (const [name, o] of Object.entries(config.outputs)) {
     if (isRouteOutput(o, config)) continue;
     if (o.type === 'set') sets[name] = setCells(name, rows, config);
-    else labels[name] = labelEntries(name, o, rows);
+    // A free answer (F15) has no list of labels to suggest another from: not a suspect, never a guess.
+    else if (!FREE_TYPES.includes(o.type)) labels[name] = labelEntries(name, o, rows);
   }
   return { runs: runs.length, order, sets, labels, groups: groupsOf(runs[0], config) };
 }
