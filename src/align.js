@@ -62,16 +62,20 @@ function routeClass(value, map, where, p, label, missingTrap, unknownTrap) {
 
 // A number within its output's tolerance of the key's is the key's number from here on, so every count agrees on it
 // (F15). The number as given is kept beside it for the report.
+// A number as String(Number(x)) writes it: what the reader gives a number that fits.
+const CANONICAL = /^-?(0|[1-9]\d*)(\.\d+)?(e[+-]\d+)?$/;
+const fits = s => typeof s === 'string' && CANONICAL.test(s) && s.split('e')[0].replace('-', '').replace('.', '').replace(/^0+/, '').length <= 15;
 function withinTolerance(rec, config) {
   for (const [name, o] of Object.entries(config.outputs)) {
     if ((o.type !== 'number' && o.type !== 'text') || !o.tolerance) continue;
     const given = rec.pred[name];
     const right = rec.key[name];
     if (!given || right === null || right === undefined || given.value === right) continue;
-    const a = Number(given.value);
-    const b = Number(right);
-    // The small allowance keeps 27.615 within 0.005 of 27.61, which floating point puts a hair outside.
-    if (Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) <= o.tolerance + 1e-9 * Math.max(1, Math.abs(b))) {
+    // Only numbers as the reader wrote them (load.js): an empty answer is not 0, and digits past what a number holds stay text.
+    const a = fits(given.value) ? Number(given.value) : NaN;
+    const b = fits(right) ? Number(right) : NaN;
+    // Floating point puts 27.615 a hair over 0.005 from 27.61; the slack is a few rounding steps of the numbers compared, no more.
+    if (Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) <= o.tolerance + 4 * Number.EPSILON * Math.max(1, Math.abs(a), Math.abs(b))) {
       rec.pred = { ...rec.pred, [name]: { ...given, value: right, as_given: given.value } };
     }
   }

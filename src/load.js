@@ -34,13 +34,21 @@ const tidyText = s => String(s).normalize('NFC').replace(EDGES, '').replace(/\s+
 // A number as it is compared: 27.610 and 27.61 are one number. Text that is not plainly a number is not read as one
 // (no thousands commas, no units): a wrong answer, never a guess.
 const NUMBER = /^[+-]?(\d+(\.\d*)?|\.\d+)(e[+-]?\d+)?$/;
+// In a text answer only a plain number is read as a number: no leading zero (other than 0 or 0.x), so a code such as 02134 or
+// 007 stays a code.
+const PLAIN = /^[+-]?(0|[1-9]\d*)(\.\d+)?$/;
+// More than 15 significant digits is more than a number holds exactly: two long ids that differ in the last digit would read as one.
+const exact = t => t.split('e')[0].replace(/^[+-]/, '').replace('.', '').replace(/^0+/, '').length <= 15;
+const numberOf = (t, rule) => (rule.test(t) && exact(t) && Number.isFinite(Number(t)) ? Number(t) : null);
 function readAnswer(type, given) {
   const t = tidyText(given);
-  // A text answer that is plainly a number is that number, so 27.610 and 27.61 agree in a column of names and figures.
-  if (type === 'text') return NUMBER.test(t) && Number.isFinite(Number(t)) ? String(Number(t)) : t;
-  if (!NUMBER.test(t)) return null;
-  const n = Number(t);
-  return Number.isFinite(n) ? String(n) : null;
+  if (t === '') return '';   // no answer: never a number, and never right unless the key is empty too
+  // A text answer that is a plain number is that number, so 27.610 and 27.61 agree in a column of names and figures.
+  if (type === 'text') { const n = numberOf(t, PLAIN); return n === null ? t : String(n); }
+  const n = numberOf(t, NUMBER);
+  if (n !== null) return String(n);
+  // A number with more digits than a number holds exactly is compared as written, digit for digit.
+  return NUMBER.test(t) ? t.replace(/^\+/, '') : null;
 }
 const { isObj, isLabel, describe, own: ownOf } = require('./values.js');
 

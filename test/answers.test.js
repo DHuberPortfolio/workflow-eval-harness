@@ -120,3 +120,21 @@ test('F15: a text answer that is a number is compared as a number, so one column
   assert.equal(a.tolerance, 0.005);
   assert.equal(a.within_tolerance, 1);
 });
+
+test('F15: an empty or bracket-only answer is never right, and a big number gets no extra slack', () => {
+  const n = run({ type: 'number', tolerance: 0.005 }, [['()', 0], ['2500000002', 2500000000], ['1000000000900', 1000000000000], ['27.615', 27.61], ['27.616', 27.61], ['1234567890123456788', '1234567890123456789']]);
+  assert.deepEqual(wrongIds(n), ['Q1', 'Q2', 'Q3', 'Q5', 'Q6'], '"()" is no answer, 2 off is not within 0.005, 27.616 is just over, and two long numbers differ');
+  const t = run({ type: 'text', tolerance: 0.005 }, [['()', '0'], ['[ ]', '0']]);
+  assert.deepEqual(wrongIds(t), ['Q1', 'Q2']);
+});
+
+test('F15: text compares as numbers only when both are plain numbers a number can hold exactly', () => {
+  const r = run({ type: 'text' }, [
+    ['1234567890123456788', '1234567890123456789'],   // two long ids: different
+    ['2134', '02134'],                                 // a code with a leading zero: different
+    ['27.610', '27.61'],                               // plain numbers: the same
+    ['0.50', '0.5'],                                   // "0.x" is plain: the same
+    ['007', '7'],                                      // a leading zero is a code, not a number
+  ]);
+  assert.deepEqual(wrongIds(r), ['Q1', 'Q2', 'Q5']);
+});
