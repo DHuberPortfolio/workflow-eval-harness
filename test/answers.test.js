@@ -71,7 +71,7 @@ test('F15: an answer key that is not a number stops the run', () => {
 
 test('F15: settings that cannot apply to free answers are refused when the config is read', () => {
   const errors = output => validateConfig({ id_field: 'id', outputs: { answer: output }, routing }).errors.join(' ');
-  assert.match(errors({ type: 'text', tolerance: 0.1 }), /tolerance only applies to type "number"/);
+  assert.match(errors({ type: 'label', labels: ['a', 'b'], tolerance: 0.1 }), /tolerance only applies to type "number" or "text"/);
   assert.match(errors({ type: 'number', tolerance: -1 }), /tolerance must be a number of 0 or more/);
   assert.match(errors({ type: 'number', labels: ['a', 'b'] }), /labels only applies to type "label" or "ordinal"/);
   assert.match(errors({ type: 'text', decline: { values: ['none'] } }), /decline/);
@@ -103,4 +103,20 @@ test('F15: several runs and the suspects check read free answers, and a ruling o
   assert.ok(s);
   const rulings = json('r.json', { rulings: [{ id: 'Q2', output: 'answer', value: '3', ruling: 'keep' }] }, d);
   assert.throws(() => require('../src/rulings.js').loadRulings(rulings, config), /free number answer: rulings do not cover number or text outputs yet/);
+});
+
+test('F15: a text answer that is a number is compared as a number, so one column can hold names and figures', () => {
+  // A question-answering agent answers some questions with a name and some with a figure: one text output with a tolerance reads both.
+  const r = run({ type: 'text', tolerance: 0.005 }, [
+    ["('Alan Payne',)", 'Alan Payne'],
+    ['27.615', '27.61'],
+    ['(27.610,)', '27.61'],
+    ['27.62', '27.61'],
+    ['Alan Paine', 'Alan Payne'],
+  ]);
+  const a = r.quality.outputs.answer;
+  assert.deepEqual([a.accuracy.n, a.accuracy.d], [3, 5]);
+  assert.deepEqual(wrongIds(r), ['Q4', 'Q5']);
+  assert.equal(a.tolerance, 0.005);
+  assert.equal(a.within_tolerance, 1);
 });

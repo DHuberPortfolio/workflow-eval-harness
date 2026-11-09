@@ -36,7 +36,8 @@ const tidyText = s => String(s).normalize('NFC').replace(EDGES, '').replace(/\s+
 const NUMBER = /^[+-]?(\d+(\.\d*)?|\.\d+)(e[+-]?\d+)?$/;
 function readAnswer(type, given) {
   const t = tidyText(given);
-  if (type === 'text') return t;
+  // A text answer that is plainly a number is that number, so 27.610 and 27.61 agree in a column of names and figures.
+  if (type === 'text') return NUMBER.test(t) && Number.isFinite(Number(t)) ? String(Number(t)) : t;
   if (!NUMBER.test(t)) return null;
   const n = Number(t);
   return Number.isFinite(n) ? String(n) : null;

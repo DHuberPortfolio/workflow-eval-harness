@@ -151,7 +151,7 @@ function scoreAnswer(pop, name, o) {
     if (given.as_given !== undefined) within++;
   }
   const out = { type: o.type, accuracy: rate(correct, pop.length) };
-  if (o.type === 'number') Object.assign(out, { tolerance: o.tolerance, within_tolerance: within });
+  if (o.tolerance !== undefined) Object.assign(out, { tolerance: o.tolerance, within_tolerance: within });
   return out;
 }
 

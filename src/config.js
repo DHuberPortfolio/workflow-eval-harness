@@ -340,7 +340,8 @@ function validateConfig(raw) {
   //   confidence_field - (labels) a separate field holding the label's confidence, e.g. a
   //                    "confidence" column next to a "verdict" column
   //   tolerance      - (number) how far off an answer may be and still be right (default 0: the
-  //                    same number, however it is written)
+  //                    same number, however it is written). (text) the same, for the answers that
+  //                    are numbers, so one column can hold names and figures
   //   near_miss_steps - (ordinal) a miss by this many steps or fewer is a near miss: its own,
   //                    low-severity error type (SP-NEAR-MISS). Default 1; 0 makes every miss a full miss.
   //   decline        - (labels) the workflow may decline to answer, and a decline is its own
@@ -376,7 +377,7 @@ function validateConfig(raw) {
         else if (!(Number.isInteger(o.near_miss_steps) && o.near_miss_steps >= 0)) errors.push(at + '.near_miss_steps must be a whole number of 0 or more');
       }
       if (o.tolerance !== undefined) {
-        if (o.type !== 'number') errors.push(at + '.tolerance only applies to type "number"');
+        if (!FREE_TYPES.includes(o.type)) errors.push(at + '.tolerance only applies to type "number" or "text"');
         else if (!(typeof o.tolerance === 'number' && Number.isFinite(o.tolerance) && o.tolerance >= 0)) errors.push(at + '.tolerance must be a number of 0 or more');
       }
       if (o.confidence_field !== undefined) {
@@ -411,7 +412,7 @@ function validateConfig(raw) {
         decline,
       };
       // Only on a number, so every other output is the same object as before.
-      if (o.type === 'number') outputs[name].tolerance = o.tolerance ?? 0;
+      if (o.type === 'number' || (o.type === 'text' && o.tolerance !== undefined)) outputs[name].tolerance = o.tolerance ?? 0;
     }
   }
 

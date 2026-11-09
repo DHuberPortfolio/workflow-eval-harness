@@ -64,7 +64,7 @@ function routeClass(value, map, where, p, label, missingTrap, unknownTrap) {
 // (F15). The number as given is kept beside it for the report.
 function withinTolerance(rec, config) {
   for (const [name, o] of Object.entries(config.outputs)) {
-    if (o.type !== 'number' || !o.tolerance) continue;
+    if ((o.type !== 'number' && o.type !== 'text') || !o.tolerance) continue;
     const given = rec.pred[name];
     const right = rec.key[name];
     if (!given || right === null || right === undefined || given.value === right) continue;

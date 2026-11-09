@@ -297,7 +297,7 @@ function renderHtml(results, generatedAt = new Date().toISOString()) {
     if (o.type === 'number' || o.type === 'text') {
       s.push('<h3>' + esc(n) + ': accuracy ' + pct(o.accuracy) + ' (' + cnt(o.accuracy) + ')</h3>');
       s.push('<p>' + (o.type === 'number' ? 'A number counts as right within ' + esc(String(o.tolerance)) + ' of the answer key; ' + o.within_tolerance + ' right answers were not exact.'
-        : 'Compared after case, spaces and the quotes, brackets and commas around an answer are tidied away.') + '</p>');
+        : 'Compared after case, spaces and the quotes, brackets and commas around an answer are tidied away.' + (o.tolerance !== undefined ? ' An answer that is a number counts as right within ' + esc(String(o.tolerance)) + ' (' + o.within_tolerance + ' were not exact).' : '')) + '</p>');
       continue;
     }
     // Rows are the answer key's labels, columns the workflow's; with declines, both can include "(declined)".
