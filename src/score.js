@@ -10,7 +10,7 @@ const { scoreQuality } = require('./metrics/classification.js');
 const { scoreRouting, nothingEvaluated } = require('./metrics/routing.js');
 const { scoreTraps, trapCounts } = require('./metrics/traps.js');
 const { scoreGroups } = require('./metrics/groups.js');
-const { scoreClusters } = require('./metrics/clusters.js');
+const { scoreClusters, scoreOutputClusters } = require('./metrics/clusters.js');
 const { scoreMix } = require('./metrics/mix.js');
 const { scoreCalibration } = require('./metrics/calibration.js');
 const { targetCheck } = require('./metrics/target.js');
@@ -90,6 +90,9 @@ function scoreRun({ config, predPath, keyPath, mode = 'strict', target = null, c
   // The silent error rate's range counting clusters (trap G14): only with clusters in the config.
   const clusters = parts === 'all' ? scoreClusters(results.records, records, config) : null;
   if (clusters) results.clusters = clusters;
+  // Each output's error rate in clusters, apart from the headline's block so that block reads exactly as before (trap G22).
+  const byOutput = clusters ? scoreOutputClusters(records, config) : null;
+  if (byOutput) results.clusters_by_output = byOutput;
   // The rate on a real mix (trap G18). Its stops (G19-G21) join the run's, reported together below.
   if (mix) {
     const m = scoreMix(mix, results.records, records, config, { key: keyPath, predictions: predPath }, p);

@@ -407,7 +407,9 @@ It takes one field; a config that already names clusters reading something else 
 rather than overridden. The field must hold the cluster itself: "the story this retells, or the
 record's own id when it is the original" is not a field most answer keys have, so add one (a
 `story` field) rather than pointing at `duplicate_of`, which leaves each original out of its own
-retellings' cluster. The headline, the per-group rows and `--target` are unchanged. What is
+retellings' cluster. The headline, the per-group rows and `--target` are unchanged. The JSON also
+gives each output's own error rate counted in clusters, under `clusters_by_output` (records, wrong,
+clusters and the range), for a gate on one output alone. What is
 reported, and how it is worked out: [METRICS.md](METRICS.md#ranges-that-count-clusters).
 
 ## A tuning half and a held-out half (`split`)

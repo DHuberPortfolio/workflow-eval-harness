@@ -12,6 +12,8 @@
 // Per-group rows and --target stay as they are (records counted as independent); the reports say so.
 
 const { clusteredRange, pct1 } = require('./stats.js');
+const { resolveSet } = require('./slots.js');
+const { DECLINED } = require('../config.js');
 
 // summaries: results.records (each with id, route_class, silent); records: the paired records,
 // each with its cluster. null when the config has no clusters, so results without them are unchanged.
@@ -50,4 +52,45 @@ function scoreClusters(summaries, records, config) {
   };
 }
 
-module.exports = { scoreClusters };
+// Each output's own error rate counted in clusters (trap G22): a gate on one output (the attacker's goal, say) reads the same
+// clumps as the headline, so it needs the same care. Population and "wrong" are the quality section's: scored records not
+// suppressed; for a label that may decline, only the answered ones; a set is wrong unless it matches exactly.
+function scoreOutputClusters(records, config) {
+  if (!config.clusters) return null;
+  const pop = records.filter(r => r.scored && r.route_class !== 'exclude');
+  const out = {};
+  for (const [name, o] of Object.entries(config.outputs)) {
+    const byCluster = new Map();
+    let alone = 0;
+    let n = 0;
+    let wrong = 0;
+    for (const r of pop) {
+      let bad;
+      if (o.type === 'set') {
+        const s = resolveSet(r.pred[name], r.key[name]);
+        bad = s.wrong.length > 0 || s.unfilled.length > 0;
+      } else {
+        const p = r.pred[name];
+        if (o.decline && (!p || p.value === DECLINED)) continue;   // accuracy on what was answered, as the quality section counts it
+        bad = !p || p.value !== r.key[name];
+      }
+      const c = r.cluster ?? null;
+      const k = c === null ? (alone++, { alone: r.id }) : 'v:' + c;
+      if (!byCluster.has(k)) byCluster.set(k, { n: 0, y: 0 });
+      const t = byCluster.get(k);
+      t.n++;
+      n++;
+      if (bad) { t.y++; wrong++; }
+    }
+    const rr = n ? clusteredRange([...byCluster.values()]) : null;
+    out[name] = {
+      records: n, wrong, clusters: byCluster.size, records_own_cluster: alone,
+      method: rr ? rr.method : null, why: rr ? rr.why : null,
+      design_effect: rr ? rr.design_effect : null, effective_records: rr ? rr.effective : null,
+      pct: rr ? pct1(rr.p) : null, low_pct: rr ? pct1(rr.low) : null, high_pct: rr ? pct1(rr.high) : null,
+    };
+  }
+  return out;
+}
+
+module.exports = { scoreClusters, scoreOutputClusters };
